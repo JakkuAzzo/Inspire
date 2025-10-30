@@ -132,12 +132,20 @@ function generateSampleChallenge(): SampleChallenge {
   };
 }
 
-export function generateFuelPack(): FuelPack {
+export interface GenerateOptions {
+  words?: number;
+  memes?: number;
+}
+
+export function generateFuelPack(options?: GenerateOptions): FuelPack {
+  const wordsCount = options?.words ?? 6;
+  const memesCount = options?.memes ?? 3;
+
   return {
     id: `fuel-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     timestamp: Date.now(),
-    words: getRandomItems(WORDS, 6),
-    memes: getRandomItems(MEMES, 3),
+    words: getRandomItems(WORDS, Math.max(0, Math.min(wordsCount, WORDS.length))),
+    memes: getRandomItems(MEMES, Math.max(0, Math.min(memesCount, MEMES.length))),
     emotionalArc: generateEmotionalArc(),
     sampleChallenge: generateSampleChallenge()
   };
