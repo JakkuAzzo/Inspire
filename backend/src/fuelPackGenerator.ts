@@ -1,4 +1,4 @@
-import { FuelPack, EmotionalArc, SampleChallenge } from './types';
+import { FuelPack, EmotionalArc, SampleChallenge, Inspiration } from './types';
 
 // Creative word pools for inspiration
 const WORDS = [
@@ -34,6 +34,91 @@ const EMOTIONS = [
   'hopeful', 'melancholic', 'euphoric', 'anxious', 'confident', 'vulnerable',
   'angry', 'peaceful', 'nostalgic', 'excited', 'contemplative', 'rebellious',
   'triumphant', 'defeated', 'introspective', 'energetic', 'calm', 'chaotic'
+];
+
+const MOODS = [
+  'electric',
+  'daydreamy',
+  'stormy focus',
+  'sunset mellow',
+  'neon night drive',
+  'retro future',
+  'cosmic calm',
+  'glitchy hype',
+  'late-night coffee',
+  'foggy skyline'
+];
+
+const PROMPT_PHRASES = [
+  'Write about the moment the crowd goes quiet before the drop.',
+  'Tell the story of the last voicemail you never sent.',
+  'Describe a neon skyline using only five colors.',
+  'Imagine a heist scene scored by string quartets.',
+  'Create a hook that feels like a sunrise through concrete.',
+  'Rap about a memory that only exists online.',
+  'Write a chorus that flips a breakup into a victory lap.',
+  'Paint the feeling of missing the last train home.',
+  'Compose a beat that sounds like midnight rain on chrome.',
+  'Sing from the perspective of an echo in a tunnel.'
+];
+
+const COLOR_PALETTES: string[][] = [
+  ['#5B21B6', '#7C3AED', '#60A5FA'],
+  ['#F59E0B', '#EF4444', '#F97316'],
+  ['#22D3EE', '#6366F1', '#3B82F6'],
+  ['#F472B6', '#C084FC', '#38BDF8'],
+  ['#84CC16', '#FDE68A', '#F97316'],
+  ['#0EA5E9', '#312E81', '#1D4ED8'],
+  ['#FB7185', '#F472B6', '#9D174D']
+];
+
+const TEMPOS = [
+  '72 BPM · smoky boom-bap',
+  '84 BPM · melancholy trap',
+  '95 BPM · soulful swing',
+  '110 BPM · shimmering house',
+  '128 BPM · festival energy',
+  '140 BPM · drill momentum'
+];
+
+const WILDCARDS = [
+  'Loop the sound of a subway brake as percussion.',
+  'Sample the oldest voice memo on your phone.',
+  'Use only reversed sounds for your intro.',
+  'Include a line in another language you barely know.',
+  'Steal a rhyme scheme from a nursery rhyme.',
+  'Start with the chorus—write verses last.'
+];
+
+const VIBES = [
+  'For poets chasing blurry city lights.',
+  'For late-night producers with headphones too loud.',
+  'For writers who keep notebooks under the pillow.',
+  'For vocalists who freestyle in the shower.',
+  'For beatmakers who sample VHS tapes.'
+];
+
+const INSPIRATIONS: Inspiration[] = [
+  {
+    quote: 'Creativity is the residue of time wasted.',
+    author: 'Albert Einstein'
+  },
+  {
+    quote: 'You can’t use up creativity. The more you use, the more you have.',
+    author: 'Maya Angelou'
+  },
+  {
+    quote: 'The true sign of intelligence is not knowledge but imagination.',
+    author: 'Albert Einstein'
+  },
+  {
+    quote: 'Everything you can imagine is real.',
+    author: 'Pablo Picasso'
+  },
+  {
+    quote: 'Art is chaos taking shape.',
+    author: 'Pablo Picasso'
+  }
 ];
 
 // Sample challenge types
@@ -140,6 +225,7 @@ export interface GenerateOptions {
 export function generateFuelPack(options?: GenerateOptions): FuelPack {
   const wordsCount = options?.words ?? 6;
   const memesCount = options?.memes ?? 3;
+  const inspiration = getRandomItem(INSPIRATIONS);
 
   return {
     id: `fuel-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
@@ -147,6 +233,13 @@ export function generateFuelPack(options?: GenerateOptions): FuelPack {
     words: getRandomItems(WORDS, Math.max(0, Math.min(wordsCount, WORDS.length))),
     memes: getRandomItems(MEMES, Math.max(0, Math.min(memesCount, MEMES.length))),
     emotionalArc: generateEmotionalArc(),
-    sampleChallenge: generateSampleChallenge()
+    sampleChallenge: generateSampleChallenge(),
+    mood: getRandomItem(MOODS),
+    prompt: getRandomItem(PROMPT_PHRASES),
+    colorPalette: getRandomItem(COLOR_PALETTES),
+    tempo: getRandomItem(TEMPOS),
+    wildcard: getRandomItem(WILDCARDS),
+    inspiration,
+    vibe: getRandomItem(VIBES)
   };
 }
