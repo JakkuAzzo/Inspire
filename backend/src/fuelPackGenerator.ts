@@ -134,7 +134,7 @@ function generateSampleChallenge(): SampleChallenge {
 
 export function generateFuelPack(): FuelPack {
   return {
-    id: `fuel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: `fuel-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     timestamp: Date.now(),
     words: getRandomItems(WORDS, 6),
     memes: getRandomItems(MEMES, 3),
