@@ -21,10 +21,10 @@ async function main() {
   console.log('Random words:', randomWords.join(', '));
   
   const rhymes = await services.wordService.getRhymes('flow', 5);
-  console.log('Rhymes for "flow":', rhymes.map(r => r.word).join(', '));
+  console.log('Rhymes for "flow":', rhymes.map((r: any) => r.word).join(', '));
   
   const topicWords = await services.wordService.getWordsByTopic('music', 5);
-  console.log('Music-related words:', topicWords.map(w => w.word).join(', '));
+  console.log('Music-related words:', topicWords.map((w: any) => w.word).join(', '));
   console.log();
 
   // 2. Meme & Image Inspiration
@@ -44,7 +44,7 @@ async function main() {
   console.log('-------------------');
   
   const moods = await services.moodService.getRandomMoods(3);
-  console.log('Random moods:', moods.map(m => m.name).join(', '));
+  console.log('Random moods:', moods.map((m: any) => m.name).join(', '));
   
   const emotionalArc = await services.moodService.getRandomEmotionalArc();
   console.log(`Emotional arc: ${emotionalArc.start} → ${emotionalArc.middle} → ${emotionalArc.end}`);
@@ -64,7 +64,7 @@ async function main() {
   }
   
   const categories = await services.audioService.getSampleCategories();
-  console.log('Sample categories:', categories.map(c => c.name).join(', '));
+  console.log('Sample categories:', categories.map((c: any) => c.name).join(', '));
   console.log();
 
   // 5. Topic & Trend Data
@@ -90,11 +90,11 @@ async function main() {
   
   const ideas = await services.randomService.getRandomIdeas(3);
   console.log('Random ideas:');
-  ideas.forEach((idea, i) => console.log(`  ${i + 1}. ${idea}`));
+  ideas.forEach((idea: string, i: number) => console.log(`  ${i + 1}. ${idea}`));
   
   const prompts = await services.randomService.getCreativePrompts(2);
   console.log('\nCreative prompts:');
-  prompts.forEach((prompt, i) => {
+  prompts.forEach((prompt: any, i: number) => {
     console.log(`  ${i + 1}. [${prompt.type}] ${prompt.prompt} (${prompt.difficulty})`);
   });
   
@@ -110,7 +110,7 @@ async function main() {
   console.log('Fuel Pack Contents:');
   console.log('  Ideas:', fuelPack.ideas.join(', '));
   console.log('  Activity:', fuelPack.activity.activity);
-  console.log('  Prompts:', fuelPack.prompts.map(p => p.prompt).join(' | '));
+  console.log('  Prompts:', fuelPack.prompts.map((p: any) => p.prompt).join(' | '));
   console.log('  Wildcards:', fuelPack.wildcards?.join(', '));
   console.log();
 

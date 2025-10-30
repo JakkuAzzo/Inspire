@@ -142,8 +142,8 @@ export class WordService {
   }
 
   private getMockRhymes(word: string, maxResults: number): Word[] {
-    const rhymes = mockRhymes[word.toLowerCase()] || mockRhymes['flow'];
-    return rhymes.slice(0, maxResults).map((w, i) => ({
+    const rhymes = (mockRhymes as Record<string, string[]>)[word.toLowerCase()] || mockRhymes['flow'];
+    return rhymes.slice(0, maxResults).map((w: string, i: number) => ({
       word: w,
       score: 100 - i * 5
     }));
@@ -158,12 +158,12 @@ export class WordService {
   }
 
   private getMockWordsByTopic(topic: string, maxResults: number): Word[] {
-    const topicWords = mockWordsByTopic[topic.toLowerCase()] || mockWordsByTopic['music'];
+    const topicWords = (mockWordsByTopic as Record<string, string[]>)[topic.toLowerCase()] || mockWordsByTopic['music'];
     const words = [...topicWords];
     while (words.length < maxResults) {
       words.push(...this.getRandomMockWords(5));
     }
-    return words.slice(0, maxResults).map((w, i) => ({
+    return words.slice(0, maxResults).map((w: string, i: number) => ({
       word: w,
       score: 100 - i * 2,
       tags: [topic]
@@ -171,7 +171,7 @@ export class WordService {
   }
 
   private getMockDefinition(word: string): WordDefinition | null {
-    return mockDefinitions[word.toLowerCase()] || null;
+    return (mockDefinitions as Record<string, WordDefinition>)[word.toLowerCase()] || null;
   }
 }
 

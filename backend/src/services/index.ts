@@ -6,6 +6,13 @@
  * with automatic fallback to mock data when API keys are missing or requests fail.
  */
 
+import { WordService, createWordService } from './wordService';
+import { MemeService, createMemeService } from './memeService';
+import { MoodService, createMoodService } from './moodService';
+import { AudioService, createAudioService } from './audioService';
+import { TrendService, createTrendService } from './trendService';
+import { RandomService, createRandomService } from './randomService';
+
 export { WordService, createWordService } from './wordService';
 export type { Word, WordDefinition } from './wordService';
 
