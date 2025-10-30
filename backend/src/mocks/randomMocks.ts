@@ -1,3 +1,10 @@
+export interface CreativePrompt {
+  type: 'lyrical' | 'production' | 'conceptual' | 'collaboration' | 'technical';
+  prompt: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  category: string;
+}
+
 export const mockActivities = [
   {
     activity: "Write a freestyle rap about an unexpected topic",
@@ -49,7 +56,7 @@ export const mockRandomIdeas = [
   "Create a hook using only questions"
 ];
 
-export const mockCreativePrompts = [
+export const mockCreativePrompts: CreativePrompt[] = [
   {
     type: "lyrical",
     prompt: "Write about success without mentioning money",

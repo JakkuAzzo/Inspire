@@ -31,7 +31,7 @@ export const mockNews = [
   }
 ];
 
-export const mockTrendingTopics = [
+export const mockTrendingTopics: Array<{ topic: string; mentions: number; trend: 'rising' | 'stable' | 'falling' }> = [
   { topic: "AI in Music Production", mentions: 15420, trend: "rising" },
   { topic: "Lo-Fi Hip-Hop", mentions: 12800, trend: "stable" },
   { topic: "NFT Music Releases", mentions: 9650, trend: "falling" },
