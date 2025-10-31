@@ -12,6 +12,15 @@ export interface Word {
   word: string;
   score?: number;
   tags?: string[];
+  numSyllables?: number;
+}
+
+export interface WordSearchOptions {
+  startsWith?: string;
+  rhymeWith?: string;
+  topic?: string;
+  syllables?: number;
+  maxResults?: number;
 }
 
 export interface WordDefinition {
@@ -64,9 +73,10 @@ export class WordService {
     try {
       const results = await this.datamuseClient.get<Word[]>('/words', {
         rel_rhy: word,
-        max: maxResults
+        max: maxResults,
+        md: 's'
       });
-      return results;
+      return results.map((entry) => this.enrichWord(entry));
     } catch (error) {
       console.warn('[WordService] Failed to fetch rhymes, using mock data');
       if (this.config.useMockFallback) {
@@ -85,9 +95,10 @@ export class WordService {
     try {
       const results = await this.datamuseClient.get<Word[]>('/words', {
         ml: word,
-        max: maxResults
+        max: maxResults,
+        md: 's'
       });
-      return results;
+      return results.map((entry) => this.enrichWord(entry));
     } catch (error) {
       console.warn('[WordService] Failed to fetch similar words, using mock data');
       if (this.config.useMockFallback) {
@@ -106,9 +117,10 @@ export class WordService {
     try {
       const results = await this.datamuseClient.get<Word[]>('/words', {
         topics: topic,
-        max: maxResults
+        max: maxResults,
+        md: 's'
       });
-      return results;
+      return results.map((entry) => this.enrichWord(entry));
     } catch (error) {
       console.warn('[WordService] Failed to fetch words by topic, using mock data');
       if (this.config.useMockFallback) {
@@ -135,6 +147,47 @@ export class WordService {
     }
   }
 
+  async searchWords(options: WordSearchOptions): Promise<Word[]> {
+    const params: Record<string, any> = {
+      max: options.maxResults ?? 15,
+      md: 's'
+    };
+
+    if (options.startsWith) {
+      const sanitized = options.startsWith.trim().toLowerCase();
+      if (sanitized) {
+        params.sp = `${sanitized}*`;
+      }
+    }
+
+    if (options.topic) {
+      params.topics = options.topic;
+    }
+
+    if (options.rhymeWith) {
+      params.rel_rhy = options.rhymeWith;
+    }
+
+    try {
+      const results = await this.datamuseClient.get<Word[]>('/words', params);
+      const enriched = results.map((entry) => this.enrichWord(entry));
+      if (options.syllables) {
+        return enriched.filter((word) => word.numSyllables === options.syllables);
+      }
+      return enriched;
+    } catch (error) {
+      console.warn('[WordService] Failed to search words, using mock data');
+      if (this.config.useMockFallback) {
+        return this.getRandomMockWords(params.max ?? 10).map((word) => ({
+          word,
+          score: 75,
+          numSyllables: 2
+        }));
+      }
+      throw error;
+    }
+  }
+
   // Mock data fallback methods
   private getRandomMockWords(count: number): string[] {
     const shuffled = [...mockWords].sort(() => 0.5 - Math.random());
@@ -145,7 +198,8 @@ export class WordService {
     const rhymes = (mockRhymes as Record<string, string[]>)[word.toLowerCase()] || mockRhymes['flow'];
     return rhymes.slice(0, maxResults).map((w: string, i: number) => ({
       word: w,
-      score: 100 - i * 5
+      score: 100 - i * 5,
+      numSyllables: Math.max(1, w.split(/[-\s]/).length)
     }));
   }
 
@@ -172,6 +226,20 @@ export class WordService {
 
   private getMockDefinition(word: string): WordDefinition | null {
     return (mockDefinitions as Record<string, WordDefinition>)[word.toLowerCase()] || null;
+  }
+
+  private enrichWord(entry: Word): Word {
+    if (!entry.tags?.length) {
+      return entry;
+    }
+    const syllableTag = entry.tags.find((tag) => tag.startsWith('s:'));
+    if (syllableTag) {
+      const amount = Number.parseInt(syllableTag.split(':')[1] ?? '', 10);
+      if (!Number.isNaN(amount)) {
+        entry.numSyllables = amount;
+      }
+    }
+    return entry;
   }
 }
 

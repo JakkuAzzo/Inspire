@@ -1,8 +1,11 @@
+import { URLSearchParams } from 'url';
 import { ApiClient } from './apiClient';
 import { mockMemes, mockImages, mockRedditPosts } from '../mocks/memeMocks';
 
 export interface MemeServiceConfig {
   imgflipUrl: string;
+  imgflipUsername?: string;
+  imgflipPassword?: string;
   unsplashUrl: string;
   unsplashAccessKey?: string;
   redditUrl: string;
@@ -62,6 +65,60 @@ export class MemeService {
       : null;
     
     this.redditClient = new ApiClient({ baseURL: config.redditUrl });
+  }
+
+  async captionMeme(options: {
+    templateId: string;
+    captions: string[];
+    font?: string;
+    maxFontSize?: string;
+  }): Promise<{ url: string; pageUrl?: string }> {
+    const { templateId, captions, font, maxFontSize } = options;
+
+    if (!this.config.imgflipUsername || !this.config.imgflipPassword) {
+      if (this.config.useMockFallback) {
+        return this.getMockCaption(templateId, captions);
+      }
+      throw new Error('Imgflip captioning requires IMGFLIP_USERNAME and IMGFLIP_PASSWORD');
+    }
+
+    const form = new URLSearchParams({
+      template_id: templateId,
+      username: this.config.imgflipUsername,
+      password: this.config.imgflipPassword,
+      text0: captions[0] ?? '',
+      text1: captions[1] ?? ''
+    });
+
+    captions.slice(2).forEach((caption, index) => {
+      form.append(`text${index + 2}`, caption ?? '');
+    });
+
+    if (font) form.append('font', font);
+    if (maxFontSize) form.append('max_font_size', maxFontSize);
+
+    try {
+      const response = await this.imgflipClient.post<{
+        success: boolean;
+        data?: { url: string; page_url?: string };
+        error_message?: string;
+      }>(
+        '/caption_image',
+        form,
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      );
+
+      if (response.success && response.data?.url) {
+        return { url: response.data.url, pageUrl: response.data.page_url };
+      }
+
+      throw new Error(response.error_message || 'Unknown Imgflip error');
+    } catch (error) {
+      if (this.config.useMockFallback) {
+        return this.getMockCaption(templateId, captions);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -177,12 +234,21 @@ export class MemeService {
   private getRandomMockImage(): Image {
     return mockImages[Math.floor(Math.random() * mockImages.length)];
   }
+
+  private getMockCaption(templateId: string, captions: string[]): { url: string } {
+    const suffix = captions.filter(Boolean).join('-').replace(/\s+/g, '-').toLowerCase() || 'mocked';
+    return {
+      url: `https://imgflip.com/${templateId}/inspire-${suffix}`
+    };
+  }
 }
 
 // Factory function to create MemeService with environment variables
 export function createMemeService(): MemeService {
   return new MemeService({
     imgflipUrl: process.env.IMGFLIP_API_URL || 'https://api.imgflip.com',
+    imgflipUsername: process.env.IMGFLIP_USERNAME,
+    imgflipPassword: process.env.IMGFLIP_PASSWORD,
     unsplashUrl: process.env.UNSPLASH_API_URL || 'https://api.unsplash.com',
     unsplashAccessKey: process.env.UNSPLASH_ACCESS_KEY,
     redditUrl: process.env.REDDIT_API_URL || 'https://www.reddit.com',

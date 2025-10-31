@@ -73,6 +73,7 @@ export interface ModePackRequest {
   submode: string;
   filters: RelevanceFilter;
   genre?: string;
+  wordOptions?: WordGeneratorOptions;
 }
 
 export interface MemeSound {
@@ -87,6 +88,7 @@ export interface NewsPrompt {
   context: string;
   timeframe: RelevanceTimeframe;
   source: string;
+  url?: string;
 }
 
 export interface SampleReference {
@@ -117,6 +119,7 @@ export interface LyricistModePack extends ModePackBase {
   storyArc: EmotionalArc;
   chordMood: string;
   lyricFragments: string[];
+  wordLab: WordIdea[];
 }
 
 export interface ProducerModePack extends ModePackBase {
@@ -129,6 +132,7 @@ export interface ProducerModePack extends ModePackBase {
   fxIdeas: string[];
   instrumentPalette: string[];
   videoSnippet: InspirationClip;
+  referenceInstrumentals: InspirationClip[];
   challenge: string;
 }
 
@@ -145,3 +149,17 @@ export interface EditorModePack extends ModePackBase {
 }
 
 export type ModePack = LyricistModePack | ProducerModePack | EditorModePack;
+
+export interface WordGeneratorOptions {
+  startsWith?: string;
+  rhymeWith?: string;
+  syllables?: number;
+  maxResults?: number;
+  topic?: string;
+}
+
+export interface WordIdea {
+  word: string;
+  score?: number;
+  numSyllables?: number;
+}

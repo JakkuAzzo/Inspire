@@ -13,9 +13,22 @@ import {
   RelevanceTimeframe,
   RelevanceTone,
   SampleReference,
-  NewsPrompt
+  NewsPrompt,
+  WordGeneratorOptions,
+  WordIdea
 } from './types';
 import { createId } from './utils/id';
+import { WordService } from './services/wordService';
+import { AudioService, Sound, Track } from './services/audioService';
+import { TrendService } from './services/trendService';
+import { YouTubeService, InstrumentalVideo } from './services/youtubeService';
+
+export interface ModePackServices {
+  wordService?: WordService;
+  audioService?: AudioService;
+  trendService?: TrendService;
+  youtubeService?: YouTubeService;
+}
 
 const MODE_DEFINITIONS: ModeDefinition[] = [
   {
@@ -307,11 +320,207 @@ function buildTopicChallenge(tone: RelevanceTone, timeframe: RelevanceTimeframe)
   return template.replace('{timeframe}', word);
 }
 
-function buildLyricistPack(request: ModePackRequest, filters: RelevanceFilter): LyricistModePack {
+type WordResolutionResult = { powerWords: string[]; wordLab: WordIdea[] };
+
+function fallbackWordIdeas(genre: string, filters: RelevanceFilter): WordResolutionResult {
+  const fallbackPool = LYRICIST_POWER_WORDS.filter((word) => genre ? word.genres.includes(genre) : true);
+  const shuffled = [...(fallbackPool.length ? fallbackPool : LYRICIST_POWER_WORDS)].sort(() => 0.5 - Math.random());
+  const labEntries = shuffled.slice(0, 8);
+  const powerWords = labEntries.slice(0, 4).map((entry) => entry.value);
+  const wordLab: WordIdea[] = labEntries.map((entry, index) => ({
+    word: entry.value,
+    score: 95 - index * 5,
+    numSyllables: Math.max(1, entry.value.split(/[-\s]/).length)
+  }));
+  return { powerWords, wordLab };
+}
+
+async function resolveWordIdeas(
+  genre: string,
+  filters: RelevanceFilter,
+  request: ModePackRequest,
+  services: ModePackServices
+): Promise<WordResolutionResult> {
+  if (!services.wordService) {
+    return fallbackWordIdeas(genre, filters);
+  }
+
+  const defaults: WordGeneratorOptions = {
+    topic: genre,
+    rhymeWith: request.submode === 'rapper' ? 'flow' : 'soul',
+    maxResults: 18
+  };
+
+  const mergedOptions: WordGeneratorOptions = {
+    ...defaults,
+    ...request.wordOptions
+  };
+
+  try {
+    const results = await services.wordService.searchWords(mergedOptions);
+    if (!results.length) {
+      return fallbackWordIdeas(genre, filters);
+    }
+
+    const ideas: WordIdea[] = results.slice(0, 12).map((entry) => ({
+      word: entry.word,
+      score: entry.score,
+      numSyllables: entry.numSyllables
+    }));
+
+    const topWords = ideas.slice(0, 4).map((idea) => idea.word);
+    const fallbackWords = fallbackWordIdeas(genre, filters);
+
+    return {
+      powerWords: topWords.length >= 4 ? topWords : [...topWords, ...fallbackWords.powerWords].slice(0, 4),
+      wordLab: ideas
+    };
+  } catch (error) {
+    console.warn('[ModePack] Word service failed, using fallback ideas', error);
+    return fallbackWordIdeas(genre, filters);
+  }
+}
+
+async function resolveNewsPrompt(filters: RelevanceFilter, services: ModePackServices): Promise<NewsPrompt> {
+  if (!services.trendService) {
+    return pickNewsPrompt(filters);
+  }
+  try {
+    const query = filters.tone === 'dark' ? 'crisis music culture' : 'music creativity culture';
+    const stories = await services.trendService.searchNews(query, 'popularity', 6);
+    const article = stories.find((story) => story.title);
+    if (!article) return pickNewsPrompt(filters);
+    return {
+      headline: article.title,
+      context: article.description || 'Blend this headline into your next piece.',
+      timeframe: filters.timeframe,
+      source: article.source?.name || 'NewsAPI',
+      url: article.url
+    };
+  } catch (error) {
+    console.warn('[ModePack] News service failed, using fallback headline', error);
+    return pickNewsPrompt(filters);
+  }
+}
+
+function sampleQueryFrom(request: ModePackRequest, filters: RelevanceFilter): string {
+  if (request.submode === 'musician') {
+    return filters.tone === 'deep' ? 'soulful chords loop' : 'melodic loop';
+  }
+  if (request.submode === 'sound-designer') {
+    return 'texture foley fx';
+  }
+  return 'sample pack drums';
+}
+
+function toSampleReferenceFromSound(sound: Sound, filters: RelevanceFilter): SampleReference {
+  return {
+    title: sound.name,
+    source: `Freesound ${sound.id}`,
+    url: sound.previews?.['preview-hq-mp3'] || sound.previews?.['preview-lq-mp3'] || `https://freesound.org/s/${sound.id}/`,
+    tags: sound.tags || [],
+    timeframe: filters.timeframe
+  };
+}
+
+function toSampleReferenceFromTrack(track: Track, filters: RelevanceFilter): SampleReference {
+  return {
+    title: track.name,
+    source: `Jamendo · ${track.artist_name}`,
+    url: track.audio || track.audiodownload || `https://www.jamendo.com/track/${track.id}`,
+    tags: track.tags || [],
+    timeframe: filters.timeframe
+  };
+}
+
+async function resolvePrimarySample(
+  request: ModePackRequest,
+  filters: RelevanceFilter,
+  services: ModePackServices
+): Promise<SampleReference> {
+  if (!services.audioService) {
+    return randomItem(filterByTimeframe(SAMPLE_POOL, filters.timeframe));
+  }
+  try {
+    const query = sampleQueryFrom(request, filters);
+    const sounds = await services.audioService.searchSounds(query, 8);
+    const chosen = sounds.find(Boolean);
+    if (chosen) {
+      return toSampleReferenceFromSound(chosen, filters);
+    }
+  } catch (error) {
+    console.warn('[ModePack] Primary sample lookup failed, using fallback', error);
+  }
+  return randomItem(filterByTimeframe(SAMPLE_POOL, filters.timeframe));
+}
+
+async function resolveSecondarySample(
+  request: ModePackRequest,
+  filters: RelevanceFilter,
+  services: ModePackServices
+): Promise<SampleReference> {
+  if (!services.audioService) {
+    return randomItem(filterByTimeframe(SECONDARY_SAMPLE_POOL, filters.timeframe));
+  }
+  try {
+    const query = request.submode === 'sampler' ? 'obscure vinyl sample' : `${filters.tone} instrumental`;
+    const tracks = await services.audioService.searchTracks(query, 6);
+    const track = tracks.find(Boolean);
+    if (track) {
+      return toSampleReferenceFromTrack(track, filters);
+    }
+  } catch (error) {
+    console.warn('[ModePack] Secondary sample lookup failed, using fallback', error);
+  }
+  return randomItem(filterByTimeframe(SECONDARY_SAMPLE_POOL, filters.timeframe));
+}
+
+function fallbackInstrumentals(filters: RelevanceFilter): InspirationClip[] {
+  return filterByTone(VIDEO_SNIPPETS, filters.tone).slice(0, 3);
+}
+
+function instrumentalToClip(video: InstrumentalVideo, filters: RelevanceFilter): InspirationClip {
+  return {
+    title: video.title,
+    description: video.uploader,
+    url: video.url,
+    timeframe: filters.timeframe,
+    tone: filters.tone
+  };
+}
+
+async function resolveInstrumentals(
+  request: ModePackRequest,
+  filters: RelevanceFilter,
+  services: ModePackServices
+): Promise<InspirationClip[]> {
+  if (!services.youtubeService) {
+    return fallbackInstrumentals(filters);
+  }
+  try {
+    const query = `${request.submode.replace('-', ' ')} instrumental ${filters.tone}`;
+    const instrumentals = await services.youtubeService.searchInstrumentals(query, 4);
+    if (!instrumentals.length) {
+      return fallbackInstrumentals(filters);
+    }
+    return instrumentals.map((video) => instrumentalToClip(video, filters));
+  } catch (error) {
+    console.warn('[ModePack] Instrumental lookup failed, using fallback', error);
+    return fallbackInstrumentals(filters);
+  }
+}
+
+async function buildLyricistPack(
+  request: ModePackRequest,
+  filters: RelevanceFilter,
+  services: ModePackServices
+): Promise<LyricistModePack> {
   const genre = (request.genre || 'r&b').toLowerCase();
   const storyArcStart = randomItem(['anxious', 'charged', 'hushed', 'hopeful']);
   const storyArcMiddle = randomItem(['surging', 'spiraling', 'floating', 'locked-in']);
   const storyArcEnd = randomItem(['victorious', 'resolved', 'haunted', 'weightless']);
+  const { powerWords, wordLab } = await resolveWordIdeas(genre, filters, request, services);
+  const newsPrompt = await resolveNewsPrompt(filters, services);
 
   const pack: LyricistModePack = {
     id: createId('lyricist'),
@@ -323,15 +532,16 @@ function buildLyricistPack(request: ModePackRequest, filters: RelevanceFilter): 
     summary: 'Curated power words, flows, chords, and a live headline to riff on.',
     filters,
     genre,
-    powerWords: pickPowerWords(genre, filters),
+    powerWords,
     rhymeFamilies: RHYME_FAMILIES[request.submode] || RHYME_FAMILIES.rapper,
     flowPrompts: FLOW_PROMPTS[filters.semantic],
     memeSound: pickMemeSound(filters),
     topicChallenge: buildTopicChallenge(filters.tone, filters.timeframe),
-    newsPrompt: pickNewsPrompt(filters),
+    newsPrompt,
     storyArc: { start: storyArcStart, middle: storyArcMiddle, end: storyArcEnd },
     chordMood: randomItem(CHORD_MOODS[request.submode] || CHORD_MOODS.singer),
-    lyricFragments: LYRIC_FRAGMENTS[request.submode] || LYRIC_FRAGMENTS.singer
+    lyricFragments: LYRIC_FRAGMENTS[request.submode] || LYRIC_FRAGMENTS.singer,
+    wordLab
   };
 
   return pack;
@@ -342,14 +552,19 @@ function randomBpm(range: [number, number]): number {
   return Math.round(Math.random() * (max - min) + min);
 }
 
-function buildProducerPack(request: ModePackRequest, filters: RelevanceFilter): ProducerModePack {
+async function buildProducerPack(
+  request: ModePackRequest,
+  filters: RelevanceFilter,
+  services: ModePackServices
+): Promise<ProducerModePack> {
   const range = BPM_RANGES[request.submode] || [80, 130];
   const bpm = randomBpm(range);
-  const sample = randomItem(filterByTimeframe(SAMPLE_POOL, filters.timeframe));
-  const secondary = randomItem(filterByTimeframe(SECONDARY_SAMPLE_POOL, filters.timeframe));
+  const sample = await resolvePrimarySample(request, filters, services);
+  const secondary = await resolveSecondarySample(request, filters, services);
   const fxIdeas = PRODUCER_FX_IDEAS[filters.tone];
   const constraints = PRODUCER_CONSTRAINTS[request.submode] || PRODUCER_CONSTRAINTS.musician;
   const video = randomItem(filterByTone(VIDEO_SNIPPETS, filters.tone));
+  const referenceInstrumentals = await resolveInstrumentals(request, filters, services);
 
   return {
     id: createId('producer'),
@@ -368,11 +583,16 @@ function buildProducerPack(request: ModePackRequest, filters: RelevanceFilter): 
     fxIdeas,
     instrumentPalette: ['Analog synth pad', 'Granular vox chop', 'Live percussion loop'],
     videoSnippet: video,
+    referenceInstrumentals,
     challenge: filters.semantic === 'wild' ? 'Create tension by muting the drums for eight bars.' : 'Cook a drop that surprises the crowd by bar four.'
   };
 }
 
-function buildEditorPack(request: ModePackRequest, filters: RelevanceFilter): EditorModePack {
+async function buildEditorPack(
+  request: ModePackRequest,
+  filters: RelevanceFilter,
+  _services: ModePackServices
+): Promise<EditorModePack> {
   const clips = [...filterByTimeframe(EDITOR_CLIPS, filters.timeframe)].sort(() => 0.5 - Math.random()).slice(0, 3);
   const audioPrompts = filterByTone(EDITOR_AUDIO_PROMPTS, filters.tone);
   const constraints = VISUAL_CONSTRAINTS[request.submode] || VISUAL_CONSTRAINTS['video-editor'];
@@ -411,16 +631,20 @@ function validateFilters(filters?: Partial<RelevanceFilter>): RelevanceFilter {
   };
 }
 
-export function generateModePack(mode: CreativeMode, request: ModePackRequest): ModePack {
+export async function generateModePack(
+  mode: CreativeMode,
+  request: ModePackRequest,
+  services: ModePackServices = {}
+): Promise<ModePack> {
   const filters = validateFilters(request.filters);
 
   switch (mode) {
     case 'lyricist':
-      return buildLyricistPack(request, filters);
+      return await buildLyricistPack(request, filters, services);
     case 'producer':
-      return buildProducerPack(request, filters);
+      return await buildProducerPack(request, filters, services);
     case 'editor':
-      return buildEditorPack(request, filters);
+      return await buildEditorPack(request, filters, services);
     default:
       throw new Error(`Unsupported mode: ${mode}`);
   }
