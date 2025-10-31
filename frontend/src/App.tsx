@@ -99,6 +99,7 @@ const SHARE_PARAM = 'pack';
 const STATS_KEY_PREFIX = 'inspire:creatorStats:';
 const ONBOARDING_KEY = 'inspire:onboardingComplete';
 const THEME_KEY = 'inspire:theme';
+const CONTROLS_COLLAPSED_KEY = 'inspire:workspaceControlsCollapsed';
 
 type LoadingState = null | 'generate' | 'load' | 'remix';
 
@@ -384,7 +385,10 @@ function App() {
 	});
 	const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
 	const [showAccountModal, setShowAccountModal] = useState(false);
-	const [controlsCollapsed, setControlsCollapsed] = useState(false);
+	const [controlsCollapsed, setControlsCollapsed] = useState<boolean>(() => {
+		if (typeof window === 'undefined') return false;
+		return window.localStorage.getItem(CONTROLS_COLLAPSED_KEY) === 'true';
+	});
 
 
 	const heroPrompt = PROMPT_ROTATIONS[promptIndex];
@@ -423,7 +427,13 @@ function App() {
 	}, []);
 
 	const toggleWorkspaceControls = useCallback(() => {
-		setControlsCollapsed((prev) => !prev);
+		setControlsCollapsed((prev) => {
+			const next = !prev;
+			if (typeof window !== 'undefined') {
+				window.localStorage.setItem(CONTROLS_COLLAPSED_KEY, next ? 'true' : 'false');
+			}
+			return next;
+		});
 	}, []);
 
 	const setPack = useCallback(
@@ -506,7 +516,6 @@ function App() {
 			setStatus(null);
 			setFilters(DEFAULT_FILTERS);
 			setExpandedCard(null);
-			setControlsCollapsed(false);
 			if (nextMode !== 'lyricist') {
 				setGenre('r&b');
 			}
@@ -530,7 +539,6 @@ function App() {
 		setExpandedCard(null);
 		setShowSettingsOverlay(false);
 		setShowAccountModal(false);
-		setControlsCollapsed(false);
 	}, []);
 
 	const handleGeneratePack = useCallback(async () => {
