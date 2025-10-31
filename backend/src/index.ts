@@ -30,6 +30,7 @@ import {
   listMockSamples,
   listMockWords
 } from './modePackGenerator';
+import { createAllServices } from './services';
 import fs from 'fs';
 import path from 'path';
 import { createId } from './utils/id';
@@ -45,6 +46,7 @@ app.use(express.json());
 const packs = new Map<string, FuelPack | ModePack>();
 const assets = new Map<string, any>();
 const magicTokens = new Map<string, { email: string; expiresAt: number }>();
+const services = createAllServices();
 
 const modeDefinitions: ModeDefinition[] = listModeDefinitions();
 const modeIds = new Set(modeDefinitions.map((definition) => definition.id));
@@ -317,7 +319,7 @@ devRouter.get('/api/modes', (_req: Request, res: Response) => {
   res.json({ modes: modeDefinitions });
 });
 
-devRouter.post('/api/modes/:mode/fuel-pack', (req: Request, res: Response) => {
+devRouter.post('/api/modes/:mode/fuel-pack', async (req: Request, res: Response) => {
   const mode = req.params.mode as CreativeMode;
   if (!modeIds.has(mode)) {
     return res.status(400).json({ error: 'Unsupported mode' });
@@ -335,7 +337,7 @@ devRouter.post('/api/modes/:mode/fuel-pack', (req: Request, res: Response) => {
   }
 
   try {
-    const pack = generateModePack(mode, body);
+    const pack = await generateModePack(mode, body, services);
     packs.set(pack.id, pack);
     res.status(201).json({ pack });
   } catch (error) {

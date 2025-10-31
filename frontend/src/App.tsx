@@ -100,7 +100,7 @@ const STATS_KEY_PREFIX = 'inspire:creatorStats:';
 const ONBOARDING_KEY = 'inspire:onboardingComplete';
 const THEME_KEY = 'inspire:theme';
 
-type LoadingState = null | 'generate' | 'save' | 'load' | 'remix';
+type LoadingState = null | 'generate' | 'load' | 'remix';
 
 interface CreatorStats {
 	totalGenerated: number;
@@ -372,8 +372,6 @@ function App() {
 	const [userId, setUserId] = useState<string>(initialUserId);
 	const [creatorStats, setCreatorStats] = useState<CreatorStats>(() => loadCreatorStats(initialUserId));
 	const [lookupId, setLookupId] = useState('');
-	const [savedShelf, setSavedShelf] = useState<InspireAnyPack[]>([]);
-	const [shelfLoading, setShelfLoading] = useState(false);
 	const [packAnimationKey, setPackAnimationKey] = useState(0);
 	const [expandedCard, setExpandedCard] = useState<string | null>(null);
 	const [theme, setTheme] = useState<string>(() => {
@@ -386,8 +384,8 @@ function App() {
 	});
 	const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
 	const [showAccountModal, setShowAccountModal] = useState(false);
+	const [controlsCollapsed, setControlsCollapsed] = useState(false);
 
-	const packsCache = useMemo(() => new Map<string, InspireAnyPack>(), []);
 
 	const heroPrompt = PROMPT_ROTATIONS[promptIndex];
 	const activeModeDefinition = mode ? modeDefinitions.find((entry) => entry.id === mode) ?? null : null;
@@ -424,49 +422,18 @@ function App() {
 		target.classList.remove('hovering');
 	}, []);
 
-	const orderSavedShelf = useCallback((ids: string[], packs: InspireAnyPack[]) => {
-		if (!ids.length) return packs;
-		const rank = new Map(ids.map((id, index) => [id, index]));
-		return [...packs].sort((a, b) => {
-			const aId = getPackId(a);
-			const bId = getPackId(b);
-			const aRank = rank.get(aId) ?? Number.MAX_SAFE_INTEGER;
-			const bRank = rank.get(bId) ?? Number.MAX_SAFE_INTEGER;
-			return aRank - bRank;
-		});
+	const toggleWorkspaceControls = useCallback(() => {
+		setControlsCollapsed((prev) => !prev);
 	}, []);
-
-	const fetchSavedShelf = useCallback(
-		async (currentUser: string) => {
-			if (!currentUser) return;
-			setShelfLoading(true);
-			try {
-				const res = await fetch(`/dev/api/packs/saved?userId=${encodeURIComponent(currentUser)}`);
-				if (!res.ok) throw new Error('Unable to load saved packs');
-				const data = await res.json();
-				const ids: string[] = Array.isArray(data.saved) ? data.saved : [];
-				const packs: InspireAnyPack[] = Array.isArray(data.packs) ? data.packs : [];
-				setSavedShelf(orderSavedShelf(ids, packs));
-			} catch (err) {
-				console.error(err);
-				setError(err instanceof Error ? err.message : 'Something went wrong loading your shelf');
-			} finally {
-				setShelfLoading(false);
-			}
-		},
-		[orderSavedShelf]
-	);
 
 	const setPack = useCallback(
 		(pack: InspireAnyPack, message?: string) => {
-			const id = getPackId(pack);
-			packsCache.set(id, pack);
 			setFuelPack(pack);
 			setPackAnimationKey(Date.now());
 			setExpandedCard(null);
 			if (message) setStatus(message);
 		},
-		[packsCache]
+		[setFuelPack, setPackAnimationKey, setExpandedCard, setStatus]
 	);
 
 	const requestModePack = useCallback(
@@ -539,6 +506,7 @@ function App() {
 			setStatus(null);
 			setFilters(DEFAULT_FILTERS);
 			setExpandedCard(null);
+			setControlsCollapsed(false);
 			if (nextMode !== 'lyricist') {
 				setGenre('r&b');
 			}
@@ -562,6 +530,7 @@ function App() {
 		setExpandedCard(null);
 		setShowSettingsOverlay(false);
 		setShowAccountModal(false);
+		setControlsCollapsed(false);
 	}, []);
 
 	const handleGeneratePack = useCallback(async () => {
@@ -630,30 +599,6 @@ function App() {
 		}
 	}, [lookupId, setPack]);
 
-	const handleSavePack = useCallback(async () => {
-		if (!fuelPack) return;
-		const packId = getPackId(fuelPack);
-		setLoading('save');
-		setError(null);
-		try {
-			const res = await fetch(`/dev/api/packs/${encodeURIComponent(packId)}/save`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ userId })
-			});
-			if (!res.ok) throw new Error('Could not save pack');
-			const data = await res.json();
-			const snapshot: InspireAnyPack = data.snapshot ?? fuelPack;
-			setSavedShelf((prev) => [snapshot, ...prev.filter((pack) => getPackId(pack) !== packId)]);
-			setStatus('Saved to your shelf!');
-		} catch (err) {
-			console.error(err);
-			setError(err instanceof Error ? err.message : 'Saving failed');
-		} finally {
-			setLoading(null);
-		}
-	}, [fuelPack, userId]);
-
 	const handleSharePack = useCallback(
 		async (pack: InspireAnyPack | null) => {
 			if (!pack) return;
@@ -674,22 +619,6 @@ function App() {
 		},
 		[userId]
 	);
-
-	const handleSelectSavedPack = useCallback(
-		(pack: InspireAnyPack) => {
-			setPack(pack, 'Loaded from your shelf');
-			if (isModePack(pack)) {
-				setMode(pack.mode);
-				setSubmode(pack.submode);
-				if (isLyricistPack(pack)) setGenre(pack.genre);
-			}
-		},
-		[setPack]
-	);
-
-	const handleRefreshShelf = useCallback(() => {
-		void fetchSavedShelf(userId);
-	}, [fetchSavedShelf, userId]);
 
 	const handleUserIdChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
 		setUserId(event.target.value.slice(0, 32));
@@ -1006,10 +935,6 @@ function App() {
 	}, []);
 
 	useEffect(() => {
-		void fetchSavedShelf(userId);
-	}, [userId, fetchSavedShelf]);
-
-	useEffect(() => {
 		if (typeof window === 'undefined') return;
 		const params = new URLSearchParams(window.location.search);
 		const encodedPack = params.get(SHARE_PARAM);
@@ -1030,6 +955,8 @@ function App() {
 
 	const formattedHandle = userId ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign in';
 	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}`;
+	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
+	const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
 	const heroMetaContent = (
 		<>
 			<div className="theme-switcher">
@@ -1132,7 +1059,6 @@ function App() {
 			{(loading || status || error) && (
 				<div className="feedback-area" aria-live="polite">
 					{loading === 'generate' && <div className="feedback loading">Assembling your spark…</div>}
-					{loading === 'save' && <div className="feedback loading">Saving to your shelf…</div>}
 					{loading === 'load' && <div className="feedback loading">Pulling from the archive…</div>}
 					{loading === 'remix' && <div className="feedback loading">Remixing your pack…</div>}
 					{status && <div className="feedback success">{status}</div>}
@@ -1177,7 +1103,7 @@ function App() {
 			)}
 
 			{mode && submode && (
-				<main className="mode-workspace">
+				<main className={workspaceClassName}>
 					<div className="workspace-head">
 						<button className="back-button" type="button" onClick={handleBackToModes}>← Studios</button>
 						<div>
@@ -1194,47 +1120,55 @@ function App() {
 							<button className="btn tertiary" type="button" onClick={() => handleSharePack(fuelPack)} disabled={!fuelPack}>
 								Share
 							</button>
-							<button className="btn ghost" type="button" onClick={handleSavePack} disabled={!fuelPack || loading === 'save'}>
-								{loading === 'save' ? 'Saving…' : 'Save'}
+							<button
+								className="btn ghost workspace-controls-toggle"
+								type="button"
+								onClick={toggleWorkspaceControls}
+								aria-expanded={!controlsCollapsed}
+								aria-controls="workspaceControls"
+							>
+								{controlsToggleLabel}
 							</button>
 						</div>
 					</div>
 
-					<div className="workspace-controls">
-						<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
-							<RelevanceSlider value={filters} onChange={setFilters} />
-						</CollapsibleSection>
+					{!controlsCollapsed && (
+						<div className="workspace-controls" id="workspaceControls">
+							<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
+								<RelevanceSlider value={filters} onChange={setFilters} />
+							</CollapsibleSection>
 
-						{mode === 'lyricist' && (
-							<CollapsibleSection title="Genre Priority" icon="🎶" description="Tune the dataset toward a sonic lane." defaultOpen>
-								<div className="option-group">
-									{LYRICIST_GENRES.map((option) => (
-										<button
-											key={option.value}
-											type="button"
-											className={option.value === genre ? 'chip active' : 'chip'}
-											onClick={() => setGenre(option.value)}
-										>
-											{option.label}
-										</button>
-									))}
+							{mode === 'lyricist' && (
+								<CollapsibleSection title="Genre Priority" icon="🎶" description="Tune the dataset toward a sonic lane." defaultOpen>
+									<div className="option-group">
+										{LYRICIST_GENRES.map((option) => (
+											<button
+												key={option.value}
+												type="button"
+												className={option.value === genre ? 'chip active' : 'chip'}
+												onClick={() => setGenre(option.value)}
+											>
+												{option.label}
+											</button>
+										))}
+									</div>
+								</CollapsibleSection>
+							)}
+
+							<CollapsibleSection title="Archive" icon="🗄️" description="Load any pack by id." defaultOpen={false}>
+								<div className="lookup-inline">
+									<input
+										placeholder="Enter pack id to load"
+										value={lookupId}
+										onChange={(event) => setLookupId(event.target.value)}
+									/>
+									<button className="btn tertiary" type="button" onClick={handleLoadById} disabled={!lookupId.trim() || loading === 'load'}>
+										{loading === 'load' ? 'Loading…' : 'Load by ID'}
+									</button>
 								</div>
 							</CollapsibleSection>
-						)}
-
-						<CollapsibleSection title="Archive" icon="🗄️" description="Load any pack by id." defaultOpen={false}>
-							<div className="lookup-inline">
-								<input
-									placeholder="Enter pack id to load"
-									value={lookupId}
-									onChange={(event) => setLookupId(event.target.value)}
-								/>
-								<button className="btn tertiary" type="button" onClick={handleLoadById} disabled={!lookupId.trim() || loading === 'load'}>
-									{loading === 'load' ? 'Loading…' : 'Load by ID'}
-								</button>
-							</div>
-						</CollapsibleSection>
-					</div>
+						</div>
+					)}
 
 					<div className="workspace-main">
 						<section key={packAnimationKey} className="pack-stage glass">
@@ -1314,27 +1248,6 @@ function App() {
 						)}
 						</section>
 
-						<aside className="saved-shelf glass">
-							<div className="shelf-head">
-								<h3>Saved shelf</h3>
-								<button type="button" className="btn tertiary" onClick={handleRefreshShelf} disabled={shelfLoading}>
-									{shelfLoading ? 'Refreshing…' : 'Refresh'}
-								</button>
-							</div>
-							{savedShelf.length === 0 && !shelfLoading && <p className="empty">No saved packs yet.</p>}
-							<div className="shelf-grid">
-								{savedShelf.map((pack) => {
-									const id = getPackId(pack);
-									return (
-										<button key={id} type="button" className="shelf-card" onClick={() => handleSelectSavedPack(pack)}>
-											<strong>{isModePack(pack) ? `${(pack as ModePack).title}` : 'Legacy pack'}</strong>
-											<span>{isModePack(pack) ? (pack as ModePack).summary : 'Tap to load this legacy pack.'}</span>
-											<small>{isModePack(pack) ? (pack as ModePack).mode : 'classic'}</small>
-										</button>
-									);
-								})}
-							</div>
-						</aside>
 					</div>
 				</main>
 			)}

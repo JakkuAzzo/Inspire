@@ -12,6 +12,7 @@ import { MoodService, createMoodService } from './moodService';
 import { AudioService, createAudioService } from './audioService';
 import { TrendService, createTrendService } from './trendService';
 import { RandomService, createRandomService } from './randomService';
+import { YouTubeService, createYouTubeService } from './youtubeService';
 
 export { WordService, createWordService } from './wordService';
 export type { Word, WordDefinition } from './wordService';
@@ -31,6 +32,9 @@ export type { NewsArticle, TrendingTopic, RedditTopic, HistoricalEvent } from '.
 export { RandomService, createRandomService } from './randomService';
 export type { Activity, CreativePrompt } from './randomService';
 
+export { YouTubeService, createYouTubeService } from './youtubeService';
+export type { InstrumentalVideo } from './youtubeService';
+
 export { ApiClient } from './apiClient';
 
 /**
@@ -43,6 +47,7 @@ export function createAllServices() {
     moodService: createMoodService(),
     audioService: createAudioService(),
     trendService: createTrendService(),
-    randomService: createRandomService()
+    randomService: createRandomService(),
+    youtubeService: createYouTubeService()
   };
 }

@@ -1,406 +1,165 @@
 # Inspire
 
-Inspire is an experimental creativity app that fuels musicians with curated randomness — memes, words, sounds, and moods — to spark new ideas.
+![Inspire homescreen](./Current-Homescreen.png)
+![Inspire workspace](./Current-Workspace.png)
 
-## Overview
+## What Is Inspire?
 
-Inspire generates randomized, curated "Fuel Packs" of words, memes, emotional arcs, sounds, and other media to spark inspiration for rappers, singers, and producers. Every fuel pack is dynamically assembled from multiple creative sources to keep your ideas fresh and current.
+Inspire is a full-stack TypeScript studio that blends live cultural signals with curated randomness to help musicians and creators break creative blocks. Every "fuel pack" assembles words, samples, visuals, and challenges from real-time APIs so you can start writing, producing, or editing without staring at a blank page.
 
-## Features
+## Who It's For
 
-- 🎤 **Word & Phrase Generation** - Random words, rhymes, and topic-based vocabulary for lyrics
-- 🖼️ **Meme & Image Inspiration** - Trending memes and creative imagery for visual concepts
-- 😊 **Emotion & Mood Data** - Emotional arcs and sentiment analysis for storytelling
-- 🎵 **Audio Samples & Loops** - Searchable sound effects and royalty-free music previews
-- 📰 **Topic & Trend Data** - Current events and trending discussions for relevant content
-- 🎲 **Randomization Utilities** - Creative prompts and wildcard ideas for experimentation
+- Vocalists who need story sparks, rhyme families, and melodic prompts.
+- Producers hunting for royalty-friendly samples, FX ideas, and sonic constraints.
+- Editors crafting clips, memes, or reels and looking for mood boards and pacing cues.
+- Creative facilitators running writing rooms, workshops, or classroom sessions.
 
-## External Data Sources
+## How Inspire Works
 
-Inspire integrates with multiple free and freemium APIs to bring creative fuel packs to life. Each service wrapper includes automatic fallback to mock data when API keys are unavailable or rate limits are reached.
+1. Pick a creative mode (Lyricist, Producer, or Editor) and adjust the relevance blend for tone, recency, and experimentation.
+2. The backend fans out to live services like Datamuse, Freesound, Jamendo, Piped (YouTube proxy), Unsplash, Imgflip, and NewsAPI to collect the freshest material.
+3. Inspire builds a fuel pack with power words, meme-ready visuals, news hooks, sample choices, FX prompts, emotional arcs, and timeline beats so you can ship ideas fast.
 
-### Word & Phrase Generation
+## Feature Highlights
 
-**Datamuse API** - Find words that rhyme, have similar meanings, or relate to specific topics
-- **Purpose**: Powers the word suggestion engine for lyric writing
-- **Features**: Rhyme finding, semantic similarity, topic-based word discovery
-- **Usage in Inspire**: Generates vocabulary suggestions, finds rhymes for freestyling
-- **API Key**: Not required
-- **Rate Limit**: 100,000 requests/day
+- Live news hooks with contextual writing prompts pulled from NewsAPI searches every generation.
+- Producer packs combine Freesound samples, Jamendo tracks, and Creative Commons instrumentals from Piped search results.
+- Meme tools surface trending templates via Imgflip and let you caption them on demand for shareable drafts.
+- Word explorer exposes Datamuse filters for rhymes, syllable counts, and starting letters directly in the interface.
+- Theme-aware UI with collapsible workbench controls so you can focus on the content that matters.
 
-**Random Word API** - Generate random words for creative prompts
-- **Purpose**: Provides unexpected word combinations to spark ideas
-- **Features**: Single or bulk random word generation
-- **Usage in Inspire**: Creates writing prompts and challenges
-- **API Key**: Not required
-- **Rate Limit**: No strict limits
+## Live Data Sources
 
-**Free Dictionary API** - Word definitions and usage examples
-- **Purpose**: Helps artists understand and use words effectively
-- **Features**: Definitions, phonetics, example sentences
-- **Usage in Inspire**: Provides context for suggested words
-- **API Key**: Not required
-- **Rate Limit**: No strict limits
+| Capability | Provider(s) | Env variables |
+| --- | --- | --- |
+| Power words, rhymes, syllable filters | Datamuse | none |
+| Random vocabulary | Random Word API | none |
+| Definitions | Free Dictionary API | none |
+| Meme templates and captions | Imgflip | `IMGFLIP_USERNAME`, `IMGFLIP_PASSWORD` |
+| Inspirational photography | Unsplash | `UNSPLASH_ACCESS_KEY` |
+| Trending memes & reddit topics | Reddit JSON | none |
+| Audio samples & sound design | Freesound | `FREESOUND_API_KEY` |
+| Royalty-free reference tracks | Jamendo | `JAMENDO_CLIENT_ID` |
+| Creative Commons instrumentals | Piped (YouTube proxy) | none |
+| News headlines & context | NewsAPI | `NEWS_API_KEY` |
 
-### Meme & Image Inspiration
+## Project Tour
 
-**Imgflip API** - Popular meme templates
-- **Purpose**: Provides visual inspiration and cultural references
-- **Features**: 100+ trending meme templates
-- **Usage in Inspire**: Adds humor and relatability to creative prompts
-- **API Key**: Not required for read operations
-- **Rate Limit**: No strict limits
-
-**Unsplash API** - High-quality creative photography
-- **Purpose**: Delivers aesthetic inspiration and mood setting
-- **Features**: Random photos, keyword search, curated collections
-- **Usage in Inspire**: Creates visual themes for tracks and albums
-- **API Key**: Required (free tier available)
-- **Rate Limit**: 50 requests/hour
-
-**Reddit API** - Trending memes and community content
-- **Purpose**: Taps into real-time internet culture
-- **Features**: Access to r/memes, r/GetMotivated, and other subreddits
-- **Usage in Inspire**: Provides current trends and community-driven inspiration
-- **API Key**: Not required for JSON endpoints
-- **Rate Limit**: ~60 requests/minute
-
-### Emotion & Mood Data
-
-**Hugging Face Inference API** - AI-powered emotion and sentiment analysis
-- **Purpose**: Analyzes text for emotional content and tone
-- **Features**: Emotion detection, sentiment classification
-- **Usage in Inspire**: Helps artists craft emotional arcs and understand lyrical tone
-- **API Key**: Required (free tier available)
-- **Rate Limit**: Rate limited based on usage
-
-**Custom Mood Dataset** - Curated mood categories and tags
-- **Purpose**: Provides music-specific emotional categorization
-- **Features**: 10+ mood categories with intensity levels, emotional arcs
-- **Usage in Inspire**: Generates mood-based creative direction
-- **API Key**: Not required (local data)
-- **Rate Limit**: None
-
-### Audio Samples & Loops
-
-**Freesound API** - Community-sourced sound effects and samples
-- **Purpose**: Discovers audio elements for production
-- **Features**: Search by tags/BPM, preview URLs, metadata
-- **Usage in Inspire**: Helps producers find specific sounds and textures
-- **API Key**: Required (free registration)
-- **Rate Limit**: 60 requests/minute
-
-**Jamendo API** - Royalty-free music tracks
-- **Purpose**: Provides reference tracks and inspiration
-- **Features**: Search by genre/mood, preview streams, BPM info
-- **Usage in Inspire**: Offers musical examples and style references
-- **API Key**: Client ID required (free)
-- **Rate Limit**: Varies by endpoint
-
-### Topic & Trend Data
-
-**NewsAPI** - Current news headlines and topics
-- **Purpose**: Connects music to current events and cultural moments
-- **Features**: Top headlines, keyword search, category filtering
-- **Usage in Inspire**: Generates topical content ideas for lyrics
-- **API Key**: Required (free tier: 100 req/day)
-- **Rate Limit**: 100 requests/day (free tier)
-
-**Reddit API** - Trending discussions and topics
-- **Purpose**: Captures real-time conversation and interests
-- **Features**: Hot topics from r/all, music subreddits, discussion trends
-- **Usage in Inspire**: Identifies what people are talking about now
-- **API Key**: Not required for basic access
-- **Rate Limit**: ~60 requests/minute
-
-### Randomization Utilities
-
-**BoredAPI** - Random activity suggestions
-- **Purpose**: Generates creative challenges and activities
-- **Features**: Random activities by type, accessibility levels
-- **Usage in Inspire**: Creates "wildcard" creative exercises
-- **API Key**: Not required
-- **Rate Limit**: No strict limits
-
-**Random Data API** - Random personas and creative data
-- **Purpose**: Provides character inspiration and random elements
-- **Features**: Random user data, creative combinations
-- **Usage in Inspire**: Generates perspective shifts and character ideas
-- **API Key**: Not required
-- **Rate Limit**: No strict limits
+```
+Inspire/
+├── backend/
+│   ├── src/
+│   │   ├── index.ts               # Express server & API routes
+│   │   ├── modePackGenerator.ts   # Mode-specific pack assembly (async)
+│   │   ├── services/
+│   │   │   ├── audioService.ts    # Freesound & Jamendo
+│   │   │   ├── memeService.ts     # Imgflip, Unsplash, Reddit
+│   │   │   ├── trendService.ts    # NewsAPI & Reddit trends
+│   │   │   ├── wordService.ts     # Datamuse & word utilities
+│   │   │   ├── youtubeService.ts  # Piped instrumentals
+│   │   │   └── apiClient.ts       # Shared axios wrapper
+│   │   └── utils/                 # Helpers (ID generation, etc.)
+│   ├── package.json
+│   └── tsconfig.json
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx                # Primary UI & orchestration
+│   │   ├── components/            # Sliders, collapsible sections, etc.
+│   │   └── assets/                # Logos and theme art
+│   ├── vite.config.ts             # Dev proxy for /dev and API routes
+│   └── package.json
+├── docs/                          # Product specs and research notes
+└── run_dev.sh                     # Dual-serve script for local dev
+```
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ and npm
-- Optional: API keys for enhanced features (see `.env.example`)
+- Node.js 20+
+- npm 10+
+- API keys for Unsplash, Freesound, Jamendo, NewsAPI, and Imgflip (username + password) to unlock live data.
 
-### Installation
+### Configure Environment Variables
+
+`backend/.env.example` documents every supported key. Create your local file and populate the secrets before starting the servers.
 
 ```bash
 cd backend
-npm install
-```
-
-### Configuration
-
-1. Copy the environment template:
-```bash
 cp .env.example .env
+# Then edit .env and provide the values listed below
 ```
 
-2. Add your API keys to `.env` (optional - the app works with mock data):
+Required keys for live mode:
+
 ```env
-# Required for full functionality
-UNSPLASH_ACCESS_KEY=your_key_here
-HUGGINGFACE_API_KEY=your_key_here
-FREESOUND_API_KEY=your_key_here
-JAMENDO_CLIENT_ID=your_client_id_here
-NEWS_API_KEY=your_key_here
-
-# Optional: Enable mock fallback
-USE_MOCK_FALLBACK=true
+FREESOUND_API_KEY=your_freesound_key
+JAMENDO_CLIENT_ID=your_jamendo_client_id
+UNSPLASH_ACCESS_KEY=your_unsplash_access_key
+NEWS_API_KEY=your_news_api_key
+IMGFLIP_USERNAME=your_imgflip_username
+IMGFLIP_PASSWORD=your_imgflip_password
+USE_MOCK_FALLBACK=false
 ```
 
-### Usage
+Optional keys:
 
-```typescript
-import { createAllServices } from './services';
-
-// Initialize all services
-const services = createAllServices();
-
-// Get random words for lyrics
-const words = await services.wordService.getRandomWords(5);
-
-// Find rhymes
-const rhymes = await services.wordService.getRhymes('flow');
-
-// Get memes for inspiration
-const memes = await services.memeService.getMemes();
-
-// Get random moods
-const moods = await services.moodService.getRandomMoods(3);
-
-// Search for audio samples
-const sounds = await services.audioService.searchSounds('drum', 10);
-
-// Get trending topics
-const trends = await services.trendService.getMusicTrends(5);
-
-// Get creative prompts
-const prompts = await services.randomService.getCreativePrompts(3);
+```env
+HUGGINGFACE_API_KEY=...
+RANDOM_WORD_API_URL=...
+PIPED_API_URL=https://piped.video/api/v1
 ```
 
-## API Documentation
+### Install Dependencies
 
-For detailed API research, rate limits, and endpoint documentation, see [docs/API_RESEARCH.md](docs/API_RESEARCH.md).
-
-## Architecture
-
-```
-backend/
-├── src/
-│   ├── services/           # API service wrappers
-│   │   ├── wordService.ts      # Word & phrase generation
-│   │   ├── memeService.ts      # Meme & image inspiration
-│   │   ├── moodService.ts      # Emotion & mood data
-│   │   ├── audioService.ts     # Audio samples & loops
-│   │   ├── trendService.ts     # Topic & trend data
-│   │   ├── randomService.ts    # Randomization utilities
-│   │   ├── apiClient.ts        # Base API client
-│   │   └── index.ts            # Service exports
-│   └── mocks/              # Fallback mock data
-│       ├── wordMocks.ts
-│       ├── memeMocks.ts
-│       ├── moodMocks.ts
-│       ├── audioMocks.ts
-│       ├── trendMocks.ts
-│       └── randomMocks.ts
-├── package.json
-├── tsconfig.json
-└── .env.example
+```bash
+# From the repository root
+npm install
+(cd backend && npm install)
+(cd frontend && npm install)
 ```
 
-## Features & Benefits
+### Run The Stack Locally
 
-### Automatic Fallback
-Every service automatically falls back to curated mock data when:
-- API keys are not configured
-- Rate limits are exceeded
-- External services are unavailable
-- Network errors occur
+Use the bundled helper script to launch both servers with one command.
 
-### Type Safety
-Full TypeScript support with detailed interfaces for all data types.
+```bash
+./run_dev.sh
+```
 
-### Error Handling
-Graceful error handling with detailed logging for debugging.
+- Backend runs on `http://localhost:3001`
+- Frontend runs on `http://localhost:8080`
+- Vite proxies `/dev/api/*` requests to the backend so the UI always hits the real services.
 
-### Extensible Design
-Easy to add new APIs or modify existing integrations.
+Stop the servers with `Ctrl+C`. Nodemon hot-reloads backend changes and Vite hot-updates the React app.
+
+### Useful npm Scripts
+
+```bash
+npm run lint            # Run backend lint rules
+npm test                # Run backend Jest suite
+npm run build           # Build both backend (tsc) and frontend (vite)
+```
+
+## Product Walkthrough
+
+1. Land on the studio picker and choose Lyricist, Producer, or Editor.
+2. Tune the Relevance Blend controls for timeframe, tone, and experimentation.
+3. Generate a pack to receive:
+   - Lyricist: power words, rhyme clusters, lyric fragments, meme sounds, live headlines, and story arcs.
+   - Producer: BPM/key suggestions, Freesound sample pairings, FX constraints, instrument palettes, and Creative Commons instrumentals.
+   - Editor: moodboard clips, audio cues, pacing beats, visual constraints, and share-ready title prompts.
+4. Remix packs to merge favorite elements across runs or share them with collaborators using encoded URLs.
 
 ## Contributing
 
-To add a new API integration:
+Issues and pull requests are welcome. If you are adding a new integration:
 
-1. Create mock data in `src/mocks/`
-2. Create a service wrapper in `src/services/`
-3. Implement the service with fallback logic
-4. Export from `src/services/index.ts`
-5. Add API key template to `.env.example`
-6. Document the API in `docs/API_RESEARCH.md`
+1. Provide mock data in `backend/src/mocks/` for offline development.
+2. Add a service wrapper under `backend/src/services/` with graceful fallbacks.
+3. Extend `createAllServices()` so the integration is globally available.
+4. Update docs and the README to reflect new capabilities.
 
 ## License
 
 MIT
-Inspire is a full-stack TypeScript creativity app that fuels musicians with curated randomness — words, memes, emotional arcs, and sample challenges — to spark new ideas.
-
-## 🎯 Features
-
-- **Power Words**: Random word combinations to inspire lyrics and themes
-- **Meme Energy**: Cultural references and meme concepts for creative direction
-- **Emotional Arc**: Three-stage emotional journey for storytelling
-- **Sample Challenge**: Specific creative constraints and challenges with different types:
-  - Time Constraints
-  - Style Fusion
-  - Sample Flips
-  - Vocal Challenges
-  - Limited Tools
-
-## 🛠️ Tech Stack
-
-### Backend
-- **TypeScript** - Type-safe backend development
-- **Node.js** - JavaScript runtime
-- **Express** - Web application framework
-- **CORS** - Cross-origin resource sharing
-
-### Frontend
-- **TypeScript** - Type-safe frontend development
-- **React** - UI library
-- **Vite** - Build tool and development server
-- **CSS3** - Modern styling with gradients and animations
-
-## 📦 Project Structure
-
-```
-Inspire/
-├── backend/              # Backend API
-│   ├── src/
-│   │   ├── index.ts           # Express server
-│   │   ├── types.ts           # TypeScript type definitions
-│   │   └── fuelPackGenerator.ts # Fuel pack generation logic
-│   ├── package.json
-│   └── tsconfig.json
-├── frontend/             # Frontend React app
-│   ├── src/
-│   │   ├── App.tsx            # Main application component
-│   │   ├── App.css            # Application styles
-│   │   ├── types.ts           # TypeScript type definitions
-│   │   ├── index.css          # Global styles
-│   │   └── main.tsx           # Application entry point
-│   ├── package.json
-│   └── vite.config.ts
-└── package.json          # Root package.json with scripts
-```
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js (v20 or higher)
-- npm (v10 or higher)
-
-### Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/JakkuAzzo/Inspire.git
-cd Inspire
-```
-
-2. Install backend dependencies:
-```bash
-cd backend
-npm install
-```
-
-3. Install frontend dependencies:
-```bash
-cd ../frontend
-npm install
-```
-
-### Development
-
-To run both frontend and backend in development mode:
-
-**Terminal 1 - Backend:**
-```bash
-npm run dev:backend
-```
-The backend will start on `http://localhost:3001`
-
-**Terminal 2 - Frontend:**
-```bash
-npm run dev:frontend
-```
-The frontend will start on `http://localhost:5173` (or another available port)
-
-The frontend is configured to proxy API requests to the backend automatically.
-
-### Production Build
-
-Build both frontend and backend:
-```bash
-npm run build
-```
-
-Or build individually:
-```bash
-npm run build:backend
-npm run build:frontend
-```
-
-To start the backend in production:
-```bash
-npm run start:backend
-```
-
-## 🎮 Usage
-
-1. Open the application in your browser (default: `http://localhost:5173`)
-2. Click the "🎲 Generate Fuel Pack" button
-3. Receive a randomized creative fuel pack containing:
-   - 6 power words for inspiration
-   - 3 meme concepts
-   - An emotional arc (start → middle → end)
-   - A sample challenge with type, description, and constraint
-4. Use the generated elements to fuel your creative process!
-
-## 🎨 For Musicians
-
-**Rappers**: Use power words for wordplay, meme references for cultural relevance, and emotional arcs for storytelling.
-
-**Singers**: Let emotional arcs guide your vocal performance and word choices inspire your melodies.
-
-**Producers**: Use sample challenges to push your production skills and meme concepts for creative sampling ideas.
-
-## 📝 API Endpoints
-
-### GET /api/health
-Health check endpoint
-- **Response**: `{ status: 'ok', message: 'Inspire API is running' }`
-
-### GET /api/fuel-pack
-Generate a new fuel pack
-- **Response**: FuelPack object with words, memes, emotional arc, and sample challenge
-
-## 🤝 Contributing
-
-Contributions are welcome! Feel free to submit issues or pull requests.
-
-## 📄 License
-
-ISC
