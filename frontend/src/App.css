@@ -20,6 +20,10 @@
     radial-gradient(120% 120% at 90% 12%, rgba(214, 81, 255, 0.38), transparent 60%),
     linear-gradient(135deg, #050512 0%, #0b1129 50%, #1a1033 100%);
 }
+.app.theme-default.mode-lyricist.has-mode {
+  overflow: hidden;
+  height: 100vh;
+}
 
 .app.theme-lofi {
   background: linear-gradient(145deg, #0f172a 0%, #1e293b 50%, #334155 100%);
@@ -795,6 +799,9 @@
 .mode-workspace.controls-collapsed .workspace-main {
   grid-column: 1;
 }
+.mode-workspace.controls-collapsed .workspace-head {
+  grid-template-columns: 1fr auto;
+}
 
 .mode-workspace .workspace-head {
   grid-column: 1 / -1;
@@ -835,7 +842,6 @@
   gap: 0.35rem;
   white-space: nowrap;
 }
-
 .workspace-controls {
   grid-column: 1;
   grid-row: 2;
@@ -856,12 +862,162 @@
   gap: 1.25rem;
   min-height: 0;
 }
+.pack-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: clamp(1.75rem, 3vw, 2.5rem);
+  animation: fade-slide 0.6s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.pack-stage.focus-mode {
+  transform: scale(1.02);
+  box-shadow: 0 26px 60px rgba(14, 23, 56, 0.52);
+}
 
 .collapsible {
   padding: 1.3rem 1.5rem;
   border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   background: rgba(15, 23, 42, 0.6);
+}
+.pack-card-detail {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 1.5rem;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(9, 14, 32, 0.72);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.pack-card-detail.focus-mode {
+  box-shadow: 0 28px 70px rgba(12, 20, 50, 0.6);
+  transform: translateY(-4px);
+}
+.pack-card-detail .detail-toolbox {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.pack-card-detail .detail-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.pack-card-detail .detail-content h4 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.pack-card-detail .detail-body {
+  display: grid;
+  gap: 0.75rem;
+}
+.timer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.timer-toggle .label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(148, 163, 184, 0.7);
+}
+.timer-toggle .chip {
+  padding: 0.35rem 0.75rem;
+}
+.focus-toggle {
+  align-self: flex-end;
+}
+.focus-toggle.active {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+.headline-stream {
+  position: absolute;
+  inset: 0 0 3.5rem 0;
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  padding: 0 1.5rem;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+.headline-stream span {
+  flex: none;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.32);
+  animation: headline-scroll 22s linear infinite;
+}
+.headline-stream span:nth-child(even) {
+  animation-delay: -11s;
+}
+@keyframes headline-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-120%);
+  }
+}
+.detail-challenge {
+  position: relative;
+  z-index: 2;
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+.detail-challenge .label {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(148, 163, 184, 0.65);
+  margin-bottom: 0.35rem;
+}
+.detail-challenge p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.focus-list {
+  display: grid;
+  gap: 0.6rem;
+  padding-left: 1rem;
+}
+.focus-mode .focus-list {
+  list-style: none;
+  padding-left: 0;
+}
+.focus-line {
+  display: inline;
+}
+.focus-mode .focus-word {
+  display: inline-block;
+  padding: 0.05rem 0.2rem;
+  border-radius: 6px;
+  transition: transform 0.15s ease, color 0.15s ease, background 0.15s ease;
+  cursor: pointer;
+}
+.focus-mode .focus-word:hover {
+  transform: scale(1.12);
+  background: rgba(59, 130, 246, 0.2);
+  color: rgba(248, 250, 252, 0.95);
 }
 
 .collapsible-trigger {
@@ -1050,21 +1206,13 @@
 .workspace-main .pack-stage {
   flex: 1 1 60%;
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
 }
 
 .workspace-main .saved-shelf {
   flex: 1 1 40%;
   min-height: 0;
   overflow: auto;
-}
-
-.pack-stage {
-  padding: clamp(1.75rem, 3vw, 2.5rem);
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  animation: fade-slide 0.6s ease;
 }
 
 @keyframes fade-slide {
@@ -1150,22 +1298,6 @@
   box-shadow: 0 22px 48px rgba(59, 130, 246, 0.25);
 }
 
-.pack-card-detail {
-  padding: 1.6rem;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(9, 14, 32, 0.72);
-}
-
-.pack-card-detail h4 {
-  margin: 0 0 0.8rem;
-}
-
-.detail-body {
-  display: grid;
-  gap: 0.6rem;
-}
-
 .card-detail-copy {
   display: grid;
   gap: 0.35rem;
@@ -1199,11 +1331,13 @@
   display: grid;
   gap: 1rem;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin: 0;
 }
 
 .empty-state {
   text-align: center;
   padding: 2.8rem 1.4rem;
+  margin: 0;
   border-radius: 18px;
   border: 1px dashed rgba(148, 163, 184, 0.26);
   background: rgba(15, 23, 42, 0.45);

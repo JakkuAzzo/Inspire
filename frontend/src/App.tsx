@@ -117,7 +117,6 @@ interface CreatorStats {
 interface DeckCard {
 	id: string;
 	label: string;
-	icon: string;
 	preview: string;
 	detail: ReactNode;
 	accent?: string;
@@ -358,6 +357,18 @@ function isEditorPack(pack: InspireAnyPack | null): pack is EditorModePack {
 	return isModePack(pack) && pack.mode === 'editor';
 }
 
+function resolveChallengeText(pack: InspireAnyPack | null): string {
+	if (!pack) return 'Spin up a fresh pack to unlock a challenge.';
+	if (!isModePack(pack)) {
+		const legacy = pack as FuelPack;
+		return legacy.prompt ?? 'Use this classic prompt to get started.';
+	}
+	if (isLyricistPack(pack)) return pack.topicChallenge ?? 'Write something unexpected from the headline.';
+	if (isProducerPack(pack)) return pack.challenge ?? 'Flip the palette into something new.';
+	if (isEditorPack(pack)) return pack.challenge ?? 'Cut a sequence that bends expectations.';
+	return 'Keep experimenting with new ideas.';
+}
+
 function App() {
 	const initialUserId = typeof window === 'undefined' ? `creator-${Date.now().toString(36)}` : loadStoredUserId();
 	const [modeDefinitions, setModeDefinitions] = useState<ModeDefinition[]>(FALLBACK_MODE_DEFINITIONS);
@@ -389,6 +400,8 @@ function App() {
 		if (typeof window === 'undefined') return false;
 		return window.localStorage.getItem(CONTROLS_COLLAPSED_KEY) === 'true';
 	});
+	const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
+	const [focusMode, setFocusMode] = useState(false);
 
 
 	const heroPrompt = PROMPT_ROTATIONS[promptIndex];
@@ -434,6 +447,17 @@ function App() {
 			}
 			return next;
 		});
+	}, []);
+
+	const handleAutoRefreshSelect = useCallback((interval: number | null) => {
+		setAutoRefreshMs((current) => {
+			if (interval === null) return null;
+			return current === interval ? null : interval;
+		});
+	}, []);
+
+	const handleFocusModeToggle = useCallback(() => {
+		setFocusMode((prev) => !prev);
 	}, []);
 
 	const setPack = useCallback(
@@ -655,12 +679,26 @@ function App() {
 
 	const packDeck = useMemo<DeckCard[]>(() => {
 		if (!fuelPack || !isModePack(fuelPack)) return [];
+		const renderInteractiveText = (text: string) => {
+			if (!focusMode) return text;
+			const words = text.split(/\s+/);
+			return (
+				<span className="focus-line">
+					{words.map((word, index) => (
+						<span key={`${word}-${index}`} className="focus-word">
+							{word}
+							{index < words.length - 1 ? ' ' : ''}
+						</span>
+					))}
+				</span>
+			);
+		};
+
 		if (isLyricistPack(fuelPack)) {
 			return [
 				{
 					id: 'power-words',
 					label: 'Power Words',
-					icon: '⚡️',
 					preview: fuelPack.powerWords.slice(0, 3).join(' · '),
 					detail: (
 						<div className="word-grid">
@@ -673,7 +711,6 @@ function App() {
 				{
 					id: 'story-arc',
 					label: 'Story Arc',
-					icon: '🌀',
 					preview: `${fuelPack.storyArc.start} → ${fuelPack.storyArc.end}`,
 					detail: (
 						<div className="arc-track">
@@ -688,7 +725,6 @@ function App() {
 				{
 					id: 'headline',
 					label: 'Live Headline',
-					icon: '🗞️',
 					preview: fuelPack.newsPrompt.headline,
 					detail: (
 						<div className="card-detail-copy">
@@ -701,12 +737,11 @@ function App() {
 				{
 					id: 'flow-prompts',
 					label: 'Flow Prompts',
-					icon: '🎙️',
 					preview: fuelPack.flowPrompts[0] ?? 'Switch cadence & bounce',
 					detail: (
-						<ul>
+						<ul className="focus-list">
 							{fuelPack.flowPrompts.map((prompt) => (
-								<li key={prompt}>{prompt}</li>
+								<li key={prompt}>{renderInteractiveText(prompt)}</li>
 							))}
 						</ul>
 					)
@@ -714,7 +749,6 @@ function App() {
 				{
 					id: 'challenge',
 					label: 'Prompt Challenge',
-					icon: '🏆',
 					preview: fuelPack.topicChallenge,
 					detail: (
 						<div className="card-detail-copy">
@@ -726,12 +760,11 @@ function App() {
 				{
 					id: 'fragments',
 					label: 'Lyric Fragments',
-					icon: '✍️',
 					preview: fuelPack.lyricFragments[0] ?? 'Sketch a new line',
 					detail: (
-						<ul>
+						<ul className="focus-list">
 							{fuelPack.lyricFragments.map((fragment) => (
-								<li key={fragment}>{fragment}</li>
+								<li key={fragment}>{renderInteractiveText(fragment)}</li>
 							))}
 						</ul>
 					)
@@ -744,7 +777,6 @@ function App() {
 				{
 					id: 'main-sample',
 					label: 'Main Sample',
-					icon: '🎧',
 					preview: `${fuelPack.sample.title} • ${fuelPack.sample.source}`,
 					detail: (
 						<div className="card-detail-copy">
@@ -761,7 +793,6 @@ function App() {
 				{
 					id: 'constraints',
 					label: 'Constraints',
-					icon: '⛓️',
 					preview: fuelPack.constraints[0] ?? 'Flip the arrangement',
 					detail: (
 						<ul>
@@ -774,7 +805,6 @@ function App() {
 				{
 					id: 'fx-ideas',
 					label: 'FX Ideas',
-					icon: '🎛️',
 					preview: fuelPack.fxIdeas.slice(0, 2).join(' · '),
 					detail: (
 						<ul className="fx-grid">
@@ -787,7 +817,6 @@ function App() {
 				{
 					id: 'palette',
 					label: 'Instrument Palette',
-					icon: '🎹',
 					preview: fuelPack.instrumentPalette.slice(0, 3).join(' · '),
 					detail: (
 						<ul>
@@ -800,7 +829,6 @@ function App() {
 				{
 					id: 'video-cue',
 					label: 'Visual Cue',
-					icon: '🎥',
 					preview: fuelPack.videoSnippet.title,
 					detail: (
 						<div className="card-detail-copy">
@@ -812,7 +840,6 @@ function App() {
 				{
 					id: 'challenge',
 					label: 'Build Challenge',
-					icon: '🚀',
 					preview: fuelPack.challenge,
 					detail: <p>{fuelPack.challenge}</p>
 				}
@@ -824,7 +851,6 @@ function App() {
 			{
 				id: 'moodboard',
 				label: 'Moodboard Clips',
-				icon: '🎬',
 				preview: editorPack.moodboard.map((clip) => clip.title).slice(0, 2).join(' · '),
 				detail: (
 					<div className="clip-grid">
@@ -840,7 +866,6 @@ function App() {
 			{
 				id: 'audio-prompts',
 				label: 'Audio Prompts',
-				icon: '🔊',
 				preview: editorPack.audioPrompts.map((prompt) => prompt.name).slice(0, 3).join(' · '),
 				detail: (
 					<div className="word-grid">
@@ -853,7 +878,6 @@ function App() {
 			{
 				id: 'timeline',
 				label: 'Timeline Beats',
-				icon: '🕰️',
 				preview: editorPack.timelineBeats.slice(0, 2).join(' · '),
 				detail: (
 					<ul>
@@ -866,7 +890,6 @@ function App() {
 			{
 				id: 'constraints',
 				label: 'Visual Constraints',
-				icon: '🎨',
 				preview: editorPack.visualConstraints.slice(0, 2).join(' · '),
 				detail: (
 					<ul>
@@ -879,7 +902,6 @@ function App() {
 			{
 				id: 'challenge',
 				label: 'Director Challenge',
-				icon: '🎯',
 				preview: editorPack.challenge,
 				detail: (
 					<div className="card-detail-copy">
@@ -889,7 +911,7 @@ function App() {
 				)
 			}
 		];
-	}, [fuelPack]);
+	}, [fuelPack, focusMode]);
 
 	const selectedCard = packDeck.find((card) => card.id === expandedCard) ?? null;
 
@@ -925,6 +947,14 @@ function App() {
 		const timeout = window.setTimeout(() => setError(null), 4000);
 		return () => window.clearTimeout(timeout);
 	}, [error]);
+
+	useEffect(() => {
+		if (!autoRefreshMs || !mode || !submode) return;
+		const refreshTimer = window.setInterval(() => {
+			void handleGeneratePack();
+		}, autoRefreshMs);
+		return () => window.clearInterval(refreshTimer);
+	}, [autoRefreshMs, mode, submode, handleGeneratePack]);
 
 	useEffect(() => {
 		async function loadModes() {
@@ -965,6 +995,9 @@ function App() {
 	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}`;
 	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
 	const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
+	const packStageClassName = `pack-stage glass${focusMode ? ' focus-mode' : ''}`;
+	const challengeText = useMemo(() => resolveChallengeText(fuelPack), [fuelPack]);
+	const lyricistPack = isLyricistPack(fuelPack) ? fuelPack : null;
 	const heroMetaContent = (
 		<>
 			<div className="theme-switcher">
@@ -1179,7 +1212,7 @@ function App() {
 					)}
 
 					<div className="workspace-main">
-						<section key={packAnimationKey} className="pack-stage glass">
+						<section key={packAnimationKey} className={packStageClassName}>
 							{fuelPack ? (
 							<>
 								{isModePack(fuelPack) && (
@@ -1234,15 +1267,63 @@ function App() {
 													style={{ '--card-index': index } as CSSProperties}
 													aria-expanded={expandedCard === card.id}
 												>
-													<span className="card-label">{card.icon} {card.label}</span>
+													<span className="card-label">{card.label}</span>
 													<span className="card-preview">{card.preview}</span>
 												</button>
 											))}
 										</div>
 										{selectedCard && (
-											<div className="pack-card-detail glass">
-												<h4>{selectedCard.icon} {selectedCard.label}</h4>
-												<div className="detail-body">{selectedCard.detail}</div>
+											<div className={`pack-card-detail glass${focusMode ? ' focus-mode' : ''}`}>
+												<div className="detail-toolbox">
+													<div className="timer-toggle" role="group" aria-label="Auto refresh timer">
+														<span className="label">Auto refresh</span>
+														{[2000, 5000, 30000].map((interval) => (
+															<button
+																key={interval}
+																type="button"
+																className={autoRefreshMs === interval ? 'chip active' : 'chip'}
+																onClick={() => handleAutoRefreshSelect(interval)}
+															>
+																{interval < 1000 ? `${interval}ms` : `${interval / 1000}s`}
+															</button>
+														))}
+														<button
+															type="button"
+															className={!autoRefreshMs ? 'chip active' : 'chip'}
+															onClick={() => handleAutoRefreshSelect(null)}
+														>
+															Off
+														</button>
+													</div>
+													<button
+														type="button"
+														className={`btn secondary focus-toggle${focusMode ? ' active' : ''}`}
+														onClick={handleFocusModeToggle}
+													>
+														{focusMode ? 'Exit Focus Mode' : 'Focus Mode'}
+													</button>
+												</div>
+												<div className="detail-content">
+													<h4>{selectedCard.label}</h4>
+													<div className="detail-body">{selectedCard.detail}</div>
+												</div>
+												{fuelPack && (
+													<>
+														{lyricistPack && (
+															<div className="headline-stream" aria-hidden="true">
+																{Array.from({ length: 6 }).map((_, index) => (
+																	<span key={`headline-${index}`}>
+																		{lyricistPack.newsPrompt.headline} · {lyricistPack.newsPrompt.source}
+																	</span>
+																))}
+															</div>
+														)}
+														<div className="detail-challenge">
+															<span className="label">Prompt Challenge</span>
+															<p>{challengeText}</p>
+														</div>
+													</>
+												)}
 											</div>
 										)}
 									</>
