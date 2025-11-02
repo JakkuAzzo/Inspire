@@ -58,6 +58,12 @@ export interface ModeSubmode {
   description: string;
 }
 
+export interface RemixMeta {
+  author: string;
+  packId: string;
+  generation: number;
+}
+
 export interface ModePackBase {
   id: string;
   timestamp: number;
@@ -67,6 +73,9 @@ export interface ModePackBase {
   headline: string;
   summary: string;
   filters: RelevanceFilter;
+  author?: string;
+  remixOf?: RemixMeta;
+  remixLineage?: RemixMeta[];
 }
 
 export interface ModePackRequest {
@@ -151,6 +160,44 @@ export interface EditorModePack extends ModePackBase {
 export type ModePack = LyricistModePack | ProducerModePack | EditorModePack;
 
 export type InspireAnyPack = FuelPack | ModePack;
+
+export interface CommunityPost {
+  id: string;
+  author: string;
+  avatar?: string;
+  contentType: 'text' | 'link' | 'audio' | 'video' | 'beat';
+  content: string;
+  packId?: string;
+  remixOf?: RemixMeta;
+  createdAt: string;
+  reactions: number;
+  comments: number;
+  remixCount: number;
+  featuredPack?: ModePack;
+}
+
+export interface DailyChallenge {
+  id: string;
+  title: string;
+  description: string;
+  constraints: string[];
+  reward?: string;
+  expiresAt: string;
+  streakCount?: number;
+}
+
+export type WorkspaceQueueItemType = 'youtube' | 'stream' | 'instrumental' | 'reference';
+
+export interface WorkspaceQueueItem {
+  id: string;
+  type: WorkspaceQueueItemType;
+  title: string;
+  url: string;
+  duration?: string;
+  author?: string;
+  thumbnail?: string;
+  matchesPack?: string;
+}
 
 export interface WordGeneratorOptions {
   startsWith?: string;

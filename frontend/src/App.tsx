@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ChangeEvent, CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import './App.css';
 import inspireLogo from './assets/Inspire_transparent.png';
 import tildeSecLogo from './assets/TildeSec_transparent.png';
 
 import type {
+	CommunityPost,
 	CreativeMode,
+	DailyChallenge,
 	EditorModePack,
 	FuelPack,
 	InspireAnyPack,
@@ -14,8 +16,10 @@ import type {
 	ModePack,
 	ModePackRequest,
 	ProducerModePack,
+	RemixMeta,
 	RelevanceFilter,
-	RelevanceTone
+	RelevanceTone,
+	WorkspaceQueueItem
 } from './types';
 import { RelevanceSlider } from './components/RelevanceSlider';
 import { CollapsibleSection } from './components/CollapsibleSection';
@@ -120,6 +124,305 @@ interface DeckCard {
 	preview: string;
 	detail: ReactNode;
 	accent?: string;
+}
+
+interface LiveSession {
+	id: string;
+	mode: CreativeMode;
+	submode: string;
+	owner: string;
+	title: string;
+	participants: number;
+	status: 'live' | 'open';
+}
+
+const LIVE_SESSION_PRESETS: LiveSession[] = [
+	{ id: 'session-lyricist-01', mode: 'lyricist', submode: 'rapper', owner: '@auroraflow', title: 'Hook Draft Lab', participants: 128, status: 'live' },
+	{ id: 'session-producer-01', mode: 'producer', submode: 'musician', owner: '@midnightloops', title: 'Texture Flip Collab', participants: 92, status: 'open' },
+	{ id: 'session-editor-01', mode: 'editor', submode: 'video-editor', owner: '@cutcraft', title: 'Reel Speedrun', participants: 64, status: 'live' }
+];
+
+const DAILY_CHALLENGE_STORAGE_KEY = 'inspire:dailyChallengeState';
+
+interface StoredDailyChallenge {
+	dayId: string;
+	challengeIndex: number;
+	streak: number;
+	completed: boolean;
+}
+
+const DAILY_CHALLENGE_ROTATION: Array<Omit<DailyChallenge, 'expiresAt' | 'streakCount'>> = [
+	{
+		id: 'challenge-city-lights',
+		title: 'City Lights Cypher',
+		description: 'Write or score something that captures the glow of the nighttime commute.',
+		constraints: ['Reference a real street or landmark.', 'Layer at least one found-sound texture.'],
+		reward: 'Keeps your streak glowing'
+	},
+	{
+		id: 'challenge-one-take',
+		title: 'One-Take Energy',
+		description: 'Channel the rush of capturing a single take on camera or tape.',
+		constraints: ['Limit yourself to three primary layers.', 'Add a bar or frame of deliberate silence.'],
+		reward: 'Badge progress +1'
+	},
+	{
+		id: 'challenge-remix-relay',
+		title: 'Remix Relay',
+		description: 'Remix someone else’s idea and push it one step further.',
+		constraints: ['Keep one motif from the original.', 'Introduce a contrasting mood shift mid-way.'],
+		reward: 'Unlock remix badge progress'
+	}
+];
+
+const DEMO_LYRICIST_PACK: LyricistModePack = {
+	id: 'pack-aurora-city-pulse',
+	timestamp: Date.now() - 1000 * 60 * 60,
+	mode: 'lyricist',
+	submode: 'rapper',
+	title: 'City Pulse Hook',
+	headline: 'Metro nights hum with neon dreams',
+	summary: 'A glowing hook about late-night energy and chosen family.',
+	filters: { timeframe: 'fresh', tone: 'deep', semantic: 'tight' },
+	author: '@auroraflow',
+	genre: 'r&b',
+	powerWords: ['neon', 'pulse', 'afterglow', 'midnight', 'heartbeat', 'anthem'],
+	rhymeFamilies: ['ight', 'ow', 'ame'],
+	flowPrompts: ['Bounce between triplets and straight time', 'Whispered second line backings', 'Switch bounce on bar seven'],
+	memeSound: { name: 'City Pop Sweep', description: 'Retro synth swell with vinyl crackle', tone: 'deep', sampleUrl: 'https://example.com/audio/city-pop-sweep.mp3' },
+	topicChallenge: 'Celebrate the people keeping the city alive past midnight.',
+	newsPrompt: {
+		headline: 'Local venues collaborate on 3AM arts trail',
+		context: 'Indie promoters join forces for safe late-night art tours.',
+		timeframe: 'fresh',
+		source: 'Inspire City Wire',
+		url: 'https://example.com/arts-trail'
+	},
+	storyArc: { start: 'Doors open with a hush', middle: 'Streetlights flicker with bass', end: 'Sky blushes at dawn' },
+	chordMood: 'maj7 add9 over warm bass',
+	lyricFragments: ['Neon veins in the crosswalk glow', 'Calling all the after-hours heroes', 'We chase down the hum of the stereo'],
+	wordLab: [
+		{ word: 'afterglow', score: 0.92 },
+		{ word: 'skyline', score: 0.88 },
+		{ word: 'heartbeat', score: 0.9 }
+	]
+};
+
+const DEMO_PRODUCER_PACK: ProducerModePack = {
+	id: 'pack-midnightloops-texture',
+	timestamp: Date.now() - 1000 * 60 * 90,
+	mode: 'producer',
+	submode: 'musician',
+	title: 'Glow Texture Flip',
+	headline: 'Warm chords over crisp percussion',
+	summary: 'Lo-fi bounce with tactile percussion layers and subway ambience.',
+	filters: { timeframe: 'recent', tone: 'deep', semantic: 'balanced' },
+	author: '@midnightloops',
+	remixOf: { author: '@auroraflow', packId: DEMO_LYRICIST_PACK.id, generation: 1 },
+	remixLineage: [{ author: '@auroraflow', packId: DEMO_LYRICIST_PACK.id, generation: 1 }],
+	bpm: 86,
+	key: 'C# minor',
+	sample: {
+		title: 'Analog Sweep 1987',
+		source: 'Archive Audio',
+		url: 'https://example.com/sample/analog-sweep',
+		tags: ['analog', 'sweep', 'warm'],
+		timeframe: 'timeless'
+	},
+	secondarySample: {
+		title: 'Street Noise Layers',
+		source: 'Inspire Field',
+		url: 'https://example.com/sample/street-noise',
+		tags: ['foley', 'texture'],
+		timeframe: 'fresh'
+	},
+	constraints: ['No straight hi-hats', 'Sidechain to the subway recording'],
+	fxIdeas: ['Tape wobble automation', 'Bit-crush the snare ghost notes', 'Granular stretch on intro pad'],
+	instrumentPalette: ['DX7 electric piano', 'Sub-bass saw', 'Vocal chop resampled'],
+	videoSnippet: {
+		title: 'Night commute timelapse',
+		description: 'Light streaks across rainy asphalt',
+		url: 'https://example.com/video/night-commute',
+		timeframe: 'recent',
+		tone: 'deep'
+	},
+	referenceInstrumentals: [
+		{
+			title: 'Afterglow Transit',
+			description: 'Glittering downtempo groove with heavy swing',
+			url: 'https://example.com/audio/afterglow-transit',
+			timeframe: 'recent',
+			tone: 'deep'
+		}
+	],
+	challenge: 'Build the drop using only household recordings.'
+};
+
+const COMMUNITY_POSTS: CommunityPost[] = [
+	{
+		id: 'community-post-1',
+		author: '@auroraflow',
+		contentType: 'video',
+		content: 'Hook sketch recorded on last night’s stream. The crowd lost it on the second drop.',
+		packId: DEMO_LYRICIST_PACK.id,
+		createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+		reactions: 512,
+		comments: 64,
+		remixCount: 18,
+		featuredPack: DEMO_LYRICIST_PACK
+	},
+	{
+		id: 'community-post-2',
+		author: '@midnightloops',
+		contentType: 'audio',
+		content: 'Texture flip built from kitchen percussion + subway rumble. Ready for someone to add vocals.',
+		packId: DEMO_PRODUCER_PACK.id,
+		remixOf: DEMO_PRODUCER_PACK.remixOf,
+		createdAt: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
+		reactions: 348,
+		comments: 42,
+		remixCount: 11,
+		featuredPack: DEMO_PRODUCER_PACK
+	}
+];
+
+const INITIAL_WORKSPACE_QUEUE: WorkspaceQueueItem[] = [];
+
+function getTodayId(): string {
+	return new Date().toISOString().slice(0, 10);
+}
+
+function computeChallengeExpiryIso(): string {
+	const next = new Date();
+	next.setHours(24, 0, 0, 0);
+	return next.toISOString();
+}
+
+function persistDailyChallengeState(state: StoredDailyChallenge) {
+	if (typeof window === 'undefined') return;
+	window.localStorage.setItem(DAILY_CHALLENGE_STORAGE_KEY, JSON.stringify(state));
+}
+
+function computeDailyChallengeState(existing?: StoredDailyChallenge | null): { stored: StoredDailyChallenge; challenge: DailyChallenge } {
+	const todayId = getTodayId();
+	const rotationLength = DAILY_CHALLENGE_ROTATION.length || 1;
+	let stored: StoredDailyChallenge = existing ?? {
+		dayId: todayId,
+		challengeIndex: 0,
+		streak: 0,
+		completed: false
+	};
+	if (stored.dayId !== todayId) {
+		const baseStreak = stored.completed ? stored.streak : 0;
+		const nextIndex = (stored.challengeIndex + 1) % rotationLength;
+		stored = {
+			dayId: todayId,
+			challengeIndex: nextIndex,
+			streak: baseStreak,
+			completed: false
+		};
+	}
+	const rotationEntry = DAILY_CHALLENGE_ROTATION[stored.challengeIndex % rotationLength] ?? DAILY_CHALLENGE_ROTATION[0];
+	const challenge: DailyChallenge = {
+		...rotationEntry,
+		expiresAt: computeChallengeExpiryIso(),
+		streakCount: stored.streak
+	};
+	return { stored, challenge };
+}
+
+function initializeDailyChallenge(): { stored: StoredDailyChallenge; challenge: DailyChallenge } {
+	let stored: StoredDailyChallenge | null = null;
+	if (typeof window !== 'undefined') {
+		const raw = window.localStorage.getItem(DAILY_CHALLENGE_STORAGE_KEY);
+		if (raw) {
+			try {
+				stored = JSON.parse(raw) as StoredDailyChallenge;
+			} catch (err) {
+				console.warn('Unable to parse daily challenge cache', err);
+			}
+		}
+	}
+	const state = computeDailyChallengeState(stored);
+	persistDailyChallengeState(state.stored);
+	return state;
+}
+
+function formatRelativeTime(timestamp: string): string {
+	const base = new Date(timestamp);
+	const diffMs = Date.now() - base.getTime();
+	const diffMinutes = Math.floor(diffMs / (1000 * 60));
+	if (diffMinutes < 1) return 'just now';
+	if (diffMinutes < 60) return `${diffMinutes}m ago`;
+	const diffHours = Math.floor(diffMinutes / 60);
+	if (diffHours < 24) return `${diffHours}h ago`;
+	const diffDays = Math.floor(diffHours / 24);
+	return `${diffDays}d ago`;
+}
+
+function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
+	const baseQueue: WorkspaceQueueItem[] = [
+		{
+			id: `${pack.id}-yt`,
+			type: 'youtube',
+			title: `${pack.title} inspiration mix`,
+			url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${pack.title} ${pack.mode} inspiration`)}`,
+			matchesPack: pack.title
+		},
+		{
+			id: `${pack.id}-instrumental`,
+			type: 'instrumental',
+			title: `${pack.mode === 'producer' ? 'Reference groove' : 'Instrumental backdrop'}`,
+			url: `https://open.spotify.com/search/${encodeURIComponent(`${pack.title} instrumental`)}`,
+			matchesPack: pack.headline
+		}
+	];
+	const relatedSession = LIVE_SESSION_PRESETS.find((session) => session.mode === pack.mode);
+	if (relatedSession) {
+		baseQueue.push({
+			id: `${pack.id}-session-${relatedSession.id}`,
+			type: 'stream',
+			title: `Drop into ${relatedSession.title}`,
+			url: `https://inspire.live/${relatedSession.id}`,
+			author: relatedSession.owner,
+			matchesPack: pack.title
+		});
+	}
+	if (pack.mode === 'producer') {
+		baseQueue.push({
+			id: `${pack.id}-daw`,
+			type: 'reference',
+			title: 'Load DAW session template',
+			url: 'https://inspire.tools/templates/producer-session',
+			duration: 'Setup',
+			matchesPack: pack.submode
+		});
+	}
+	if (pack.mode === 'editor') {
+		baseQueue.push({
+			id: `${pack.id}-timing`,
+			type: 'reference',
+			title: 'Pull matching b-roll pack',
+			url: 'https://pexels.com/search/night%20city%20b-roll/',
+			duration: 'Browse',
+			matchesPack: pack.format
+		});
+	}
+	return baseQueue;
+}
+
+function formatQueueType(type: WorkspaceQueueItem['type']): string {
+	switch (type) {
+		case 'youtube':
+			return 'YouTube';
+		case 'stream':
+			return 'Live stream';
+		case 'instrumental':
+			return 'Track';
+		case 'reference':
+		default:
+			return 'Reference';
+	}
 }
 
 const EMPTY_STATS: CreatorStats = {
@@ -402,10 +705,124 @@ function App() {
 	});
 	const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
 	const [focusMode, setFocusMode] = useState(false);
+	const [collaborationMode, setCollaborationMode] = useState<'solo' | 'live' | 'collaborative'>('solo');
+	const [activeSessions] = useState<LiveSession[]>(LIVE_SESSION_PRESETS);
+	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+	const [viewerMode, setViewerMode] = useState<'idle' | 'spectating' | 'joining'>('idle');
+	const [deckOrder, setDeckOrder] = useState<string[]>([]);
+	const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
+	const dragSourceRef = useRef<string | null>(null);
+	const audioContextRef = useRef<AudioContext | null>(null);
+	const [communityPosts] = useState<CommunityPost[]>(COMMUNITY_POSTS);
+	const [workspaceQueue, setWorkspaceQueue] = useState<WorkspaceQueueItem[]>(INITIAL_WORKSPACE_QUEUE);
+	const initialDailyChallenge = useMemo(() => initializeDailyChallenge(), []);
+	const [, setDailyChallengeStored] = useState<StoredDailyChallenge>(initialDailyChallenge.stored);
+	const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge>(initialDailyChallenge.challenge);
+	const [challengeCompletedToday, setChallengeCompletedToday] = useState<boolean>(initialDailyChallenge.stored.completed);
 
 
 	const heroPrompt = PROMPT_ROTATIONS[promptIndex];
 	const activeModeDefinition = mode ? modeDefinitions.find((entry) => entry.id === mode) ?? null : null;
+	const activeSession = useMemo(
+		() => (selectedSessionId ? activeSessions.find((session) => session.id === selectedSessionId) ?? null : null),
+		[activeSessions, selectedSessionId]
+	);
+	const liveSessions = useMemo(() => activeSessions.filter((session) => session.status === 'live'), [activeSessions]);
+	const collaborativeSessions = useMemo(
+		() => activeSessions.filter((session) => session.status === 'open'),
+		[activeSessions]
+	);
+	const collaborationStatusLabel = useMemo(() => {
+		if (viewerMode === 'spectating' && activeSession) {
+			return `Spectating ${activeSession.owner}`;
+		}
+		if (viewerMode === 'joining' && activeSession) {
+			return `Collaborating in ${activeSession.title}`;
+		}
+		if (collaborationMode === 'live') {
+			return 'Broadcasting Live';
+		}
+		if (collaborationMode === 'collaborative') {
+			return 'Collaboration Room Open';
+		}
+		return 'Solo Session';
+	}, [activeSession, collaborationMode, viewerMode]);
+
+	const challengeResetLabel = useMemo(() => {
+		try {
+			const expiry = new Date(dailyChallenge.expiresAt);
+			return expiry.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+		} catch (err) {
+			console.warn('Unable to parse challenge expiry', err);
+			return 'midnight';
+		}
+	}, [dailyChallenge.expiresAt]);
+
+	const ensureAudioContext = useCallback(() => {
+		if (typeof window === 'undefined') return null;
+		const ctor = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+		if (!ctor) return null;
+		if (!audioContextRef.current) {
+			audioContextRef.current = new ctor();
+		}
+		return audioContextRef.current;
+	}, [audioContextRef]);
+
+	const playCue = useCallback(
+		(type: 'generate' | 'save') => {
+			const ctx = ensureAudioContext();
+			if (!ctx) return;
+			if (ctx.state === 'suspended') {
+				void ctx.resume().catch(() => undefined);
+			}
+			const now = ctx.currentTime;
+			const primaryOsc = ctx.createOscillator();
+			const primaryGain = ctx.createGain();
+			primaryOsc.type = 'sine';
+			primaryOsc.frequency.setValueAtTime(type === 'generate' ? 660 : 420, now);
+			primaryGain.gain.setValueAtTime(0, now);
+			primaryGain.gain.linearRampToValueAtTime(type === 'generate' ? 0.16 : 0.12, now + 0.02);
+			const decayTime = type === 'generate' ? 0.45 : 0.35;
+			primaryGain.gain.exponentialRampToValueAtTime(0.001, now + decayTime);
+			primaryOsc.connect(primaryGain);
+			primaryGain.connect(ctx.destination);
+			primaryOsc.start(now);
+			primaryOsc.stop(now + decayTime);
+			if (type === 'save') {
+				const secondaryOsc = ctx.createOscillator();
+				const secondaryGain = ctx.createGain();
+				secondaryOsc.type = 'sine';
+				secondaryOsc.frequency.setValueAtTime(540, now + 0.2);
+				secondaryGain.gain.setValueAtTime(0, now + 0.2);
+				secondaryGain.gain.linearRampToValueAtTime(0.1, now + 0.25);
+				secondaryGain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+				secondaryOsc.connect(secondaryGain);
+				secondaryGain.connect(ctx.destination);
+				secondaryOsc.start(now + 0.2);
+				secondaryOsc.stop(now + 0.55);
+			}
+		},
+		[ensureAudioContext]
+	);
+
+	const markDailyChallengeComplete = useCallback(() => {
+		if (challengeCompletedToday) return;
+		setChallengeCompletedToday(true);
+		setDailyChallengeStored((prev) => {
+			const updated: StoredDailyChallenge = {
+				...prev,
+				streak: prev.streak + 1,
+				completed: true
+			};
+			persistDailyChallengeState(updated);
+			setDailyChallenge((current) => ({
+				...current,
+				streakCount: updated.streak
+			}));
+			return updated;
+		});
+	}, [challengeCompletedToday]);
+
 
 	const handleDismissOnboarding = useCallback(() => {
 		setShowOnboarding(false);
@@ -460,14 +877,100 @@ function App() {
 		setFocusMode((prev) => !prev);
 	}, []);
 
+	const handleCollaborationModeToggle = useCallback(
+		(next: 'live' | 'collaborative') => {
+			setCollaborationMode((current) => (current === next ? 'solo' : next));
+			setViewerMode('idle');
+			setSelectedSessionId(null);
+		},
+		[]
+	);
+
+	const handleSpectateSession = useCallback((sessionId: string) => {
+		const targetSession = activeSessions.find((session) => session.id === sessionId);
+		if (!targetSession) return;
+		setSelectedSessionId(sessionId);
+		setViewerMode('spectating');
+		setCollaborationMode('solo');
+		setMode(targetSession.mode);
+		setSubmode(targetSession.submode);
+		setFuelPack(null);
+		setExpandedCard(null);
+		setStatus(`Spectating ${targetSession.owner}'s ${targetSession.title}`);
+	}, [activeSessions]);
+
+	const handleJoinSession = useCallback((sessionId: string) => {
+		const targetSession = activeSessions.find((session) => session.id === sessionId);
+		if (!targetSession) return;
+		setSelectedSessionId(sessionId);
+		setViewerMode('joining');
+		setCollaborationMode('collaborative');
+		setMode(targetSession.mode);
+		setSubmode(targetSession.submode);
+		setFuelPack(null);
+		setExpandedCard(null);
+		setStatus(`Joined ${targetSession.owner} in ${targetSession.title}`);
+	}, [activeSessions]);
+
+	const handleLeaveViewerMode = useCallback(() => {
+		setSelectedSessionId(null);
+		setViewerMode('idle');
+	}, []);
+
+	const handleCardDragStart = useCallback(
+		(cardId: string) => (event: ReactDragEvent<HTMLButtonElement>) => {
+			dragSourceRef.current = cardId;
+			setDraggedCardId(cardId);
+			event.dataTransfer.effectAllowed = 'move';
+			event.dataTransfer.setData('text/plain', cardId);
+		},
+		[]
+	);
+
+	const handleCardDragEnter = useCallback(
+		(targetId: string) => (event: ReactDragEvent<HTMLButtonElement>) => {
+			event.preventDefault();
+			const sourceId = dragSourceRef.current;
+			if (!sourceId || sourceId === targetId) return;
+			setDeckOrder((current) => {
+				const next = [...current];
+				const sourceIndex = next.indexOf(sourceId);
+				const targetIndex = next.indexOf(targetId);
+				if (sourceIndex === -1 || targetIndex === -1) return current;
+				next.splice(sourceIndex, 1);
+				next.splice(targetIndex, 0, sourceId);
+				return next;
+			});
+		},
+		[]
+	);
+
+	const handleCardDragOver = useCallback((event: ReactDragEvent<HTMLButtonElement>) => {
+		event.preventDefault();
+		event.dataTransfer.dropEffect = 'move';
+	}, []);
+
+	const handleCardDragEnd = useCallback(() => {
+		dragSourceRef.current = null;
+		setDraggedCardId(null);
+	}, []);
+
 	const setPack = useCallback(
 		(pack: InspireAnyPack, message?: string) => {
 			setFuelPack(pack);
 			setPackAnimationKey(Date.now());
 			setExpandedCard(null);
+			setDeckOrder([]);
+			setDraggedCardId(null);
+			if (isModePack(pack)) {
+				setWorkspaceQueue(buildWorkspaceQueue(pack));
+				playCue('generate');
+			} else {
+				setWorkspaceQueue([]);
+			}
 			if (message) setStatus(message);
 		},
-		[setFuelPack, setPackAnimationKey, setExpandedCard, setStatus]
+		[setFuelPack, setPackAnimationKey, setExpandedCard, setDeckOrder, setDraggedCardId, setWorkspaceQueue, playCue, setStatus]
 	);
 
 	const requestModePack = useCallback(
@@ -529,7 +1032,8 @@ function App() {
 				achievements: Array.from(achievements)
 			};
 		});
-	}, []);
+		markDailyChallengeComplete();
+	}, [markDailyChallengeComplete]);
 
 	const handleModeSelect = useCallback(
 		(nextMode: CreativeMode) => {
@@ -563,6 +1067,12 @@ function App() {
 		setExpandedCard(null);
 		setShowSettingsOverlay(false);
 		setShowAccountModal(false);
+		setCollaborationMode('solo');
+		setSelectedSessionId(null);
+		setViewerMode('idle');
+		setDeckOrder([]);
+		setDraggedCardId(null);
+		dragSourceRef.current = null;
 	}, []);
 
 	const handleGeneratePack = useCallback(async () => {
@@ -608,6 +1118,53 @@ function App() {
 		}
 	}, [mode, submode, fuelPack, requestModePack, setPack, registerPackGenerated, filters, handleGeneratePack]);
 
+	const handleForkCommunityPost = useCallback(
+		(post: CommunityPost) => {
+			const sourcePack = post.featuredPack;
+			if (!sourcePack || !isModePack(sourcePack)) return;
+			const lineageEntry: RemixMeta = {
+				author: sourcePack.author ?? post.author,
+				packId: sourcePack.id,
+				generation: (sourcePack.remixOf?.generation ?? 0) + 1
+			};
+			const forkedPack: ModePack = {
+				...sourcePack,
+				id: `${sourcePack.id}-fork-${Math.random().toString(36).slice(2, 8)}`,
+				timestamp: Date.now(),
+				author: userId,
+				remixOf: { author: sourcePack.author ?? post.author, packId: sourcePack.id, generation: lineageEntry.generation },
+				remixLineage: [...(sourcePack.remixLineage ?? []), lineageEntry]
+			};
+			setPack(forkedPack, `Remixed from ${sourcePack.author ?? post.author}`);
+			setMode(forkedPack.mode);
+			setSubmode(forkedPack.submode);
+			if (forkedPack.mode === 'lyricist') setGenre(forkedPack.genre);
+		},
+		[userId, setPack, setMode, setSubmode, setGenre]
+	);
+
+	const handleDailyChallengeComplete = useCallback(() => {
+		if (challengeCompletedToday) return;
+		markDailyChallengeComplete();
+		setStatus('Daily challenge cleared ✅');
+	}, [challengeCompletedToday, markDailyChallengeComplete]);
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return;
+		const timer = window.setInterval(() => {
+			const todayId = getTodayId();
+			setDailyChallengeStored((prev) => {
+				if (prev.dayId === todayId) return prev;
+				const nextState = computeDailyChallengeState(prev);
+				setDailyChallenge(nextState.challenge);
+				setChallengeCompletedToday(nextState.stored.completed);
+				persistDailyChallengeState(nextState.stored);
+				return nextState.stored;
+			});
+		}, 60_000);
+		return () => window.clearInterval(timer);
+	}, [setDailyChallengeStored, setDailyChallenge, setChallengeCompletedToday]);
+
 	const handleLoadById = useCallback(async () => {
 		const target = lookupId.trim();
 		if (!target) return;
@@ -643,13 +1200,14 @@ function App() {
 			}
 			try {
 				await navigator.clipboard.writeText(shareText);
+				playCue('save');
 				setStatus('Share link copied 🔗');
 			} catch (err) {
 				console.error(err);
 				setError('Clipboard permission denied. Try selecting manually.');
 			}
 		},
-		[userId]
+		[userId, playCue]
 	);
 
 	const handleUserIdChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
@@ -913,7 +1471,27 @@ function App() {
 		];
 	}, [fuelPack, focusMode]);
 
-	const selectedCard = packDeck.find((card) => card.id === expandedCard) ?? null;
+	useEffect(() => {
+		if (!packDeck.length) {
+			setDeckOrder([]);
+			return;
+		}
+		setDeckOrder((current) => {
+			const next = packDeck.map((card) => card.id);
+			if (current.length === next.length && current.every((id) => next.includes(id))) {
+				return current;
+			}
+			return next;
+		});
+	}, [packDeck]);
+
+	const orderedPackDeck = useMemo(() => {
+		if (!deckOrder.length) return packDeck;
+		const orderMap = new Map(deckOrder.map((id, index) => [id, index]));
+		return [...packDeck].sort((a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0));
+	}, [deckOrder, packDeck]);
+
+	const selectedCard = orderedPackDeck.find((card) => card.id === expandedCard) ?? null;
 
 	useEffect(() => {
 		const ticker = window.setInterval(() => {
@@ -1057,17 +1635,45 @@ function App() {
 						</button>
 						<img src={tildeSecLogo} alt="TildeSec" className="nav-partner" />
 					</div>
-					<button type="button" className="nav-handle" onClick={() => setShowAccountModal(true)}>
-						{formattedHandle}
-					</button>
-					<button
-						type="button"
-						className="nav-settings"
-						aria-label="Open creator settings"
-						onClick={() => setShowSettingsOverlay(true)}
-					>
-						⚙️
-					</button>
+					<div className="nav-controls">
+						<div className="nav-toggle-group" role="group" aria-label="Collaboration mode">
+							<button
+								type="button"
+								className={`nav-pill${collaborationMode === 'live' ? ' active' : ''}`}
+								onClick={() => handleCollaborationModeToggle('live')}
+							>
+								Go Live
+							</button>
+							<button
+								type="button"
+								className={`nav-pill${collaborationMode === 'collaborative' ? ' active' : ''}`}
+								onClick={() => handleCollaborationModeToggle('collaborative')}
+							>
+								Collaborate
+							</button>
+						</div>
+						<div className="nav-status" aria-live="polite">
+							<span>{collaborationStatusLabel}</span>
+							{(viewerMode === 'spectating' || viewerMode === 'joining') && (
+								<button type="button" className="btn micro ghost" onClick={handleLeaveViewerMode}>
+									Leave
+								</button>
+							)}
+						</div>
+					</div>
+					<div className="nav-actions">
+						<button type="button" className="nav-handle" onClick={() => setShowAccountModal(true)}>
+							{formattedHandle}
+						</button>
+						<button
+							type="button"
+							className="nav-settings"
+							aria-label="Open creator settings"
+							onClick={() => setShowSettingsOverlay(true)}
+						>
+							⚙️
+						</button>
+					</div>
 				</header>
 			) : (
 				<header className="hero">
@@ -1108,6 +1714,42 @@ function App() {
 			)}
 
 			{!mode && (
+				<section className="daily-challenge glass" aria-live="polite">
+					<header className="daily-challenge-header">
+						<span className="challenge-pill">Daily Challenge</span>
+						<div className="challenge-meta">
+							<strong>{dailyChallenge.title}</strong>
+							<span>{dailyChallenge.description}</span>
+						</div>
+						<div className="challenge-status">
+							<span>{challengeCompletedToday ? 'Completed ✅' : 'In progress'}</span>
+							<span>Resets {challengeResetLabel}</span>
+						</div>
+					</header>
+					<ul className="challenge-constraints">
+						{dailyChallenge.constraints.map((constraint) => (
+							<li key={constraint}>{constraint}</li>
+						))}
+					</ul>
+					<footer className="challenge-footer">
+						<div className="challenge-streak">
+							<span className="streak-count">{dailyChallenge.streakCount ?? 0}</span>
+							<span className="streak-label">Day streak</span>
+						</div>
+						<button
+							type="button"
+							className="btn micro halo"
+							onClick={handleDailyChallengeComplete}
+							disabled={challengeCompletedToday}
+							title={challengeCompletedToday ? 'Already locked in today’s streak.' : 'Mark today’s challenge as complete.'}
+						>
+							{challengeCompletedToday ? 'Locked' : 'Mark Complete'}
+						</button>
+					</footer>
+				</section>
+			)}
+
+			{!mode && (
 				<section className="mode-selector">
 					{modeDefinitions.map((entry) => (
 						<button
@@ -1126,6 +1768,92 @@ function App() {
 					))}
 				</section>
 			)}
+
+				{!mode && (
+					<section className="session-hub glass">
+						<div className="session-column">
+							<div className="session-heading">
+								<h3>Spectate a live studio</h3>
+								<p>Drop into a creator's workspace and follow their flow in real time.</p>
+							</div>
+							<ul>
+								{liveSessions.map((session) => (
+									<li key={session.id}>
+										<div className="session-meta">
+											<strong>{session.title}</strong>
+											<span>{session.owner} · {session.participants} viewers</span>
+										</div>
+										<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
+											Spectate
+										</button>
+									</li>
+								))}
+							</ul>
+						</div>
+						<div className="session-column">
+							<div className="session-heading">
+								<h3>Join a collaboration</h3>
+								<p>Enter an open room and build alongside other artists.</p>
+							</div>
+							<ul>
+								{collaborativeSessions.map((session) => (
+									<li key={session.id}>
+										<div className="session-meta">
+											<strong>{session.title}</strong>
+											<span>{session.owner} · {session.participants} creators</span>
+										</div>
+										<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
+											Join
+										</button>
+									</li>
+								))}
+							</ul>
+						</div>
+					</section>
+				)}
+
+				{!mode && (
+					<section className="community-feed glass" aria-live="polite">
+						<header className="feed-header">
+							<div>
+								<h3>Community Feed</h3>
+								<p>See what the Inspire crew shipped today and fork a pack into your workspace.</p>
+							</div>
+						</header>
+						<div className="feed-grid">
+							{communityPosts.map((post) => (
+								<article key={post.id} className="feed-card">
+									<div className="feed-meta">
+										<span className="feed-author">{post.author}</span>
+										<span className="feed-timestamp">{formatRelativeTime(post.createdAt)}</span>
+									</div>
+									<p className="feed-content">{post.content}</p>
+									{post.featuredPack && (
+										<div className="feed-pack">
+											<strong>{post.featuredPack.title}</strong>
+											<span className="feed-pack-subtitle">
+												Remixed from {post.featuredPack.remixOf?.author ?? post.author}
+											</span>
+											<button
+												type="button"
+												className="btn micro"
+												onClick={() => handleForkCommunityPost(post)}
+												title="Fork this pack into your studio"
+											>
+												Fork & Remix
+											</button>
+										</div>
+									)}
+									<div className="feed-stats" aria-label="Engagement stats">
+										<span>❤️ {post.reactions}</span>
+										<span>💬 {post.comments}</span>
+										<span>♻️ {post.remixCount}</span>
+									</div>
+								</article>
+							))}
+						</div>
+					</section>
+				)}
 
 			{mode && !submode && activeModeDefinition && (
 				<section className="submode-panel glass">
@@ -1257,17 +1985,27 @@ function App() {
 
 								{isModePack(fuelPack) && (
 									<>
-										<div className="pack-deck">
-											{packDeck.map((card, index) => (
+										<div className="pack-deck" role="list">
+											{orderedPackDeck.map((card, index) => (
 												<button
 													key={card.id}
 													type="button"
+													role="listitem"
+													data-card-id={card.id}
 													className={`pack-card${expandedCard === card.id ? ' active' : ''}`}
+													draggable
+													onDragStart={handleCardDragStart(card.id)}
+													onDragEnter={handleCardDragEnter(card.id)}
+													onDragOver={handleCardDragOver}
+													onDragEnd={handleCardDragEnd}
 													onClick={() => setExpandedCard((current) => (current === card.id ? null : card.id))}
 													style={{ '--card-index': index } as CSSProperties}
 													aria-expanded={expandedCard === card.id}
 												>
-													<span className="card-label">{card.label}</span>
+													<span className="card-label">
+														{card.label}
+														{draggedCardId === card.id && <span className="snap-indicator" aria-hidden="true">⇕</span>}
+													</span>
 													<span className="card-preview">{card.preview}</span>
 												</button>
 											))}
@@ -1336,6 +2074,35 @@ function App() {
 							</div>
 						)}
 						</section>
+
+						{isModePack(fuelPack) && workspaceQueue.length > 0 && (
+							<aside className="workspace-queue glass" aria-label="Suggested inspiration queue">
+								<div className="queue-header">
+									<h3>Inspiration Queue</h3>
+									<p>
+										Clips and references tuned to <strong>{fuelPack.title}</strong>.
+									</p>
+								</div>
+								<ul className="queue-list">
+									{workspaceQueue.map((item) => (
+										<li key={item.id} className="queue-item">
+											<div className="queue-meta">
+												<span className="queue-pill">{formatQueueType(item.type)}</span>
+												<div className="queue-text">
+													<strong>{item.title}</strong>
+													{item.author && <span className="queue-author">{item.author}</span>}
+													{item.matchesPack && <span className="queue-match">Matches: {item.matchesPack}</span>}
+													{item.duration && <span className="queue-duration">{item.duration}</span>}
+												</div>
+											</div>
+											<a className="btn micro" href={item.url} target="_blank" rel="noopener noreferrer">
+												Open
+											</a>
+										</li>
+									))}
+								</ul>
+							</aside>
+						)}
 
 					</div>
 				</main>
