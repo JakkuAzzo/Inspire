@@ -186,6 +186,15 @@ export interface DailyChallenge {
   streakCount?: number;
 }
 
+export interface ChallengeActivity {
+  id: string;
+  handle: string;
+  status: 'accepted' | 'submitted';
+  timestamp: string;
+  activity: string;
+  type?: string;
+}
+
 export type WorkspaceQueueItemType = 'youtube' | 'stream' | 'instrumental' | 'reference';
 
 export interface WorkspaceQueueItem {

@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import './App.css';
 import inspireLogo from './assets/Inspire_transparent.png';
-import tildeSecLogo from './assets/TildeSec_transparent.png';
 
 import type {
+	ChallengeActivity,
 	CommunityPost,
 	CreativeMode,
 	DailyChallenge,
@@ -75,14 +75,6 @@ const LYRICIST_GENRES = [
 	{ value: 'afrobeats', label: 'Afrobeats' },
 	{ value: 'lo-fi', label: 'Lo-Fi' },
 	{ value: 'electronic', label: 'Electronic' }
-];
-
-const PROMPT_ROTATIONS = [
-	'Pick a studio. Make something wild.',
-	'Which creative muscle are we training today?',
-	'Blend real headlines with your imagination.',
-	'Flip a sample, cut a film, or write a verse.',
-	'Every mode is a different toy box.'
 ];
 
 const MODE_BACKGROUNDS: Record<CreativeMode, string> = {
@@ -383,6 +375,24 @@ function formatRelativeTime(timestamp: string): string {
 	if (diffHours < 24) return `${diffHours}h ago`;
 	const diffDays = Math.floor(diffHours / 24);
 	return `${diffDays}d ago`;
+}
+
+function formatChallengeCountdown(deadlineIso: string): string {
+	const deadline = new Date(deadlineIso);
+	if (Number.isNaN(deadline.getTime())) return '—';
+	const diffMs = deadline.getTime() - Date.now();
+	if (diffMs <= 0) return 'Expired';
+	const totalSeconds = Math.floor(diffMs / 1000);
+	const hours = Math.floor(totalSeconds / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
+	if (hours > 0) {
+		return `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
+	}
+	if (minutes > 0) {
+		return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+	}
+	return `${seconds}s`;
 }
 
 async function searchYouTubeVideo(query: string, signal?: AbortSignal): Promise<YouTubeVideoPreview | null> {
@@ -736,7 +746,6 @@ function App() {
 	const [loading, setLoading] = useState<LoadingState>(null);
 	const [status, setStatus] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [promptIndex, setPromptIndex] = useState(0);
 	const [userId, setUserId] = useState<string>(initialUserId);
 	const [creatorStats, setCreatorStats] = useState<CreatorStats>(() => loadCreatorStats(initialUserId));
 	const [lookupId, setLookupId] = useState('');
@@ -768,6 +777,7 @@ function App() {
 	const audioContextRef = useRef<AudioContext | null>(null);
 	const [communityPosts] = useState<CommunityPost[]>(COMMUNITY_POSTS);
 	const [workspaceQueue, setWorkspaceQueue] = useState<WorkspaceQueueItem[]>(INITIAL_WORKSPACE_QUEUE);
+	const [queueCollapsed, setQueueCollapsed] = useState(false);
 	const [youtubeVideos, setYoutubeVideos] = useState<Record<string, YouTubeVideoPreview>>({});
 	const youtubeVideosRef = useRef<Record<string, YouTubeVideoPreview>>({});
 	const [youtubeError, setYoutubeError] = useState<string | null>(null);
@@ -775,14 +785,22 @@ function App() {
 	const [, setDailyChallengeStored] = useState<StoredDailyChallenge>(initialDailyChallenge.stored);
 	const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge>(initialDailyChallenge.challenge);
 	const [challengeCompletedToday, setChallengeCompletedToday] = useState<boolean>(initialDailyChallenge.stored.completed);
+	const [showChallengeOverlay, setShowChallengeOverlay] = useState(false);
+	const [challengeCountdown, setChallengeCountdown] = useState<string>(() => formatChallengeCountdown(initialDailyChallenge.challenge.expiresAt));
+	const [challengeActivity, setChallengeActivity] = useState<ChallengeActivity[]>([]);
+	const [challengeActivityError, setChallengeActivityError] = useState<string | null>(null);
+	const [showModePicker, setShowModePicker] = useState(false);
 
 
 	useEffect(() => {
 		youtubeVideosRef.current = youtubeVideos;
 	}, [youtubeVideos]);
 
-	const heroPrompt = PROMPT_ROTATIONS[promptIndex];
 	const activeModeDefinition = mode ? modeDefinitions.find((entry) => entry.id === mode) ?? null : null;
+	const activeSubmodeDefinition = useMemo(
+		() => (activeModeDefinition ? activeModeDefinition.submodes.find((entry) => entry.id === submode) ?? null : null),
+		[activeModeDefinition, submode]
+	);
 	const activeSession = useMemo(
 		() => (selectedSessionId ? activeSessions.find((session) => session.id === selectedSessionId) ?? null : null),
 		[activeSessions, selectedSessionId]
@@ -816,6 +834,16 @@ function App() {
 			console.warn('Unable to parse challenge expiry', err);
 			return 'midnight';
 		}
+	}, [dailyChallenge.expiresAt]);
+
+	const isAuthenticated = useMemo(() => Boolean(userId) && !userId.startsWith('creator-'), [userId]);
+
+	useEffect(() => {
+		const updateCountdown = () => setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
+		updateCountdown();
+		if (typeof window === 'undefined') return;
+		const intervalId = window.setInterval(updateCountdown, 1000);
+		return () => window.clearInterval(intervalId);
 	}, [dailyChallenge.expiresAt]);
 
 	useEffect(() => {
@@ -1005,6 +1033,10 @@ function App() {
 		});
 	}, []);
 
+	const toggleQueueCollapsed = useCallback(() => {
+		setQueueCollapsed((prev) => !prev);
+	}, []);
+
 	const handleAutoRefreshSelect = useCallback((interval: number | null) => {
 		setAutoRefreshMs((current) => {
 			if (interval === null) return null;
@@ -1183,6 +1215,7 @@ function App() {
 			setStatus(null);
 			setFilters(DEFAULT_FILTERS);
 			setExpandedCard(null);
+			setShowModePicker(false);
 			if (nextMode !== 'lyricist') {
 				setGenre('r&b');
 			}
@@ -1211,6 +1244,7 @@ function App() {
 		setViewerMode('idle');
 		setDeckOrder([]);
 		setDraggedCardId(null);
+		setShowModePicker(false);
 		dragSourceRef.current = null;
 	}, []);
 
@@ -1288,6 +1322,26 @@ function App() {
 		setStatus('Daily challenge cleared ✅');
 	}, [challengeCompletedToday, markDailyChallengeComplete]);
 
+	const handleChallengeCompleteAndClose = useCallback(() => {
+		handleDailyChallengeComplete();
+		setShowChallengeOverlay(false);
+	}, [handleDailyChallengeComplete]);
+
+	const fetchChallengeActivity = useCallback(async () => {
+		try {
+			const res = await fetch('/dev/api/challenges/activity');
+			if (!res.ok) throw new Error('Failed to load activity');
+			const payload = (await res.json()) as { activity?: ChallengeActivity[] };
+			const items = Array.isArray(payload.activity) ? payload.activity : [];
+			setChallengeActivity(items);
+			setChallengeActivityError(items.length ? null : 'No recent submissions yet.');
+		} catch (err) {
+			console.warn('Failed to fetch challenge activity', err);
+			setChallengeActivity([]);
+			setChallengeActivityError('Unable to load recent activity.');
+		}
+	}, []);
+
 	useEffect(() => {
 		if (typeof window === 'undefined') return;
 		const timer = window.setInterval(() => {
@@ -1303,6 +1357,15 @@ function App() {
 		}, 60_000);
 		return () => window.clearInterval(timer);
 	}, [setDailyChallengeStored, setDailyChallenge, setChallengeCompletedToday]);
+
+	useEffect(() => {
+		void fetchChallengeActivity();
+	}, [fetchChallengeActivity]);
+
+	useEffect(() => {
+		if (!showChallengeOverlay) return;
+		void fetchChallengeActivity();
+	}, [showChallengeOverlay, fetchChallengeActivity]);
 
 	const handleLoadById = useCallback(async () => {
 		const target = lookupId.trim();
@@ -1348,6 +1411,16 @@ function App() {
 		},
 		[userId, playCue]
 	);
+
+	const handleUserHandleClick = useCallback(() => {
+		if (isAuthenticated) {
+			if (typeof window !== 'undefined') {
+				window.location.assign('/dashboard');
+			}
+			return;
+		}
+		setShowAccountModal(true);
+	}, [isAuthenticated, setShowAccountModal]);
 
 	const handleUserIdChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
 		setUserId(event.target.value.slice(0, 32));
@@ -1633,13 +1706,6 @@ function App() {
 	const selectedCard = orderedPackDeck.find((card) => card.id === expandedCard) ?? null;
 
 	useEffect(() => {
-		const ticker = window.setInterval(() => {
-			setPromptIndex((idx) => (idx + 1) % PROMPT_ROTATIONS.length);
-		}, 6000);
-		return () => window.clearInterval(ticker);
-	}, []);
-
-	useEffect(() => {
 		if (typeof window !== 'undefined') {
 			window.localStorage.setItem('inspire:userId', userId);
 		}
@@ -1708,7 +1774,8 @@ function App() {
 		window.history.replaceState({}, '', nextUrl);
 	}, [setPack, handleDismissOnboarding]);
 
-	const formattedHandle = userId ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign in';
+	const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
+	const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
 	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}`;
 	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
 	const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
@@ -1746,6 +1813,12 @@ function App() {
 					<span className="metric-label">Favorite tone</span>
 					<span className="metric-value">{creatorStats.favoriteTone ?? '—'}</span>
 				</div>
+				<button type="button" className="metric-card challenge-card" onClick={() => setShowChallengeOverlay(true)}>
+					<span className="metric-label">Daily challenge</span>
+					<span className="metric-value">{challengeCountdown}</span>
+					<span className="metric-meta">{challengeCompletedToday ? 'Completed ✅' : `Resets ${challengeResetLabel}`}</span>
+					<span className="metric-meta hint">View progress →</span>
+				</button>
 			</div>
 			<div className="achievements">
 				<span className="label">Achievements</span>
@@ -1761,49 +1834,76 @@ function App() {
 
 	return (
 		<div className={appClassName}>
+			<button
+				type="button"
+				className="user-handle"
+				onClick={handleUserHandleClick}
+				aria-label={handleTriggerLabel}
+			>
+				<span>{formattedHandle}</span>
+				<span className="handle-indicator" aria-hidden="true">↗</span>
+			</button>
 			<div className="ambient orb-left" aria-hidden="true" />
 			<div className="ambient orb-right" aria-hidden="true" />
 			<div className="noise-overlay" aria-hidden="true" />
 
 			{mode ? (
 				<header className="top-nav glass">
-					<div className="nav-brand">
-						<button type="button" className="nav-title" onClick={handleBackToModes} aria-label="Return to studio selection">
-							<img src={inspireLogo} alt="" />
-							<span className="sr-only">Inspire</span>
+					<div className="nav-left">
+						<button className="back-button" type="button" onClick={handleBackToModes}>
+							← Studios
 						</button>
-						<img src={tildeSecLogo} alt="TildeSec" className="nav-partner" />
-					</div>
-					<div className="nav-controls">
-						<div className="nav-toggle-group" role="group" aria-label="Collaboration mode">
-							<button
-								type="button"
-								className={`nav-pill${collaborationMode === 'live' ? ' active' : ''}`}
-								onClick={() => handleCollaborationModeToggle('live')}
-							>
-								Go Live
-							</button>
-							<button
-								type="button"
-								className={`nav-pill${collaborationMode === 'collaborative' ? ' active' : ''}`}
-								onClick={() => handleCollaborationModeToggle('collaborative')}
-							>
-								Collaborate
-							</button>
-						</div>
-						<div className="nav-status" aria-live="polite">
-							<span>{collaborationStatusLabel}</span>
-							{(viewerMode === 'spectating' || viewerMode === 'joining') && (
-								<button type="button" className="btn micro ghost" onClick={handleLeaveViewerMode}>
-									Leave
-								</button>
+						<div className="nav-title-block">
+							<h2>{activeModeDefinition ? `${activeModeDefinition.icon} ${activeModeDefinition.label}` : 'Creative Studio'}</h2>
+							{(activeSubmodeDefinition || activeModeDefinition) && (
+								<p>{activeSubmodeDefinition?.description ?? activeModeDefinition?.description}</p>
 							)}
 						</div>
 					</div>
-					<div className="nav-actions">
-						<button type="button" className="nav-handle" onClick={() => setShowAccountModal(true)}>
-							{formattedHandle}
-						</button>
+					<div className="nav-right">
+						<div className="nav-icon-actions" role="group" aria-label="Workspace actions">
+							<button
+								type="button"
+								className="icon-button"
+								title="Generate fuel pack"
+								aria-label="Generate fuel pack"
+								onClick={handleGeneratePack}
+								disabled={loading === 'generate'}
+							>
+								⚡
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Remix current pack"
+								aria-label="Remix current pack"
+								onClick={handleRemixPack}
+								disabled={loading === 'remix' || !fuelPack}
+							>
+								♻️
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Share pack link"
+								aria-label="Share pack link"
+								onClick={() => handleSharePack(fuelPack)}
+								disabled={!fuelPack}
+							>
+								🔗
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title={controlsToggleLabel}
+								aria-label={controlsToggleLabel}
+								aria-pressed={!controlsCollapsed}
+								aria-controls="workspaceControls"
+								onClick={toggleWorkspaceControls}
+							>
+								🎛️
+							</button>
+						</div>
 						<button
 							type="button"
 							className="nav-settings"
@@ -1819,22 +1919,9 @@ function App() {
 					<div className="hero-copy">
 						<div className="hero-brand">
 							<img src={inspireLogo} alt="Inspire" />
-							<img src={tildeSecLogo} alt="TildeSec" />
 						</div>
 						<h1>Make Something</h1>
 						<p className="hero-tagline">Choose your creative studio and spin a fresh challenge.</p>
-						<p className="hero-rotator" aria-live="polite">{heroPrompt}</p>
-						<label className="user-handle" htmlFor="userId">
-							<span className="label">Creator handle</span>
-							<input
-								id="userId"
-								value={userId}
-								maxLength={32}
-								onChange={handleUserIdChange}
-								onBlur={handleUserIdBlur}
-								onKeyDown={handleUserIdKey}
-							/>
-						</label>
 					</div>
 					<div className="hero-meta glass">
 						{heroMetaContent}
@@ -1853,145 +1940,116 @@ function App() {
 			)}
 
 			{!mode && (
-				<section className="daily-challenge glass" aria-live="polite">
-					<header className="daily-challenge-header">
-						<span className="challenge-pill">Daily Challenge</span>
-						<div className="challenge-meta">
-							<strong>{dailyChallenge.title}</strong>
-							<span>{dailyChallenge.description}</span>
-						</div>
-						<div className="challenge-status">
-							<span>{challengeCompletedToday ? 'Completed ✅' : 'In progress'}</span>
-							<span>Resets {challengeResetLabel}</span>
-						</div>
-					</header>
-					<ul className="challenge-constraints">
-						{dailyChallenge.constraints.map((constraint) => (
-							<li key={constraint}>{constraint}</li>
+				showModePicker ? (
+					<section className="mode-selector">
+						{modeDefinitions.map((entry) => (
+							<button
+								key={entry.id}
+								type="button"
+								className="mode-card"
+								onClick={() => handleModeSelect(entry.id)}
+								onPointerMove={handleModeCardParallax}
+								onPointerLeave={handleModeCardLeave}
+							>
+								<span className="mode-card-glow" aria-hidden="true" />
+								<span className="icon" aria-hidden="true">{entry.icon}</span>
+								<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
+								<p>{entry.description}</p>
+							</button>
 						))}
-					</ul>
-					<footer className="challenge-footer">
-						<div className="challenge-streak">
-							<span className="streak-count">{dailyChallenge.streakCount ?? 0}</span>
-							<span className="streak-label">Day streak</span>
-						</div>
-						<button
-							type="button"
-							className="btn micro halo"
-							onClick={handleDailyChallengeComplete}
-							disabled={challengeCompletedToday}
-							title={challengeCompletedToday ? 'Already locked in today’s streak.' : 'Mark today’s challenge as complete.'}
-						>
-							{challengeCompletedToday ? 'Locked' : 'Mark Complete'}
-						</button>
-					</footer>
-				</section>
-			)}
-
-			{!mode && (
-				<section className="mode-selector">
-					{modeDefinitions.map((entry) => (
-						<button
-							key={entry.id}
-							type="button"
-							className="mode-card"
-							onClick={() => handleModeSelect(entry.id)}
-							onPointerMove={handleModeCardParallax}
-							onPointerLeave={handleModeCardLeave}
-						>
-							<span className="mode-card-glow" aria-hidden="true" />
-							<span className="icon" aria-hidden="true">{entry.icon}</span>
-							<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
-							<p>{entry.description}</p>
-						</button>
-					))}
-				</section>
-			)}
-
-				{!mode && (
-					<section className="session-hub glass">
-						<div className="session-column">
-							<div className="session-heading">
-								<h3>Spectate a live studio</h3>
-								<p>Drop into a creator's workspace and follow their flow in real time.</p>
-							</div>
-							<ul>
-								{liveSessions.map((session) => (
-									<li key={session.id}>
-										<div className="session-meta">
-											<strong>{session.title}</strong>
-											<span>{session.owner} · {session.participants} viewers</span>
-										</div>
-										<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
-											Spectate
-										</button>
-									</li>
-								))}
-							</ul>
-						</div>
-						<div className="session-column">
-							<div className="session-heading">
-								<h3>Join a collaboration</h3>
-								<p>Enter an open room and build alongside other artists.</p>
-							</div>
-							<ul>
-								{collaborativeSessions.map((session) => (
-									<li key={session.id}>
-										<div className="session-meta">
-											<strong>{session.title}</strong>
-											<span>{session.owner} · {session.participants} creators</span>
-										</div>
-										<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
-											Join
-										</button>
-									</li>
-								))}
-							</ul>
-						</div>
 					</section>
-				)}
+				) : (
+					<div className="mode-gate">
+						<button type="button" className="btn primary" onClick={() => setShowModePicker(true)}>
+							Get Started - Pick a Lab
+						</button>
+					</div>
+				)
+			)}
 
-				{!mode && (
-					<section className="community-feed glass" aria-live="polite">
-						<header className="feed-header">
-							<div>
-								<h3>Community Feed</h3>
-								<p>See what the Inspire crew shipped today and fork a pack into your workspace.</p>
-							</div>
-						</header>
-						<div className="feed-grid">
-							{communityPosts.map((post) => (
-								<article key={post.id} className="feed-card">
-									<div className="feed-meta">
-										<span className="feed-author">{post.author}</span>
-										<span className="feed-timestamp">{formatRelativeTime(post.createdAt)}</span>
-									</div>
-									<p className="feed-content">{post.content}</p>
-									{post.featuredPack && (
-										<div className="feed-pack">
-											<strong>{post.featuredPack.title}</strong>
-											<span className="feed-pack-subtitle">
-												Remixed from {post.featuredPack.remixOf?.author ?? post.author}
-											</span>
-											<button
-												type="button"
-												className="btn micro"
-												onClick={() => handleForkCommunityPost(post)}
-												title="Fork this pack into your studio"
-											>
-												Fork & Remix
+		{!mode && (
+			<div className="discover-row">
+						<section className="session-hub glass">
+							<div className="session-column">
+								<div className="session-heading">
+									<h3>Spectate a live studio</h3>
+									<p>Drop into a creator's workspace and follow their flow in real time.</p>
+								</div>
+								<ul>
+									{liveSessions.map((session) => (
+										<li key={session.id}>
+											<div className="session-meta">
+												<strong>{session.title}</strong>
+												<span>{session.owner} · {session.participants} viewers</span>
+											</div>
+											<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
+												Spectate
 											</button>
+										</li>
+									))}
+								</ul>
+							</div>
+							<div className="session-column">
+								<div className="session-heading">
+									<h3>Join a collaboration</h3>
+									<p>Enter an open room and build alongside other artists.</p>
+								</div>
+								<ul>
+									{collaborativeSessions.map((session) => (
+										<li key={session.id}>
+											<div className="session-meta">
+												<strong>{session.title}</strong>
+												<span>{session.owner} · {session.participants} creators</span>
+											</div>
+											<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
+												Join
+											</button>
+										</li>
+									))}
+								</ul>
+							</div>
+						</section>
+						<section className="community-feed glass" aria-live="polite">
+							<header className="feed-header">
+								<div>
+									<h3>Community Feed</h3>
+									<p>See what the Inspire crew shipped today and fork a pack into your workspace.</p>
+								</div>
+							</header>
+							<div className="feed-grid">
+								{communityPosts.map((post) => (
+									<article key={post.id} className="feed-card">
+										<div className="feed-meta">
+											<span className="feed-author">{post.author}</span>
+											<span className="feed-timestamp">{formatRelativeTime(post.createdAt)}</span>
 										</div>
-									)}
-									<div className="feed-stats" aria-label="Engagement stats">
-										<span>❤️ {post.reactions}</span>
-										<span>💬 {post.comments}</span>
-										<span>♻️ {post.remixCount}</span>
-									</div>
-								</article>
-							))}
-						</div>
-					</section>
+										<p className="feed-content">{post.content}</p>
+										{post.featuredPack && (
+											<div className="feed-pack">
+												<strong>{post.featuredPack.title}</strong>
+												<span className="feed-pack-subtitle">
+													Remixed from {post.featuredPack.remixOf?.author ?? post.author}
+												</span>
+												<button
+													type="button"
+													className="btn micro"
+													onClick={() => handleForkCommunityPost(post)}
+													title="Fork this pack into your studio"
+												>
+													Fork & Remix
+												</button>
+											</div>
+										)}
+										<div className="feed-stats" aria-label="Engagement stats">
+											<span>❤️ {post.reactions}</span>
+											<span>💬 {post.comments}</span>
+											<span>♻️ {post.remixCount}</span>
+										</div>
+									</article>
+								))}
+							</div>
+						</section>
+					</div>
 				)}
 
 			{mode && !submode && activeModeDefinition && (
@@ -2012,34 +2070,6 @@ function App() {
 
 			{mode && submode && (
 				<main className={workspaceClassName}>
-					<div className="workspace-head">
-						<button className="back-button" type="button" onClick={handleBackToModes}>← Studios</button>
-						<div>
-							<h2>{activeModeDefinition ? `${activeModeDefinition.icon} ${activeModeDefinition.label}` : 'Creative Studio'}</h2>
-							<p>{activeModeDefinition?.submodes.find((entry) => entry.id === submode)?.description}</p>
-						</div>
-						<div className="actions-group">
-							<button className="btn primary halo" type="button" onClick={handleGeneratePack} disabled={loading === 'generate'}>
-								{loading === 'generate' ? 'Generating…' : 'Generate Fuel Pack'}
-							</button>
-							<button className="btn secondary" type="button" onClick={handleRemixPack} disabled={loading === 'remix' || !fuelPack}>
-								{loading === 'remix' ? 'Remixing…' : 'Remix Pack'}
-							</button>
-							<button className="btn tertiary" type="button" onClick={() => handleSharePack(fuelPack)} disabled={!fuelPack}>
-								Share
-							</button>
-							<button
-								className="btn ghost workspace-controls-toggle"
-								type="button"
-								onClick={toggleWorkspaceControls}
-								aria-expanded={!controlsCollapsed}
-								aria-controls="workspaceControls"
-							>
-								{controlsToggleLabel}
-							</button>
-						</div>
-					</div>
-
 					{!controlsCollapsed && (
 						<div className="workspace-controls" id="workspaceControls">
 							<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
@@ -2215,15 +2245,32 @@ function App() {
 						</section>
 
 						{isModePack(fuelPack) && workspaceQueue.length > 0 && (
-							<aside className="workspace-queue glass" aria-label="Suggested inspiration queue">
+							<aside className={`workspace-queue glass${queueCollapsed ? ' collapsed' : ''}`} aria-label="Suggested inspiration queue">
 								<div className="queue-header">
-									<h3>Inspiration Queue</h3>
-									<p>
-										Clips and references tuned to <strong>{fuelPack.title}</strong>.
-									</p>
+									<div className="queue-heading">
+										<h3>
+											Inspiration Queue
+											<span className="queue-count" aria-label={`${workspaceQueue.length} recommendations`}>
+												{workspaceQueue.length}
+											</span>
+										</h3>
+										<p>
+											Clips and references tuned to <strong>{fuelPack.title}</strong>.
+										</p>
+									</div>
+									<button
+										type="button"
+										className="btn ghost micro queue-toggle"
+										onClick={toggleQueueCollapsed}
+										aria-expanded={!queueCollapsed}
+										aria-controls="workspaceQueueList"
+									>
+										{queueCollapsed ? 'Expand queue' : 'Collapse queue'}
+									</button>
 								</div>
-								{youtubeError && <p className="queue-hint" role="status">{youtubeError}</p>}
-								<ul className="queue-list">
+								{!queueCollapsed && youtubeError && <p className="queue-hint" role="status">{youtubeError}</p>}
+								{!queueCollapsed && (
+									<ul id="workspaceQueueList" className="queue-list">
 									{workspaceQueue.map((item) => (
 										<li key={item.id} className="queue-item">
 											<div className="queue-meta">
@@ -2259,12 +2306,82 @@ function App() {
 											)}
 										</li>
 									))}
-								</ul>
+									</ul>
+								)}
 							</aside>
 						)}
 
 					</div>
 				</main>
+			)}
+
+			{showChallengeOverlay && (
+				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-labelledby="challengeOverlayTitle" aria-describedby="challengeOverlayDescription">
+					<div className="challenge-overlay glass">
+						<div className="overlay-header">
+							<h2 id="challengeOverlayTitle">Daily Challenge</h2>
+							<button type="button" className="icon-button" aria-label="Close challenge details" onClick={() => setShowChallengeOverlay(false)}>
+								✕
+							</button>
+						</div>
+						<div className="challenge-overlay-body">
+							<section className="challenge-summary" id="challengeOverlayDescription">
+								<div>
+									<strong>{dailyChallenge.title}</strong>
+									<p>{dailyChallenge.description}</p>
+									{dailyChallenge.reward && <p className="challenge-reward">Reward: {dailyChallenge.reward}</p>}
+								</div>
+								<div className="challenge-countdown">
+									<span className="countdown-label">Time remaining</span>
+									<span className="countdown-value">{challengeCountdown}</span>
+								</div>
+								<div className="challenge-status-row">
+									<span>{challengeCompletedToday ? 'Completed ✅' : 'In progress'}</span>
+									<span>Resets {challengeResetLabel}</span>
+								</div>
+							</section>
+							<div className="challenge-columns">
+								<section className="challenge-card">
+									<h3>Constraints</h3>
+									<ul className="challenge-list">
+										{dailyChallenge.constraints.map((constraint) => (
+											<li key={constraint}>{constraint}</li>
+										))}
+									</ul>
+								</section>
+								<section className="challenge-card">
+									<h3>Recent activity</h3>
+									<ul className="challenge-activity">
+										{challengeActivity.length > 0 ? (
+											challengeActivity.map((entry) => (
+												<li key={entry.id}>
+													<div className="activity-handle">{entry.handle}</div>
+													<div className="activity-status">{entry.status === 'submitted' ? 'Submitted' : 'Accepted'} · {formatRelativeTime(entry.timestamp)}</div>
+													{entry.activity && <div className="activity-detail">{entry.activity}</div>}
+												</li>
+											))
+										) : (
+											<li className="activity-empty">{challengeActivityError ?? 'Challenge activity is warming up.'}</li>
+										)}
+									</ul>
+								</section>
+							</div>
+						</div>
+						<footer className="challenge-overlay-footer">
+							<button type="button" className="btn ghost" onClick={() => setShowChallengeOverlay(false)}>
+								Close
+							</button>
+							<button
+								type="button"
+								className="btn primary"
+								onClick={handleChallengeCompleteAndClose}
+								disabled={challengeCompletedToday}
+							>
+								{challengeCompletedToday ? 'Marked Complete' : 'Mark Complete'}
+							</button>
+						</footer>
+					</div>
+				</div>
 			)}
 
 			{showSettingsOverlay && (
@@ -2276,6 +2393,35 @@ function App() {
 								✕
 							</button>
 						</div>
+						<section className="settings-section" aria-label="Live studio controls">
+							<h3>Live studio</h3>
+							<div className="settings-collab-row">
+								<div className="nav-status" aria-live="polite">
+									<span>{collaborationStatusLabel}</span>
+									{(viewerMode === 'spectating' || viewerMode === 'joining') && (
+										<button type="button" className="btn micro ghost" onClick={handleLeaveViewerMode}>
+											Leave
+										</button>
+									)}
+								</div>
+								<div className="nav-toggle-group" role="group" aria-label="Collaboration mode">
+									<button
+										type="button"
+										className={`nav-pill${collaborationMode === 'live' ? ' active' : ''}`}
+										onClick={() => handleCollaborationModeToggle('live')}
+									>
+										Go Live
+									</button>
+									<button
+										type="button"
+										className={`nav-pill${collaborationMode === 'collaborative' ? ' active' : ''}`}
+										onClick={() => handleCollaborationModeToggle('collaborative')}
+									>
+										Collaborate
+									</button>
+								</div>
+							</div>
+						</section>
 						{heroMetaContent}
 					</div>
 				</div>
@@ -2291,7 +2437,7 @@ function App() {
 							</button>
 						</div>
 						<p className="overlay-copy">Claim your creator handle to sync packs across sessions.</p>
-						<label className="user-handle" htmlFor="overlayUserId">
+						<label className="handle-field" htmlFor="overlayUserId">
 							<span className="label">Creator handle</span>
 							<input
 								id="overlayUserId"
