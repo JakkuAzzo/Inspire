@@ -104,6 +104,7 @@ const STATS_KEY_PREFIX = 'inspire:creatorStats:';
 const ONBOARDING_KEY = 'inspire:onboardingComplete';
 const THEME_KEY = 'inspire:theme';
 const CONTROLS_COLLAPSED_KEY = 'inspire:workspaceControlsCollapsed';
+const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY as string | undefined;
 
 type LoadingState = null | 'generate' | 'load' | 'remix';
 
@@ -134,6 +135,30 @@ interface LiveSession {
 	title: string;
 	participants: number;
 	status: 'live' | 'open';
+}
+
+interface YouTubeVideoPreview {
+	videoId: string;
+	title: string;
+	channelTitle: string;
+	thumbnailUrl?: string;
+}
+
+interface YouTubeSearchItem {
+	id?: { videoId?: string };
+	snippet?: {
+		title?: string;
+		channelTitle?: string;
+		thumbnails?: {
+			medium?: { url?: string };
+			high?: { url?: string };
+			default?: { url?: string };
+		};
+	};
+}
+
+interface YouTubeSearchResponse {
+	items?: YouTubeSearchItem[];
 }
 
 const LIVE_SESSION_PRESETS: LiveSession[] = [
@@ -360,6 +385,33 @@ function formatRelativeTime(timestamp: string): string {
 	return `${diffDays}d ago`;
 }
 
+async function searchYouTubeVideo(query: string, signal?: AbortSignal): Promise<YouTubeVideoPreview | null> {
+	if (!YOUTUBE_API_KEY) return null;
+	const params = new URLSearchParams({
+		part: 'snippet',
+		type: 'video',
+		maxResults: '1',
+		key: YOUTUBE_API_KEY,
+		q: query
+	});
+	const endpoint = `https://www.googleapis.com/youtube/v3/search?${params.toString()}`;
+	const response = await fetch(endpoint, { signal });
+	if (!response.ok) {
+		throw new Error(`YouTube search failed with status ${response.status}`);
+	}
+	const payload = (await response.json()) as YouTubeSearchResponse;
+	const [first] = payload.items ?? [];
+	const videoId = first?.id?.videoId;
+	if (!videoId) return null;
+	const snippet = first?.snippet;
+	return {
+		videoId,
+		title: snippet?.title ?? query,
+		channelTitle: snippet?.channelTitle ?? 'YouTube',
+		thumbnailUrl: snippet?.thumbnails?.high?.url ?? snippet?.thumbnails?.medium?.url ?? snippet?.thumbnails?.default?.url
+	};
+}
+
 function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
 	const baseQueue: WorkspaceQueueItem[] = [
 		{
@@ -367,7 +419,8 @@ function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
 			type: 'youtube',
 			title: `${pack.title} inspiration mix`,
 			url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${pack.title} ${pack.mode} inspiration`)}`,
-			matchesPack: pack.title
+			matchesPack: pack.title,
+			searchQuery: `${pack.title} ${pack.mode} inspiration`
 		},
 		{
 			id: `${pack.id}-instrumental`,
@@ -715,11 +768,18 @@ function App() {
 	const audioContextRef = useRef<AudioContext | null>(null);
 	const [communityPosts] = useState<CommunityPost[]>(COMMUNITY_POSTS);
 	const [workspaceQueue, setWorkspaceQueue] = useState<WorkspaceQueueItem[]>(INITIAL_WORKSPACE_QUEUE);
+	const [youtubeVideos, setYoutubeVideos] = useState<Record<string, YouTubeVideoPreview>>({});
+	const youtubeVideosRef = useRef<Record<string, YouTubeVideoPreview>>({});
+	const [youtubeError, setYoutubeError] = useState<string | null>(null);
 	const initialDailyChallenge = useMemo(() => initializeDailyChallenge(), []);
 	const [, setDailyChallengeStored] = useState<StoredDailyChallenge>(initialDailyChallenge.stored);
 	const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge>(initialDailyChallenge.challenge);
 	const [challengeCompletedToday, setChallengeCompletedToday] = useState<boolean>(initialDailyChallenge.stored.completed);
 
+
+	useEffect(() => {
+		youtubeVideosRef.current = youtubeVideos;
+	}, [youtubeVideos]);
 
 	const heroPrompt = PROMPT_ROTATIONS[promptIndex];
 	const activeModeDefinition = mode ? modeDefinitions.find((entry) => entry.id === mode) ?? null : null;
@@ -757,6 +817,85 @@ function App() {
 			return 'midnight';
 		}
 	}, [dailyChallenge.expiresAt]);
+
+	useEffect(() => {
+		if (!isModePack(fuelPack) || !workspaceQueue.length) {
+			if (Object.keys(youtubeVideosRef.current).length) {
+				setYoutubeVideos({});
+			}
+			setYoutubeError(null);
+			return;
+		}
+
+	const youtubeItems = workspaceQueue.filter((item) => item.type === 'youtube');
+	if (!youtubeItems.length) {
+		if (Object.keys(youtubeVideosRef.current).length) {
+			setYoutubeVideos({});
+		}
+		setYoutubeError(null);
+		return;
+	}
+
+	setYoutubeVideos((prev) => {
+		const relevantIds = new Set(youtubeItems.map((item) => item.id));
+		const filteredEntries = Object.entries(prev).filter(([id]) => relevantIds.has(id));
+		if (filteredEntries.length === Object.keys(prev).length) {
+			return prev;
+		}
+		return Object.fromEntries(filteredEntries);
+	});
+
+	if (!YOUTUBE_API_KEY) {
+		setYoutubeError('Set VITE_YOUTUBE_API_KEY to preview clips inline.');
+		return;
+	}
+
+	setYoutubeError(null);
+	const controller = new AbortController();
+	let cancelled = false;
+	const missingItems = youtubeItems.filter((item) => !youtubeVideosRef.current[item.id]);
+	if (!missingItems.length) {
+		return () => {
+			controller.abort();
+		};
+	}
+
+	const loadVideos = async () => {
+		try {
+			const results = await Promise.all(
+				missingItems.map(async (item) => {
+					const query = item.searchQuery ?? item.matchesPack ?? item.title;
+					const video = await searchYouTubeVideo(query, controller.signal);
+					return { id: item.id, video };
+				})
+			);
+			if (cancelled) return;
+			setYoutubeVideos((prev) => {
+				const next = { ...prev };
+				for (const entry of results) {
+					if (entry.video) {
+						next[entry.id] = entry.video;
+					}
+				}
+				return next;
+			});
+		} catch (err) {
+			if (controller.signal.aborted) return;
+			console.warn('YouTube search failed', err);
+			if (!cancelled) {
+				setYoutubeError('Unable to load preview clip right now.');
+			}
+		}
+	};
+
+	void loadVideos();
+
+	return () => {
+		cancelled = true;
+		controller.abort();
+	};
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [fuelPack, workspaceQueue]);
 
 	const ensureAudioContext = useCallback(() => {
 		if (typeof window === 'undefined') return null;
@@ -2083,6 +2222,7 @@ function App() {
 										Clips and references tuned to <strong>{fuelPack.title}</strong>.
 									</p>
 								</div>
+								{youtubeError && <p className="queue-hint" role="status">{youtubeError}</p>}
 								<ul className="queue-list">
 									{workspaceQueue.map((item) => (
 										<li key={item.id} className="queue-item">
@@ -2095,9 +2235,28 @@ function App() {
 													{item.duration && <span className="queue-duration">{item.duration}</span>}
 												</div>
 											</div>
-											<a className="btn micro" href={item.url} target="_blank" rel="noopener noreferrer">
-												Open
-											</a>
+											<div className="queue-actions">
+												<a className="btn micro" href={item.url} target="_blank" rel="noopener noreferrer">
+													Open
+												</a>
+											</div>
+											{item.type === 'youtube' && youtubeVideos[item.id] && (
+												<div className="queue-embed">
+													<div className="queue-embed-frame">
+														<iframe
+															title={`YouTube preview for ${youtubeVideos[item.id].title}`}
+															src={`https://www.youtube.com/embed/${youtubeVideos[item.id].videoId}?rel=0&autoplay=0&playsinline=1&enablejsapi=1&modestbranding=1`}
+															loading="lazy"
+															allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+															allowFullScreen
+														/>
+													</div>
+													<div className="queue-embed-meta">
+														<strong>{youtubeVideos[item.id].title}</strong>
+														<span>via {youtubeVideos[item.id].channelTitle}</span>
+													</div>
+												</div>
+											)}
 										</li>
 									))}
 								</ul>

@@ -197,6 +197,7 @@ export interface WorkspaceQueueItem {
   author?: string;
   thumbnail?: string;
   matchesPack?: string;
+  searchQuery?: string;
 }
 
 export interface WordGeneratorOptions {
