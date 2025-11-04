@@ -34,6 +34,7 @@ import { createAllServices } from './services';
 import fs from 'fs';
 import path from 'path';
 import { createId } from './utils/id';
+import { listChallengeActivity } from './data/challengeActivity';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -364,6 +365,13 @@ devRouter.get('/api/mock/samples', (req: Request, res: Response) => {
 devRouter.get('/api/mock/news', (req: Request, res: Response) => {
   const filters = parseRelevanceFilters(req.query);
   res.json({ items: listMockNews(filters) });
+});
+
+devRouter.get('/api/challenges/activity', (req: Request, res: Response) => {
+  const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+  const parsedLimit = limitParam ? Number.parseInt(String(limitParam), 10) : NaN;
+  const activity = listChallengeActivity(Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10);
+  res.json({ activity });
 });
 
 // GET simple generator
