@@ -1776,8 +1776,9 @@ function App() {
 
 	const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
 	const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
-	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}`;
+	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}`;
 	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
+	const workspaceMainClassName = `workspace-main${isModePack(fuelPack) && workspaceQueue.length > 0 ? ' with-queue' : ''}`;
 	const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
 	const packStageClassName = `pack-stage glass${focusMode ? ' focus-mode' : ''}`;
 	const challengeText = useMemo(() => resolveChallengeText(fuelPack), [fuelPack]);
@@ -1860,8 +1861,8 @@ function App() {
 							)}
 						</div>
 					</div>
-					<div className="nav-right">
-						<div className="nav-icon-actions" role="group" aria-label="Workspace actions">
+					<div className="nav-actions">
+						<div className="actions-group" role="group" aria-label="Workspace actions">
 							<button
 								type="button"
 								className="icon-button"
@@ -1904,6 +1905,14 @@ function App() {
 								🎛️
 							</button>
 						</div>
+						<button
+							type="button"
+							className="nav-handle"
+							onClick={handleUserHandleClick}
+							aria-label={handleTriggerLabel}
+						>
+							{formattedHandle}
+						</button>
 						<button
 							type="button"
 							className="nav-settings"
@@ -1969,88 +1978,88 @@ function App() {
 
 		{!mode && (
 			<div className="discover-row">
-						<section className="session-hub glass">
-							<div className="session-column">
-								<div className="session-heading">
-									<h3>Spectate a live studio</h3>
-									<p>Drop into a creator's workspace and follow their flow in real time.</p>
-								</div>
-								<ul>
-									{liveSessions.map((session) => (
-										<li key={session.id}>
-											<div className="session-meta">
-												<strong>{session.title}</strong>
-												<span>{session.owner} · {session.participants} viewers</span>
-											</div>
-											<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
-												Spectate
-											</button>
-										</li>
-									))}
-								</ul>
-							</div>
-							<div className="session-column">
-								<div className="session-heading">
-									<h3>Join a collaboration</h3>
-									<p>Enter an open room and build alongside other artists.</p>
-								</div>
-								<ul>
-									{collaborativeSessions.map((session) => (
-										<li key={session.id}>
-											<div className="session-meta">
-												<strong>{session.title}</strong>
-												<span>{session.owner} · {session.participants} creators</span>
-											</div>
-											<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
-												Join
-											</button>
-										</li>
-									))}
-								</ul>
-							</div>
-						</section>
-						<section className="community-feed glass" aria-live="polite">
-							<header className="feed-header">
-								<div>
-									<h3>Community Feed</h3>
-									<p>See what the Inspire crew shipped today and fork a pack into your workspace.</p>
-								</div>
-							</header>
-							<div className="feed-grid">
-								{communityPosts.map((post) => (
-									<article key={post.id} className="feed-card">
-										<div className="feed-meta">
-											<span className="feed-author">{post.author}</span>
-											<span className="feed-timestamp">{formatRelativeTime(post.createdAt)}</span>
-										</div>
-										<p className="feed-content">{post.content}</p>
-										{post.featuredPack && (
-											<div className="feed-pack">
-												<strong>{post.featuredPack.title}</strong>
-												<span className="feed-pack-subtitle">
-													Remixed from {post.featuredPack.remixOf?.author ?? post.author}
-												</span>
-												<button
-													type="button"
-													className="btn micro"
-													onClick={() => handleForkCommunityPost(post)}
-													title="Fork this pack into your studio"
-												>
-													Fork & Remix
-												</button>
-											</div>
-										)}
-										<div className="feed-stats" aria-label="Engagement stats">
-											<span>❤️ {post.reactions}</span>
-											<span>💬 {post.comments}</span>
-											<span>♻️ {post.remixCount}</span>
-										</div>
-									</article>
-								))}
-							</div>
-						</section>
+				<section className="session-hub glass">
+					<div className="session-column">
+						<div className="session-heading">
+							<h3>Spectate a live studio</h3>
+							<p>Drop into a creator's workspace and follow their flow in real time.</p>
+						</div>
+						<ul>
+							{liveSessions.map((session) => (
+								<li key={session.id}>
+									<div className="session-meta">
+										<strong>{session.title}</strong>
+										<span>{session.owner} · {session.participants} viewers</span>
+									</div>
+									<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
+										Spectate
+									</button>
+								</li>
+							))}
+						</ul>
 					</div>
-				)}
+					<div className="session-column">
+						<div className="session-heading">
+							<h3>Join a collaboration</h3>
+							<p>Enter an open room and build alongside other artists.</p>
+						</div>
+						<ul>
+							{collaborativeSessions.map((session) => (
+								<li key={session.id}>
+									<div className="session-meta">
+										<strong>{session.title}</strong>
+										<span>{session.owner} · {session.participants} creators</span>
+									</div>
+									<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
+										Join
+									</button>
+								</li>
+							))}
+						</ul>
+					</div>
+				</section>
+				<section className="community-feed glass" aria-live="polite">
+					<header className="feed-header">
+						<div>
+							<h3>Community Feed</h3>
+							<p>See what the Inspire crew shipped today and fork a pack into your workspace.</p>
+						</div>
+					</header>
+					<div className="feed-grid">
+						{communityPosts.map((post) => (
+							<article key={post.id} className="feed-card">
+								<div className="feed-meta">
+									<span className="feed-author">{post.author}</span>
+									<span className="feed-timestamp">{formatRelativeTime(post.createdAt)}</span>
+								</div>
+								<p className="feed-content">{post.content}</p>
+								{post.featuredPack && (
+									<div className="feed-pack">
+										<strong>{post.featuredPack.title}</strong>
+										<span className="feed-pack-subtitle">
+											Remixed from {post.featuredPack.remixOf?.author ?? post.author}
+										</span>
+										<button
+											type="button"
+											className="btn micro"
+											onClick={() => handleForkCommunityPost(post)}
+											title="Fork this pack into your studio"
+										>
+											Fork & Remix
+										</button>
+									</div>
+								)}
+								<div className="feed-stats" aria-label="Engagement stats">
+									<span>❤️ {post.reactions}</span>
+									<span>💬 {post.comments}</span>
+									<span>♻️ {post.remixCount}</span>
+								</div>
+							</article>
+							))}
+					</div>
+				</section>
+			</div>
+		)}
 
 			{mode && !submode && activeModeDefinition && (
 				<section className="submode-panel glass">
@@ -2108,7 +2117,7 @@ function App() {
 						</div>
 					)}
 
-					<div className="workspace-main">
+					<div className={workspaceMainClassName}>
 						<section key={packAnimationKey} className={packStageClassName}>
 							{fuelPack ? (
 							<>

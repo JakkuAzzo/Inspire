@@ -163,3 +163,12 @@ export interface WordIdea {
   score?: number;
   numSyllables?: number;
 }
+
+export interface ChallengeActivity {
+  id: string;
+  handle: string;
+  status: 'accepted' | 'submitted';
+  timestamp: string;
+  activity: string;
+  type?: string;
+}
