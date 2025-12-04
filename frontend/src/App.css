@@ -26,6 +26,7 @@
   background: rgba(4, 7, 17, 0.7);
   backdrop-filter: blur(8px);
   z-index: 35;
+  pointer-events: none;
 }
 
 .app.theme-default {

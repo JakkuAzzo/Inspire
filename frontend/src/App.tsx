@@ -756,8 +756,8 @@ function App() {
 		return window.localStorage.getItem(THEME_KEY) ?? 'default';
 	});
 	const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
-		if (typeof window === 'undefined') return true;
-		return window.localStorage.getItem(ONBOARDING_KEY) !== 'true';
+		if (typeof window === 'undefined') return false;
+		return false; // Don't show onboarding modal on initial load; use mode-gate instead
 	});
 	const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
 	const [showAccountModal, setShowAccountModal] = useState(false);
@@ -1976,7 +1976,7 @@ function App() {
 				)
 			)}
 
-		{!mode && (
+		{!mode && !showOnboarding && (
 			<div className="discover-row">
 				<section className="session-hub glass">
 					<div className="session-column">

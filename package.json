@@ -8,10 +8,19 @@
     "build:backend": "cd backend && npm run build",
     "build:frontend": "cd frontend && npm run build",
     "build": "npm run build:backend && npm run build:frontend",
-    "start:backend": "cd backend && npm start",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start:backend": "cd backend && npm start"
   },
-  "keywords": ["creativity", "music", "inspiration", "typescript", "fullstack"],
+  "keywords": [
+    "creativity",
+    "music",
+    "inspiration",
+    "typescript",
+    "fullstack"
+  ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^24.10.1"
+  }
 }
