@@ -38,6 +38,7 @@ import { listChallengeActivity } from './data/challengeActivity';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const LISTEN_PORT = Number(PORT) || 3001;
 
 // Middleware
 app.use(cors());
@@ -519,8 +520,9 @@ devRouter.get('/api/packs/saved', (req: Request, res: Response) => {
 // Start server only when this file is run directly. This lets tests import the app
 // without starting a real network listener.
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`🚀 Inspire API running on http://localhost:${PORT}`);
+  // Bind to all interfaces so localhost resolves to both IPv4 and IPv6 addresses
+  app.listen(LISTEN_PORT, '0.0.0.0', () => {
+    console.log(`🚀 Inspire API running on http://localhost:${LISTEN_PORT}`);
   });
 }
 
