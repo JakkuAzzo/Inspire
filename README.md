@@ -17,7 +17,7 @@ Inspire is a full-stack TypeScript studio that blends live cultural signals with
 ## How Inspire Works
 
 1. Pick a creative mode (Lyricist, Producer, or Editor) and adjust the relevance blend for tone, recency, and experimentation.
-2. The backend fans out to live services like Datamuse, Freesound, Jamendo, Piped (YouTube proxy), Unsplash, Imgflip, and NewsAPI to collect the freshest material.
+2. The backend fans out to live services like Datamuse, Freesound, Jamendo, and Piped (YouTube proxy) — with keyless defaults for images (Picsum), memes (Picsum templates + built‑in caption), and a static NewsAPI mirror.
 3. Inspire builds a fuel pack with power words, meme-ready visuals, news hooks, sample choices, FX prompts, emotional arcs, and timeline beats so you can ship ideas fast.
 
 ## Feature Highlights
@@ -30,18 +30,21 @@ Inspire is a full-stack TypeScript studio that blends live cultural signals with
 
 ## Live Data Sources
 
-| Capability | Provider(s) | Env variables |
+Keyless by default with graceful fallbacks. Optional keys unlock richer data.
+
+| Capability | Provider(s) | Keys |
 | --- | --- | --- |
-| Power words, rhymes, syllable filters | Datamuse | none |
+| Power words, rhymes, syllables | Datamuse | none |
 | Random vocabulary | Random Word API | none |
 | Definitions | Free Dictionary API | none |
-| Meme templates and captions | Imgflip | `IMGFLIP_USERNAME`, `IMGFLIP_PASSWORD` |
-| Inspirational photography | Unsplash | `UNSPLASH_ACCESS_KEY` |
+| Meme templates | Picsum (seeded images) | none |
+| Meme captioning | Built‑in (dummyimage) | none (Imgflip optional) |
+| Inspirational images | Picsum | none (Unsplash optional) |
 | Trending memes & reddit topics | Reddit JSON | none |
-| Audio samples & sound design | Freesound | `FREESOUND_API_KEY` |
-| Royalty-free reference tracks | Jamendo | `JAMENDO_CLIENT_ID` |
-| Creative Commons instrumentals | Piped (YouTube proxy) | none |
-| News headlines & context | NewsAPI | `NEWS_API_KEY` |
+| Audio samples & sound design | Freesound | optional: `FREESOUND_API_KEY` |
+| Royalty‑free reference tracks | Jamendo | optional: `JAMENDO_CLIENT_ID` |
+| Instrumentals (search) | Piped (YouTube proxy) | none |
+| News headlines & context | Static NewsAPI mirror | none (NewsAPI optional) |
 
 ## Project Tour
 
@@ -49,11 +52,12 @@ Inspire is a full-stack TypeScript studio that blends live cultural signals with
 Inspire/
 ├── backend/
 │   ├── src/
-│   │   ├── index.ts               # Express server & API routes
+│   │   ├── index.ts               # Express server & API routes (/api)
 │   │   ├── modePackGenerator.ts   # Mode-specific pack assembly (async)
 │   │   ├── services/
 │   │   │   ├── audioService.ts    # Freesound & Jamendo
 │   │   │   ├── memeService.ts     # Imgflip, Unsplash, Reddit
+│   │   │   # Keyless fallbacks: Picsum images, caption via dummyimage
 │   │   │   ├── trendService.ts    # NewsAPI & Reddit trends
 │   │   │   ├── wordService.ts     # Datamuse & word utilities
 │   │   │   ├── youtubeService.ts  # Piped instrumentals
@@ -66,7 +70,7 @@ Inspire/
 │   │   ├── App.tsx                # Primary UI & orchestration
 │   │   ├── components/            # Sliders, collapsible sections, etc.
 │   │   └── assets/                # Logos and theme art
-│   ├── vite.config.ts             # Dev proxy for /dev and API routes
+│   ├── vite.config.ts             # Dev proxy for /api (and /dev for back-compat)
 │   └── package.json
 ├── docs/                          # Product specs and research notes
 └── run_dev.sh                     # Dual-serve script for local dev
@@ -108,6 +112,7 @@ Optional keys:
 HUGGINGFACE_API_KEY=...
 RANDOM_WORD_API_URL=...
 PIPED_API_URL=https://piped.video/api/v1
+ENABLE_DEV_CONSOLE=false
 ```
 
 ### Install Dependencies
@@ -129,16 +134,17 @@ Use the bundled helper script to launch both servers with one command.
 
 - Backend runs on `http://localhost:3001`
 - Frontend runs on `http://localhost:8080`
-- Vite proxies `/dev/api/*` requests to the backend so the UI always hits the real services.
+- Vite proxies `/api/*` requests to the backend so the UI always hits the real services.
 
 Stop the servers with `Ctrl+C`. Nodemon hot-reloads backend changes and Vite hot-updates the React app.
 
 ### Useful npm Scripts
 
 ```bash
-npm run lint            # Run backend lint rules
+npm run lint            # Lint backend + frontend
 npm test                # Run backend Jest suite
-npm run build           # Build both backend (tsc) and frontend (vite)
+npm run build           # Build backend (tsc) and frontend (vite)
+npx playwright test     # Run E2E (builds + serves the app)
 ```
 
 ## Product Walkthrough
@@ -151,6 +157,13 @@ npm run build           # Build both backend (tsc) and frontend (vite)
    - Editor: moodboard clips, audio cues, pacing beats, visual constraints, and share-ready title prompts.
 4. Remix packs to merge favorite elements across runs or share them with collaborators using encoded URLs.
 
+### New UI Utilities
+
+- Save & Archive: save current pack and open your saved list (local snapshot storage on the backend).
+- Word Explorer: live Datamuse filters (starts-with, rhyme, syllables, topic) inside the UI.
+- Meme Caption: pick a keyless template (Picsum preview) and generate a caption image (dummyimage).
+- Inspiration Image: per‑pack Picsum visual spark, with a refresh button.
+
 ## Contributing
 
 Issues and pull requests are welcome. If you are adding a new integration:
@@ -159,6 +172,14 @@ Issues and pull requests are welcome. If you are adding a new integration:
 2. Add a service wrapper under `backend/src/services/` with graceful fallbacks.
 3. Extend `createAllServices()` so the integration is globally available.
 4. Update docs and the README to reflect new capabilities.
+
+## Keyless Mode
+
+You can run completely without API keys and still get a great experience.
+
+- Leave all optional keys empty
+- Set `USE_MOCK_FALLBACK=true` (recommended for CI)
+- You get: Datamuse word explorer, Piped instrumentals, static news, Picsum images/templates, built‑in meme captioning, and curated audio/text fallbacks.
 
 ## License
 

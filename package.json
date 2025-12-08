@@ -8,7 +8,10 @@
     "build:backend": "cd backend && npm run build",
     "build:frontend": "cd frontend && npm run build",
     "build": "npm run build:backend && npm run build:frontend",
-    "start:backend": "cd backend && npm start"
+    "start:backend": "cd backend && npm start",
+    "dev": "./run_dev.sh",
+    "test": "(cd backend && npm test)",
+    "lint": "(cd backend && npm run lint) && (cd frontend && npm run lint)"
   },
   "keywords": [
     "creativity",

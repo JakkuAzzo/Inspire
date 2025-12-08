@@ -16,25 +16,25 @@ export interface InstrumentalVideo {
 
 const MOCK_INSTRUMENTALS: InstrumentalVideo[] = [
   {
-    id: 'mock-aurora-jazz',
-    title: 'Aurora Skyline (Jazz Instrumental)',
-    uploader: 'Inspire Mock Library',
-    url: 'https://www.youtube.com/watch?v=dummyaurora',
-    durationSeconds: 228
+    id: '5qap5aO4i9A',
+    title: 'Lofi Hip Hop Radio - Beats to Relax/Study to',
+    uploader: 'Lofi Girl',
+    url: 'https://www.youtube.com/watch?v=5qap5aO4i9A',
+    durationSeconds: 3600
   },
   {
-    id: 'mock-late-night-lofi',
-    title: 'Late Night Lo-Fi Tape Loop',
-    uploader: 'Inspire Mock Library',
-    url: 'https://www.youtube.com/watch?v=mocklofi',
-    durationSeconds: 312
+    id: 'hHW1oY26kxQ',
+    title: 'lofi hip hop mix - beats to relax/study to',
+    uploader: 'ChilledCow',
+    url: 'https://www.youtube.com/watch?v=hHW1oY26kxQ',
+    durationSeconds: 7200
   },
   {
-    id: 'mock-hype-drill',
-    title: 'Hype Drill 140bpm (Creative Commons)',
-    uploader: 'Inspire Mock Library',
-    url: 'https://www.youtube.com/watch?v=mockdrill',
-    durationSeconds: 185
+    id: 'DWcJFNfaw9c',
+    title: 'lofi hip hop radio - beats to relax/study to (Chillhop Music)',
+    uploader: 'Chillhop Music',
+    url: 'https://www.youtube.com/watch?v=DWcJFNfaw9c',
+    durationSeconds: 7200
   }
 ];
 
