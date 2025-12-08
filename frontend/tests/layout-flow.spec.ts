@@ -6,6 +6,8 @@ const SCREENSHOT_DIR = 'test-artifacts';
 test('pack detail layout flow', async ({ page }) => {
 	await page.goto('/');
 
+	await page.getByRole('button', { name: 'Open community feed' }).click();
+
 	await page.getByRole('button', { name: 'Fork & Remix' }).first().click();
 
 	const packCards = page.locator('.pack-deck .pack-card');

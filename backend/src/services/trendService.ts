@@ -342,6 +342,7 @@ export class TrendService {
 
 // Factory function to create TrendService with environment variables
 export function createTrendService(): TrendService {
+  const useMockFallback = process.env.USE_MOCK_FALLBACK !== 'false';
   const hasApiKey = Boolean(process.env.NEWS_API_KEY);
   const staticBase = process.env.NEWS_STATIC_API_URL || 'https://saurav.tech/NewsAPI';
 
@@ -349,7 +350,7 @@ export function createTrendService(): TrendService {
     newsApiUrl: hasApiKey ? process.env.NEWS_API_URL || 'https://newsapi.org/v2' : staticBase,
     newsApiKey: process.env.NEWS_API_KEY,
     redditUrl: process.env.REDDIT_API_URL || 'https://www.reddit.com',
-    useMockFallback: process.env.USE_MOCK_FALLBACK === 'true',
+    useMockFallback,
     newsProvider: hasApiKey ? 'newsapi' : 'static'
   });
 }

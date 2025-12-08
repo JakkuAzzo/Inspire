@@ -252,6 +252,7 @@ export class MemeService {
 
 // Factory function to create MemeService with environment variables
 export function createMemeService(): MemeService {
+  const useMockFallback = process.env.USE_MOCK_FALLBACK !== 'false';
   return new MemeService({
     imgflipUrl: process.env.IMGFLIP_API_URL || 'https://api.imgflip.com',
     imgflipUsername: process.env.IMGFLIP_USERNAME,
@@ -259,6 +260,6 @@ export function createMemeService(): MemeService {
     unsplashUrl: process.env.UNSPLASH_API_URL || 'https://api.unsplash.com',
     unsplashAccessKey: process.env.UNSPLASH_ACCESS_KEY,
     redditUrl: process.env.REDDIT_API_URL || 'https://www.reddit.com',
-    useMockFallback: process.env.USE_MOCK_FALLBACK === 'true'
+    useMockFallback
   });
 }
