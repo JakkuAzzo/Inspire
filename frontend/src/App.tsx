@@ -96,7 +96,8 @@ const STATS_KEY_PREFIX = 'inspire:creatorStats:';
 const ONBOARDING_KEY = 'inspire:onboardingComplete';
 const THEME_KEY = 'inspire:theme';
 const CONTROLS_COLLAPSED_KEY = 'inspire:workspaceControlsCollapsed';
-const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY as string | undefined;
+// Replaced direct YouTube Data API with backend Piped proxy.
+// Inline previews now come from `/api/instrumentals/search`.
 
 type LoadingState = null | 'generate' | 'load' | 'remix';
 
@@ -134,23 +135,6 @@ interface YouTubeVideoPreview {
 	title: string;
 	channelTitle: string;
 	thumbnailUrl?: string;
-}
-
-interface YouTubeSearchItem {
-	id?: { videoId?: string };
-	snippet?: {
-		title?: string;
-		channelTitle?: string;
-		thumbnails?: {
-			medium?: { url?: string };
-			high?: { url?: string };
-			default?: { url?: string };
-		};
-	};
-}
-
-interface YouTubeSearchResponse {
-	items?: YouTubeSearchItem[];
 }
 
 const LIVE_SESSION_PRESETS: LiveSession[] = [
@@ -395,31 +379,14 @@ function formatChallengeCountdown(deadlineIso: string): string {
 	return `${seconds}s`;
 }
 
-async function searchYouTubeVideo(query: string, signal?: AbortSignal): Promise<YouTubeVideoPreview | null> {
-	if (!YOUTUBE_API_KEY) return null;
-	const params = new URLSearchParams({
-		part: 'snippet',
-		type: 'video',
-		maxResults: '1',
-		key: YOUTUBE_API_KEY,
-		q: query
-	});
-	const endpoint = `https://www.googleapis.com/youtube/v3/search?${params.toString()}`;
-	const response = await fetch(endpoint, { signal });
-	if (!response.ok) {
-		throw new Error(`YouTube search failed with status ${response.status}`);
-	}
-	const payload = (await response.json()) as YouTubeSearchResponse;
-	const [first] = payload.items ?? [];
-	const videoId = first?.id?.videoId;
-	if (!videoId) return null;
-	const snippet = first?.snippet;
-	return {
-		videoId,
-		title: snippet?.title ?? query,
-		channelTitle: snippet?.channelTitle ?? 'YouTube',
-		thumbnailUrl: snippet?.thumbnails?.high?.url ?? snippet?.thumbnails?.medium?.url ?? snippet?.thumbnails?.default?.url
-	};
+async function searchInstrumentalPreview(query: string, signal?: AbortSignal): Promise<YouTubeVideoPreview | null> {
+	const params = new URLSearchParams({ q: query, limit: '1' });
+	const res = await fetch(`/api/instrumentals/search?${params.toString()}`, { signal });
+	if (!res.ok) return null;
+	const data = (await res.json()) as { items?: Array<{ id: string; title: string; uploader: string; thumbnail?: string }> };
+	const first = Array.isArray(data.items) && data.items[0] ? data.items[0] : null;
+	if (!first) return null;
+	return { videoId: first.id, title: first.title, channelTitle: first.uploader || 'Instrumental', thumbnailUrl: first.thumbnail };
 }
 
 function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
@@ -791,6 +758,36 @@ function App() {
 	const [challengeActivityError, setChallengeActivityError] = useState<string | null>(null);
 	const [showModePicker, setShowModePicker] = useState(false);
 
+	// Saved packs overlay
+	const [showSavedOverlay, setShowSavedOverlay] = useState(false);
+	const [savedPacks, setSavedPacks] = useState<InspireAnyPack[]>([]);
+	const [savedLoading, setSavedLoading] = useState(false);
+	const [savedError, setSavedError] = useState<string | null>(null);
+
+	// Word Explorer overlay
+	const [showWordExplorer, setShowWordExplorer] = useState(false);
+	const [wordStartsWith, setWordStartsWith] = useState('');
+	const [wordRhymeWith, setWordRhymeWith] = useState('');
+	const [wordSyllables, setWordSyllables] = useState('');
+	const [wordMaxResults, setWordMaxResults] = useState('18');
+	const [wordTopic, setWordTopic] = useState('');
+	const [wordResults, setWordResults] = useState<Array<{ word: string; score?: number; numSyllables?: number }>>([]);
+	const [wordLoading, setWordLoading] = useState(false);
+	const [wordError, setWordError] = useState<string | null>(null);
+
+	// Meme Caption overlay
+	const [showMemeOverlay, setShowMemeOverlay] = useState(false);
+	const [memeTemplates, setMemeTemplates] = useState<Array<{ id: string; name: string; url: string }>>([]);
+	const [memeTemplateId, setMemeTemplateId] = useState<string>('');
+	const [memeCaptions, setMemeCaptions] = useState<string[]>(['', '']);
+	const [memeResultUrl, setMemeResultUrl] = useState<string | null>(null);
+	const [memeLoading, setMemeLoading] = useState(false);
+	const [memeError, setMemeError] = useState<string | null>(null);
+
+	// Inspiration Image (keyless Picsum via backend)
+	const [inspirationImageUrl, setInspirationImageUrl] = useState<string | null>(null);
+	const [inspirationImageLoading, setInspirationImageLoading] = useState(false);
+
 
 	useEffect(() => {
 		youtubeVideosRef.current = youtubeVideos;
@@ -873,11 +870,6 @@ function App() {
 		return Object.fromEntries(filteredEntries);
 	});
 
-	if (!YOUTUBE_API_KEY) {
-		setYoutubeError('Set VITE_YOUTUBE_API_KEY to preview clips inline.');
-		return;
-	}
-
 	setYoutubeError(null);
 	const controller = new AbortController();
 	let cancelled = false;
@@ -893,7 +885,7 @@ function App() {
 			const results = await Promise.all(
 				missingItems.map(async (item) => {
 					const query = item.searchQuery ?? item.matchesPack ?? item.title;
-					const video = await searchYouTubeVideo(query, controller.signal);
+					const video = await searchInstrumentalPreview(query, controller.signal);
 					return { id: item.id, video };
 				})
 			);
@@ -1048,6 +1040,11 @@ function App() {
 		setFocusMode((prev) => !prev);
 	}, []);
 
+	const handleBackToPackList = useCallback(() => {
+		setExpandedCard(null);
+		setFocusMode(false);
+	}, []);
+
 	const handleCollaborationModeToggle = useCallback(
 		(next: 'live' | 'collaborative') => {
 			setCollaborationMode((current) => (current === next ? 'solo' : next));
@@ -1153,7 +1150,7 @@ function App() {
 			if (!targetMode || !targetSubmode) throw new Error('Pick a studio and lane first.');
 			const payload: ModePackRequest = { submode: targetSubmode, filters: targetFilters };
 			if (targetMode === 'lyricist') payload.genre = targetGenre;
-			const res = await fetch(`/dev/api/modes/${targetMode}/fuel-pack`, {
+			const res = await fetch(`/api/modes/${targetMode}/fuel-pack`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(payload)
@@ -1329,7 +1326,7 @@ function App() {
 
 	const fetchChallengeActivity = useCallback(async () => {
 		try {
-			const res = await fetch('/dev/api/challenges/activity');
+			const res = await fetch('/api/challenges/activity');
 			if (!res.ok) throw new Error('Failed to load activity');
 			const payload = (await res.json()) as { activity?: ChallengeActivity[] };
 			const items = Array.isArray(payload.activity) ? payload.activity : [];
@@ -1363,6 +1360,45 @@ function App() {
 	}, [fetchChallengeActivity]);
 
 	useEffect(() => {
+		// Load a fresh inspiration image per pack
+		if (!isModePack(fuelPack)) {
+			setInspirationImageUrl(null);
+			return;
+		}
+		const controller = new AbortController();
+		(async () => {
+			try {
+				const q = fuelPack.title || fuelPack.mode;
+				const res = await fetch(`/api/images/random?query=${encodeURIComponent(q)}`, { signal: controller.signal });
+				if (!res.ok) return;
+				const data = await res.json();
+				const url = data?.image?.urls?.regular || data?.image?.urls?.small || null;
+				setInspirationImageUrl(url);
+			} catch (_) {
+				/* ignore */
+			}
+		})();
+		return () => controller.abort();
+	}, [fuelPack]);
+
+	const refreshInspirationImage = useCallback(async () => {
+		if (!isModePack(fuelPack)) return;
+		try {
+			setInspirationImageLoading(true);
+			const q = fuelPack.title || fuelPack.mode;
+			const res = await fetch(`/api/images/random?query=${encodeURIComponent(q)}`);
+			if (!res.ok) return;
+			const data = await res.json();
+			const url = data?.image?.urls?.regular || data?.image?.urls?.small || null;
+			setInspirationImageUrl(url);
+		} catch (_) {
+			// ignore
+		} finally {
+			setInspirationImageLoading(false);
+		}
+	}, [fuelPack]);
+
+	useEffect(() => {
 		if (!showChallengeOverlay) return;
 		void fetchChallengeActivity();
 	}, [showChallengeOverlay, fetchChallengeActivity]);
@@ -1373,7 +1409,7 @@ function App() {
 		setLoading('load');
 		setError(null);
 		try {
-			const res = await fetch(`/dev/api/packs/${encodeURIComponent(target)}`);
+			const res = await fetch(`/api/packs/${encodeURIComponent(target)}`);
 			if (!res.ok) throw new Error('Pack not found');
 			const data = await res.json();
 			setPack(data, 'Loaded from the archive');
@@ -1538,8 +1574,23 @@ function App() {
 							))}
 						</ul>
 					)
-				}
-			];
+				},
+				inspirationImageUrl ? {
+					id: 'inspire-image',
+					label: 'Inspiration Image',
+					preview: 'Visual spark loaded',
+						detail: (
+						<div className="image-wrap">
+							<img src={inspirationImageUrl} alt="Inspiration" style={{ maxWidth: '100%', borderRadius: 8 }} />
+							<div style={{ marginTop: 8 }}>
+								<button type="button" className="btn micro" onClick={refreshInspirationImage} disabled={inspirationImageLoading}>
+									{inspirationImageLoading ? 'Refreshing…' : 'Refresh image'}
+								</button>
+							</div>
+						</div>
+					)
+				} : undefined
+			].filter(Boolean) as DeckCard[];
 		}
 
 		if (isProducerPack(fuelPack)) {
@@ -1612,8 +1663,23 @@ function App() {
 					label: 'Build Challenge',
 					preview: fuelPack.challenge,
 					detail: <p>{fuelPack.challenge}</p>
-				}
-			];
+				},
+				inspirationImageUrl ? {
+					id: 'inspire-image',
+					label: 'Inspiration Image',
+					preview: 'Visual spark loaded',
+					detail: (
+						<div className="image-wrap">
+							<img src={inspirationImageUrl} alt="Inspiration" style={{ maxWidth: '100%', borderRadius: 8 }} />
+							<div style={{ marginTop: 8 }}>
+								<button type="button" className="btn micro" onClick={refreshInspirationImage} disabled={inspirationImageLoading}>
+									{inspirationImageLoading ? 'Refreshing…' : 'Refresh image'}
+								</button>
+							</div>
+						</div>
+					)
+				} : undefined
+			].filter(Boolean) as DeckCard[];
 		}
 
 		const editorPack = fuelPack as EditorModePack;
@@ -1679,8 +1745,23 @@ function App() {
 						<p className="title-prompt">Title prompt: {editorPack.titlePrompt}</p>
 					</div>
 				)
-			}
-		];
+			},
+			inspirationImageUrl ? {
+				id: 'inspire-image',
+				label: 'Inspiration Image',
+				preview: 'Visual spark loaded',
+				detail: (
+					<div className="image-wrap">
+						<img src={inspirationImageUrl} alt="Inspiration" style={{ maxWidth: '100%', borderRadius: 8 }} />
+						<div style={{ marginTop: 8 }}>
+							<button type="button" className="btn micro" onClick={refreshInspirationImage} disabled={inspirationImageLoading}>
+								{inspirationImageLoading ? 'Refreshing…' : 'Refresh image'}
+							</button>
+						</div>
+					</div>
+				)
+			} : undefined
+		].filter(Boolean) as DeckCard[];
 	}, [fuelPack, focusMode]);
 
 	useEffect(() => {
@@ -1704,6 +1785,22 @@ function App() {
 	}, [deckOrder, packDeck]);
 
 	const selectedCard = orderedPackDeck.find((card) => card.id === expandedCard) ?? null;
+	const showingDetail = Boolean(selectedCard);
+
+		useEffect(() => {
+			if (!focusMode) return;
+			if (!selectedCard && orderedPackDeck.length) {
+				setExpandedCard(orderedPackDeck[0].id);
+			}
+			const onKeyDown = (event: globalThis.KeyboardEvent) => {
+				if (event.key === 'Escape') {
+					setFocusMode(false);
+					setExpandedCard(null);
+				}
+			};
+			window.addEventListener('keydown', onKeyDown);
+			return () => window.removeEventListener('keydown', onKeyDown);
+		}, [focusMode, selectedCard, orderedPackDeck]);
 
 	useEffect(() => {
 		if (typeof window !== 'undefined') {
@@ -1742,7 +1839,7 @@ function App() {
 	useEffect(() => {
 		async function loadModes() {
 			try {
-				const res = await fetch('/dev/api/modes');
+				const res = await fetch('/api/modes');
 				if (!res.ok) throw new Error('Failed to fetch modes');
 				const data = await res.json();
 				if (Array.isArray(data.modes)) {
@@ -1776,9 +1873,104 @@ function App() {
 
 	const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
 	const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
-	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}`;
+	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
 	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
-	const workspaceMainClassName = `workspace-main${isModePack(fuelPack) && workspaceQueue.length > 0 ? ' with-queue' : ''}`;
+
+	const handleSaveCurrentPack = useCallback(async () => {
+		if (!fuelPack || !isModePack(fuelPack)) return;
+		try {
+			const res = await fetch(`/api/packs/${encodeURIComponent(fuelPack.id)}/save`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ userId: userId || 'guest' })
+			});
+			if (!res.ok) throw new Error('Save failed');
+			setStatus('Saved to your archive');
+		} catch (err) {
+			setError('Could not save pack');
+		}
+	}, [fuelPack, userId]);
+
+	const openSavedOverlay = useCallback(async () => {
+		setShowSavedOverlay(true);
+		setSavedLoading(true);
+		setSavedError(null);
+		try {
+			const qs = new URLSearchParams({ userId: userId || 'guest' });
+			const res = await fetch(`/api/packs/saved?${qs.toString()}`);
+			if (!res.ok) throw new Error('Failed to load saved packs');
+			const data = await res.json();
+			setSavedPacks(Array.isArray(data.packs) ? data.packs : []);
+		} catch (err) {
+			setSavedPacks([]);
+			setSavedError('Unable to load saved packs');
+		} finally {
+			setSavedLoading(false);
+		}
+	}, [userId]);
+
+	const runWordSearch = useCallback(async () => {
+		setWordLoading(true);
+		setWordError(null);
+		try {
+			const params = new URLSearchParams();
+			if (wordStartsWith) params.set('startsWith', wordStartsWith);
+			if (wordRhymeWith) params.set('rhymeWith', wordRhymeWith);
+			if (wordSyllables) params.set('syllables', wordSyllables);
+			if (wordMaxResults) params.set('maxResults', wordMaxResults);
+			if (wordTopic) params.set('topic', wordTopic);
+			const res = await fetch(`/api/words/search?${params.toString()}`);
+			if (!res.ok) throw new Error('Search failed');
+			const data = await res.json();
+			setWordResults(Array.isArray(data.items) ? data.items : []);
+		} catch (err) {
+			setWordError('Unable to search words right now');
+			setWordResults([]);
+		} finally {
+			setWordLoading(false);
+		}
+	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
+
+	const openMemeOverlay = useCallback(async () => {
+		setShowMemeOverlay(true);
+		setMemeLoading(true);
+		setMemeError(null);
+		setMemeResultUrl(null);
+		try {
+			const res = await fetch('/api/memes/templates');
+			if (!res.ok) throw new Error('Failed to fetch templates');
+			const data = await res.json();
+			setMemeTemplates(Array.isArray(data.items) ? data.items : []);
+			if (Array.isArray(data.items) && data.items[0]?.id) setMemeTemplateId(data.items[0].id);
+		} catch (err) {
+			setMemeTemplates([]);
+			setMemeError('Unable to load meme templates');
+		} finally {
+			setMemeLoading(false);
+		}
+	}, []);
+
+	const runMemeCaption = useCallback(async () => {
+		if (!memeTemplateId) return;
+		setMemeLoading(true);
+		setMemeError(null);
+		setMemeResultUrl(null);
+		try {
+			const res = await fetch('/api/memes/caption', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ templateId: memeTemplateId, captions: memeCaptions })
+			});
+			if (!res.ok) throw new Error('Caption failed');
+			const data = await res.json();
+			setMemeResultUrl(data.url ?? null);
+		} catch (err) {
+			setMemeError('Unable to caption meme');
+		} finally {
+			setMemeLoading(false);
+		}
+	}, [memeTemplateId, memeCaptions]);
+	const workspaceMainClassName = `workspace-main${isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail ? ' with-queue' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`;
 	const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
 	const packStageClassName = `pack-stage glass${focusMode ? ' focus-mode' : ''}`;
 	const challengeText = useMemo(() => resolveChallengeText(fuelPack), [fuelPack]);
@@ -1892,6 +2084,43 @@ function App() {
 								disabled={!fuelPack}
 							>
 								🔗
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Save to archive"
+								aria-label="Save to archive"
+								onClick={handleSaveCurrentPack}
+								disabled={!fuelPack}
+							>
+								💾
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Open saved packs"
+								aria-label="Open saved packs"
+								onClick={openSavedOverlay}
+							>
+								📁
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Word Explorer"
+								aria-label="Open Word Explorer"
+								onClick={() => setShowWordExplorer(true)}
+							>
+								🔤
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Meme Caption"
+								aria-label="Open Meme Caption"
+								onClick={openMemeOverlay}
+							>
+								🖼️
 							</button>
 							<button
 								type="button"
@@ -2079,7 +2308,7 @@ function App() {
 
 			{mode && submode && (
 				<main className={workspaceClassName}>
-					{!controlsCollapsed && (
+					{!controlsCollapsed && !focusMode && !showingDetail && (
 						<div className="workspace-controls" id="workspaceControls">
 							<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
 								<RelevanceSlider value={filters} onChange={setFilters} />
@@ -2122,11 +2351,16 @@ function App() {
 							{fuelPack ? (
 							<>
 								{isModePack(fuelPack) && (
-									<header className="pack-header">
-										<div>
+									<header className={`pack-header${showingDetail ? ' detail-open' : ''}`}>
+										<div className="pack-header-main">
+											{showingDetail && (
+												<button type="button" className="btn ghost micro back-to-list" onClick={handleBackToPackList}>
+													← Back to list
+												</button>
+											)}
 											<p className="pack-id">#{getPackId(fuelPack)}</p>
-											<h3>{fuelPack.title}</h3>
-											<p className="summary">{fuelPack.summary}</p>
+											<h3>{showingDetail && selectedCard ? selectedCard.label : fuelPack.title}</h3>
+											<p className="summary">{showingDetail && selectedCard ? `Pack: ${fuelPack.title}` : fuelPack.summary}</p>
 										</div>
 										<div className="chips">
 											<span className="chip">{fuelPack.filters.timeframe}</span>
@@ -2163,31 +2397,33 @@ function App() {
 
 								{isModePack(fuelPack) && (
 									<>
-										<div className="pack-deck" role="list">
-											{orderedPackDeck.map((card, index) => (
-												<button
-													key={card.id}
-													type="button"
-													role="listitem"
-													data-card-id={card.id}
-													className={`pack-card${expandedCard === card.id ? ' active' : ''}`}
-													draggable
-													onDragStart={handleCardDragStart(card.id)}
-													onDragEnter={handleCardDragEnter(card.id)}
-													onDragOver={handleCardDragOver}
-													onDragEnd={handleCardDragEnd}
-													onClick={() => setExpandedCard((current) => (current === card.id ? null : card.id))}
-													style={{ '--card-index': index } as CSSProperties}
-													aria-expanded={expandedCard === card.id}
-												>
-													<span className="card-label">
-														{card.label}
-														{draggedCardId === card.id && <span className="snap-indicator" aria-hidden="true">⇕</span>}
-													</span>
-													<span className="card-preview">{card.preview}</span>
-												</button>
-											))}
-										</div>
+										{!showingDetail && (
+											<div className="pack-deck" role="list">
+												{orderedPackDeck.map((card, index) => (
+													<button
+														key={card.id}
+														type="button"
+														role="listitem"
+														data-card-id={card.id}
+														className={`pack-card${expandedCard === card.id ? ' active' : ''}`}
+														draggable
+														onDragStart={handleCardDragStart(card.id)}
+														onDragEnter={handleCardDragEnter(card.id)}
+														onDragOver={handleCardDragOver}
+														onDragEnd={handleCardDragEnd}
+														onClick={() => setExpandedCard(card.id)}
+														style={{ '--card-index': index } as CSSProperties}
+														aria-expanded={expandedCard === card.id}
+													>
+														<span className="card-label">
+															{card.label}
+															{draggedCardId === card.id && <span className="snap-indicator" aria-hidden="true">⇕</span>}
+														</span>
+														<span className="card-preview">{card.preview}</span>
+													</button>
+												))}
+											</div>
+										)}
 										{selectedCard && (
 											<div className={`pack-card-detail glass${focusMode ? ' focus-mode' : ''}`}>
 												<div className="detail-toolbox">
@@ -2214,7 +2450,12 @@ function App() {
 													<button
 														type="button"
 														className={`btn secondary focus-toggle${focusMode ? ' active' : ''}`}
-														onClick={handleFocusModeToggle}
+														onClick={() => {
+															if (!selectedCard && orderedPackDeck.length) {
+																setExpandedCard(orderedPackDeck[0].id);
+															}
+															handleFocusModeToggle();
+														}}
 													>
 														{focusMode ? 'Exit Focus Mode' : 'Focus Mode'}
 													</button>
@@ -2253,7 +2494,7 @@ function App() {
 						)}
 						</section>
 
-						{isModePack(fuelPack) && workspaceQueue.length > 0 && (
+						{isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail && (
 							<aside className={`workspace-queue glass${queueCollapsed ? ' collapsed' : ''}`} aria-label="Suggested inspiration queue">
 								<div className="queue-header">
 									<div className="queue-heading">
@@ -2460,6 +2701,125 @@ function App() {
 						<button type="button" className="btn primary" onClick={() => setShowAccountModal(false)}>
 							Save handle
 						</button>
+					</div>
+				</div>
+			)}
+
+			{showSavedOverlay && (
+				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-labelledby="savedOverlayTitle">
+					<div className="settings-overlay glass">
+						<div className="overlay-header">
+							<h2 id="savedOverlayTitle">Saved Packs</h2>
+							<button type="button" className="icon-button" aria-label="Close saved" onClick={() => setShowSavedOverlay(false)}>✕</button>
+						</div>
+						<div className="settings-section">
+							{savedLoading && <p>Loading…</p>}
+							{!savedLoading && savedError && <p className="error">{savedError}</p>}
+							{!savedLoading && !savedError && (
+								<ul className="saved-list">
+									{savedPacks.length === 0 && <li>No saved packs yet.</li>}
+									{savedPacks.map((p) => (
+										<li key={p.id} className="saved-item">
+											<div className="saved-meta">
+												<strong>{(p as any).title ?? p.id}</strong>
+												<small>{isModePack(p as any) ? (p as ModePack).mode : 'legacy'}</small>
+											</div>
+											<div className="saved-actions">
+												<button
+													type="button"
+													className="btn micro"
+													onClick={async () => {
+														try {
+															const res = await fetch(`/api/packs/${encodeURIComponent(p.id)}`);
+															if (!res.ok) throw new Error('Load failed');
+															const data = await res.json();
+															setPack(data, 'Loaded from archive');
+															setShowSavedOverlay(false);
+														} catch {
+															setError('Unable to load that pack');
+														}
+													}}
+												>
+													Open
+												</button>
+											</div>
+										</li>
+									))}
+								</ul>
+							)}
+						</div>
+					</div>
+				</div>
+			)}
+
+			{showWordExplorer && (
+				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-labelledby="wordsOverlayTitle">
+					<div className="settings-overlay glass">
+						<div className="overlay-header">
+							<h2 id="wordsOverlayTitle">Word Explorer</h2>
+							<button type="button" className="icon-button" aria-label="Close word explorer" onClick={() => setShowWordExplorer(false)}>✕</button>
+						</div>
+						<div className="settings-section">
+							<div className="word-form">
+								<input placeholder="Starts with" value={wordStartsWith} onChange={(e) => setWordStartsWith(e.target.value)} />
+								<input placeholder="Rhyme with" value={wordRhymeWith} onChange={(e) => setWordRhymeWith(e.target.value)} />
+								<input placeholder="Syllables" value={wordSyllables} onChange={(e) => setWordSyllables(e.target.value)} />
+								<input placeholder="Max results" value={wordMaxResults} onChange={(e) => setWordMaxResults(e.target.value)} />
+								<input placeholder="Topic (eg: music)" value={wordTopic} onChange={(e) => setWordTopic(e.target.value)} />
+								<button className="btn micro" type="button" onClick={runWordSearch} disabled={wordLoading}>Search</button>
+							</div>
+							{wordLoading && <p>Searching…</p>}
+							{!wordLoading && wordError && <p className="error">{wordError}</p>}
+							{!wordLoading && !wordError && (
+								<div className="word-grid">
+									{wordResults.map((w) => (
+										<span key={w.word} className="word-chip" title={`${w.numSyllables ?? ''} syllables`}>{w.word}</span>
+									))}
+								</div>
+							)}
+						</div>
+					</div>
+				</div>
+			)}
+
+			{showMemeOverlay && (
+				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-labelledby="memeOverlayTitle">
+					<div className="settings-overlay glass">
+						<div className="overlay-header">
+							<h2 id="memeOverlayTitle">Meme Caption</h2>
+							<button type="button" className="icon-button" aria-label="Close meme caption" onClick={() => setShowMemeOverlay(false)}>✕</button>
+						</div>
+						<div className="settings-section">
+							{memeLoading && <p>Loading…</p>}
+							{!memeLoading && memeError && <p className="error">{memeError}</p>}
+							{!memeLoading && !memeError && (
+								<div className="meme-form">
+									<label>
+										<span className="label">Template</span>
+										<select value={memeTemplateId} onChange={(e) => setMemeTemplateId(e.target.value)}>
+											{memeTemplates.map((t) => (
+												<option key={t.id} value={t.id}>{t.name}</option>
+											))}
+										</select>
+									</label>
+									{(() => { const t = memeTemplates.find(x => x.id === memeTemplateId); return t ? (
+										<div className="meme-preview">
+											<img src={t.url} alt={t.name} style={{ maxWidth: '100%', borderRadius: 8 }} />
+										</div>
+									) : null; })()}
+									<div className="meme-captions">
+										<input placeholder="Top text" value={memeCaptions[0] ?? ''} onChange={(e) => setMemeCaptions([e.target.value, memeCaptions[1] ?? ''])} />
+										<input placeholder="Bottom text" value={memeCaptions[1] ?? ''} onChange={(e) => setMemeCaptions([memeCaptions[0] ?? '', e.target.value])} />
+									</div>
+									<button className="btn micro" type="button" onClick={runMemeCaption} disabled={!memeTemplateId || memeLoading}>Generate</button>
+									{memeResultUrl && (
+										<div className="meme-result">
+											<a href={memeResultUrl} target="_blank" rel="noopener noreferrer">Open captioned meme</a>
+										</div>
+									)}
+								</div>
+							)}
+						</div>
 					</div>
 				</div>
 			)}

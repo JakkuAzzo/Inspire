@@ -122,7 +122,275 @@ function writeSavedState(state: SavedState) {
   }
 }
 
-// We'll mount developer API and console under `/dev` so the root can serve the app.
+// Build the main application API router. This is mounted under `/api` (always)
+// and also under `/dev/api` for backward compatibility with early UI builds.
+function buildApiRouter() {
+  const router = express.Router();
+
+  router.get('/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok', message: 'Inspire API is running' });
+  });
+
+  router.get('/modes', (_req: Request, res: Response) => {
+    res.json({ modes: modeDefinitions });
+  });
+
+  router.post('/modes/:mode/fuel-pack', async (req: Request, res: Response) => {
+    const mode = req.params.mode as CreativeMode;
+    if (!modeIds.has(mode)) {
+      return res.status(400).json({ error: 'Unsupported mode' });
+    }
+
+    const body = req.body as ModePackRequest | undefined;
+    if (!body || !body.submode) {
+      return res.status(400).json({ error: 'submode is required' });
+    }
+
+    const definition = modeDefinitions.find((entry) => entry.id === mode);
+    const submodeValid = definition?.submodes.some((sub) => sub.id === body.submode) ?? false;
+    if (!submodeValid) {
+      return res.status(400).json({ error: `Unsupported submode for ${mode}` });
+    }
+
+    try {
+      const pack = await generateModePack(mode, body, services);
+      packs.set(pack.id, pack);
+      res.status(201).json({ pack });
+    } catch (error) {
+      console.error('Error generating mode pack:', error);
+      res.status(500).json({ error: 'Failed to generate pack for mode' });
+    }
+  });
+
+  // Mock lists (useful for UI previews)
+  router.get('/mock/words', (req: Request, res: Response) => {
+    const filters = parseRelevanceFilters(req.query);
+    res.json({ items: listMockWords(filters) });
+  });
+  router.get('/mock/memes', (req: Request, res: Response) => {
+    const filters = parseRelevanceFilters(req.query);
+    res.json({ items: listMockMemes(filters) });
+  });
+  router.get('/mock/samples', (req: Request, res: Response) => {
+    const filters = parseRelevanceFilters(req.query);
+    res.json({ items: listMockSamples(filters) });
+  });
+  router.get('/mock/news', (req: Request, res: Response) => {
+    const filters = parseRelevanceFilters(req.query);
+    res.json({ items: listMockNews(filters) });
+  });
+
+  // Daily challenge activity (mocked)
+  router.get('/challenges/activity', (req: Request, res: Response) => {
+    const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+    const parsedLimit = limitParam ? Number.parseInt(String(limitParam), 10) : NaN;
+    const activity = listChallengeActivity(Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10);
+    res.json({ activity });
+  });
+
+  // Legacy simple generator routes
+  router.get('/fuel-pack', (_req: Request, res: Response) => {
+    try {
+      const fuelPack = generateFuelPack();
+      packs.set(fuelPack.id, fuelPack);
+      res.json(fuelPack);
+    } catch (error) {
+      console.error('Error generating fuel pack:', error);
+      res.status(500).json({ error: 'Failed to generate fuel pack' });
+    }
+  });
+  router.post('/fuel-pack', (req: Request, res: Response) => {
+    try {
+      const body = req.body as GenerateOptions;
+      const pack = generateFuelPack(body);
+      packs.set(pack.id, pack);
+      res.status(201).json({ id: pack.id, pack });
+    } catch (error) {
+      console.error('Error creating fuel pack:', error);
+      res.status(500).json({ error: 'Failed to create fuel pack' });
+    }
+  });
+
+  // Packs persistence
+  router.get('/packs/:id', (req: Request, res: Response) => {
+    const id = req.params.id;
+    let pack = packs.get(id);
+    if (!pack) {
+      const savedState = readSavedState();
+      pack = savedState.snapshots[id];
+      if (pack) packs.set(id, pack);
+    }
+    if (!pack) return res.status(404).json({ error: 'Pack not found' });
+    res.json(pack);
+  });
+  router.post('/packs/:id/save', (req: Request, res: Response) => {
+    const packId = req.params.id;
+    const { userId } = req.body || {};
+    if (!packId) return res.status(400).json({ error: 'pack id required' });
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+
+    const state = readSavedState();
+    const pack = packs.get(packId) || state.snapshots[packId];
+    if (!pack) {
+      return res.status(404).json({ error: 'Pack not found. Spin or craft a pack before saving.' });
+    }
+
+    const existing = state.users[userId] ? state.users[userId].filter((id) => id !== packId) : [];
+    existing.unshift(packId);
+    state.users[userId] = existing.slice(0, 100);
+    state.snapshots[packId] = pack;
+    packs.set(packId, pack);
+    writeSavedState(state);
+
+    res.json({ saved: true, userId, packId, snapshot: pack });
+  });
+  router.get('/packs/saved', (req: Request, res: Response) => {
+    const userId = (req.query.userId as string) || '';
+    if (!userId) return res.status(400).json({ error: 'userId query param required' });
+    const state = readSavedState();
+    const ids = state.users[userId] || [];
+    const packsList = ids.map((id) => state.snapshots[id]).filter((entry): entry is FuelPack | ModePack => Boolean(entry));
+    res.json({ userId, saved: ids, packs: packsList });
+  });
+
+  // Assets stubs
+  router.post('/assets/upload-url', (req: Request, res: Response) => {
+    const { filename, contentType } = req.body || {};
+    if (!filename || !contentType) return res.status(400).json({ error: 'filename and contentType required' });
+    const assetId = createId('asset');
+    const uploadUrl = `https://example.local/upload/${assetId}/${encodeURIComponent(filename)}`;
+    assets.set(assetId, { id: assetId, filename, contentType, status: 'uploaded', sourceUrl: null });
+    res.json({ uploadUrl, assetId });
+  });
+  router.post('/assets/ingest', (req: Request, res: Response) => {
+    const { assetId, sourceUrl } = req.body || {};
+    if (!assetId || !sourceUrl) return res.status(400).json({ error: 'assetId and sourceUrl required' });
+    const asset = assets.get(assetId) || { id: assetId };
+    const durationSeconds = Math.floor(Math.random() * 30) + 1;
+    const fingerprint = `fp-${Math.random().toString(36).substring(2, 10)}`;
+    asset.sourceUrl = sourceUrl;
+    asset.durationSeconds = durationSeconds;
+    asset.fingerprint = fingerprint;
+    asset.status = 'ingested';
+    assets.set(assetId, asset);
+    res.json({ assetId, durationSeconds, fingerprint });
+  });
+
+  // Auth + billing stubs
+  router.post('/auth/magic-link', (req: Request, res: Response) => {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'email required' });
+    const token = createId('token');
+    const expiresIn = 300;
+    magicTokens.set(token, { email, expiresAt: Date.now() + expiresIn * 1000 });
+    res.json({ token, expiresIn });
+  });
+  router.post('/billing/checkout', (req: Request, res: Response) => {
+    const { userId, amountCents, currency } = req.body || {};
+    if (!userId || !amountCents || !currency) return res.status(400).json({ error: 'userId, amountCents and currency required' });
+    const sessionId = `sess_${Math.random().toString(36).substring(2, 10)}`;
+    res.json({ sessionId, status: 'created' });
+  });
+  router.post('/notify/subscribe', (req: Request, res: Response) => {
+    const { uploadId, notifyEmail } = req.body || {};
+    if (!uploadId || !notifyEmail) return res.status(400).json({ error: 'uploadId and notifyEmail required' });
+    res.json({ subscribed: true, uploadId, notifyEmail });
+  });
+
+  // New: instrumentals search (Piped backend)
+  router.get('/instrumentals/search', async (req: Request, res: Response) => {
+    try {
+      const q = String(req.query.q || '').trim();
+      const limitRaw = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+      const limit = Math.min(10, Math.max(1, Number.parseInt(String(limitRaw || '3'), 10) || 3));
+      if (!q) return res.status(400).json({ error: 'q is required' });
+      const items = await services.youtubeService.searchInstrumentals(q, limit);
+      res.json({ items });
+    } catch (err) {
+      console.error('instrumentals/search failed', err);
+      res.status(500).json({ items: [] });
+    }
+  });
+
+  // New: words search
+  router.get('/words/search', async (req: Request, res: Response) => {
+    try {
+      const options: any = {
+        startsWith: req.query.startsWith,
+        rhymeWith: req.query.rhymeWith,
+        syllables: req.query.syllables ? Number.parseInt(String(req.query.syllables), 10) : undefined,
+        maxResults: req.query.maxResults ? Number.parseInt(String(req.query.maxResults), 10) : undefined,
+        topic: req.query.topic
+      };
+      const items = await services.wordService.searchWords(options);
+      res.json({ items });
+    } catch (err) {
+      console.error('words/search failed', err);
+      res.status(500).json({ items: [] });
+    }
+  });
+
+  // New: meme templates and caption
+  router.get('/memes/templates', async (_req: Request, res: Response) => {
+    try {
+      // Use Picsum-based keyless templates by default
+      const count = 12;
+      const nowSeed = Date.now().toString(36);
+      const items = Array.from({ length: count }).map((_, idx) => {
+        const seed = `meme-${idx + 1}-${nowSeed}`;
+        const width = 800;
+        const height = 600;
+        return {
+          id: `picsum-${seed}`,
+          name: `Template #${idx + 1}`,
+          url: `https://picsum.photos/seed/${seed}/${width}/${height}`,
+          width,
+          height
+        };
+      });
+      res.json({ items });
+    } catch (err) {
+      console.error('memes/templates failed', err);
+      res.status(500).json({ items: [] });
+    }
+  });
+
+  // New: keyless inspiration image endpoint (Picsum fallback inside service)
+  router.get('/images/random', async (req: Request, res: Response) => {
+    try {
+      const q = (req.query.query as string) || 'inspire';
+      const img = await services.memeService.getRandomImage(q);
+      if (!img) return res.status(200).json({ image: null });
+      res.json({ image: img });
+    } catch (err) {
+      console.error('images/random failed', err);
+      res.status(200).json({ image: null });
+    }
+  });
+  router.post('/memes/caption', async (req: Request, res: Response) => {
+    try {
+      const { templateId, captions, font, maxFontSize } = req.body || {};
+      if (!templateId || !Array.isArray(captions)) {
+        return res.status(400).json({ error: 'templateId and captions[] required' });
+      }
+      const result = await services.memeService.captionMeme({ templateId, captions, font, maxFontSize });
+      res.json(result);
+    } catch (err) {
+      console.error('memes/caption failed', err);
+      res.status(500).json({ error: 'Caption failed' });
+    }
+  });
+
+  // Uploader insights (mocked)
+  router.get('/uploader/insights', (req: Request, res: Response) => {
+    const uploaderId = (req.query.uploaderId as string) || 'unknown';
+    res.json({ uploaderId, impressions: Math.floor(Math.random() * 1000), downloads: Math.floor(Math.random() * 200), ctr: Math.random() });
+  });
+
+  return router;
+}
+
+// Developer console under `/dev` (HTML only). API is handled by buildApiRouter.
 const devRouter = express.Router();
 
 devRouter.get('/', (_req: Request, res: Response) => {
@@ -287,8 +555,16 @@ if (hasFrontendBuild) {
   app.use(express.static(FRONTEND_DIST));
 }
 
-// Mount dev router under /dev
-app.use('/dev', devRouter);
+// Build main API router and mount under /api and /dev/api (back-compat)
+const apiRouter = buildApiRouter();
+app.use('/api', apiRouter);
+app.use('/dev/api', apiRouter);
+
+// Gate the dev console (HTML) behind an env flag
+const DEV_CONSOLE_ENABLED = process.env.ENABLE_DEV_CONSOLE === 'true';
+if (DEV_CONSOLE_ENABLED) {
+  app.use('/dev', devRouter);
+}
 
 if (hasFrontendBuild) {
   app.get('*', (req: Request, res: Response, next: NextFunction) => {
@@ -313,209 +589,6 @@ if (hasFrontendBuild) {
   });
 }
 
-devRouter.get('/api/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', message: 'Inspire API is running' });
-});
-
-devRouter.get('/api/modes', (_req: Request, res: Response) => {
-  res.json({ modes: modeDefinitions });
-});
-
-devRouter.post('/api/modes/:mode/fuel-pack', async (req: Request, res: Response) => {
-  const mode = req.params.mode as CreativeMode;
-  if (!modeIds.has(mode)) {
-    return res.status(400).json({ error: 'Unsupported mode' });
-  }
-
-  const body = req.body as ModePackRequest | undefined;
-  if (!body || !body.submode) {
-    return res.status(400).json({ error: 'submode is required' });
-  }
-
-  const definition = modeDefinitions.find((entry) => entry.id === mode);
-  const submodeValid = definition?.submodes.some((sub) => sub.id === body.submode) ?? false;
-  if (!submodeValid) {
-    return res.status(400).json({ error: `Unsupported submode for ${mode}` });
-  }
-
-  try {
-    const pack = await generateModePack(mode, body, services);
-    packs.set(pack.id, pack);
-    res.status(201).json({ pack });
-  } catch (error) {
-    console.error('Error generating mode pack:', error);
-    res.status(500).json({ error: 'Failed to generate pack for mode' });
-  }
-});
-
-devRouter.get('/api/mock/words', (req: Request, res: Response) => {
-  const filters = parseRelevanceFilters(req.query);
-  res.json({ items: listMockWords(filters) });
-});
-
-devRouter.get('/api/mock/memes', (req: Request, res: Response) => {
-  const filters = parseRelevanceFilters(req.query);
-  res.json({ items: listMockMemes(filters) });
-});
-
-devRouter.get('/api/mock/samples', (req: Request, res: Response) => {
-  const filters = parseRelevanceFilters(req.query);
-  res.json({ items: listMockSamples(filters) });
-});
-
-devRouter.get('/api/mock/news', (req: Request, res: Response) => {
-  const filters = parseRelevanceFilters(req.query);
-  res.json({ items: listMockNews(filters) });
-});
-
-devRouter.get('/api/challenges/activity', (req: Request, res: Response) => {
-  const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-  const parsedLimit = limitParam ? Number.parseInt(String(limitParam), 10) : NaN;
-  const activity = listChallengeActivity(Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10);
-  res.json({ activity });
-});
-
-// GET simple generator
-devRouter.get('/api/fuel-pack', (req: Request, res: Response) => {
-  try {
-    const fuelPack = generateFuelPack();
-    packs.set(fuelPack.id, fuelPack);
-    res.json(fuelPack);
-  } catch (error) {
-    console.error('Error generating fuel pack:', error);
-    res.status(500).json({ error: 'Failed to generate fuel pack' });
-  }
-});
-
-// POST create parametric pack and persist in-memory
-devRouter.post('/api/fuel-pack', (req: Request, res: Response) => {
-  try {
-    const body = req.body as GenerateOptions;
-    const pack = generateFuelPack(body);
-    packs.set(pack.id, pack);
-    res.status(201).json({ id: pack.id, pack });
-  } catch (error) {
-    console.error('Error creating fuel pack:', error);
-    res.status(500).json({ error: 'Failed to create fuel pack' });
-  }
-});
-
-// GET pack by id
-devRouter.get('/api/packs/:id', (req: Request, res: Response) => {
-  const id = req.params.id;
-  let pack = packs.get(id);
-  if (!pack) {
-    const savedState = readSavedState();
-    pack = savedState.snapshots[id];
-    if (pack) {
-      packs.set(id, pack);
-    }
-  }
-  if (!pack) return res.status(404).json({ error: 'Pack not found' });
-  res.json(pack);
-});
-
-// Assets: request upload URL (stubbed)
-devRouter.post('/api/assets/upload-url', (req: Request, res: Response) => {
-  const { filename, contentType } = req.body || {};
-  if (!filename || !contentType) return res.status(400).json({ error: 'filename and contentType required' });
-
-  const assetId = createId('asset');
-  const uploadUrl = `https://example.local/upload/${assetId}/${encodeURIComponent(filename)}`;
-  assets.set(assetId, { id: assetId, filename, contentType, status: 'uploaded', sourceUrl: null });
-
-  res.json({ uploadUrl, assetId });
-});
-
-// Assets: ingest complete (stub fingerprint/duration)
-devRouter.post('/api/assets/ingest', (req: Request, res: Response) => {
-  const { assetId, sourceUrl } = req.body || {};
-  if (!assetId || !sourceUrl) return res.status(400).json({ error: 'assetId and sourceUrl required' });
-
-  const asset = assets.get(assetId) || { id: assetId };
-  const durationSeconds = Math.floor(Math.random() * 30) + 1;
-  const fingerprint = `fp-${Math.random().toString(36).substring(2, 10)}`;
-  asset.sourceUrl = sourceUrl;
-  asset.durationSeconds = durationSeconds;
-  asset.fingerprint = fingerprint;
-  asset.status = 'ingested';
-  assets.set(assetId, asset);
-
-  res.json({ assetId, durationSeconds, fingerprint });
-});
-
-// Auth: magic link stub (returns a token for development)
-devRouter.post('/api/auth/magic-link', (req: Request, res: Response) => {
-  const { email } = req.body || {};
-  if (!email) return res.status(400).json({ error: 'email required' });
-
-  const token = createId('token');
-  const expiresIn = 300; // 5 minutes
-  magicTokens.set(token, { email, expiresAt: Date.now() + expiresIn * 1000 });
-
-  // In production we'd send an email. For dev, return token.
-  res.json({ token, expiresIn });
-});
-
-// Billing: create checkout session (stub)
-devRouter.post('/api/billing/checkout', (req: Request, res: Response) => {
-  const { userId, amountCents, currency } = req.body || {};
-  if (!userId || !amountCents || !currency) return res.status(400).json({ error: 'userId, amountCents and currency required' });
-
-  const sessionId = `sess_${Math.random().toString(36).substring(2, 10)}`;
-  res.json({ sessionId, status: 'created' });
-});
-
-// Uploader insights (mocked)
-devRouter.get('/api/uploader/insights', (req: Request, res: Response) => {
-  const uploaderId = (req.query.uploaderId as string) || 'unknown';
-  res.json({ uploaderId, impressions: Math.floor(Math.random() * 1000), downloads: Math.floor(Math.random() * 200), ctr: Math.random() });
-});
-
-// Notify subscribe (opt-in)
-devRouter.post('/api/notify/subscribe', (req: Request, res: Response) => {
-  const { uploadId, notifyEmail } = req.body || {};
-  if (!uploadId || !notifyEmail) return res.status(400).json({ error: 'uploadId and notifyEmail required' });
-
-  // For MVP simply acknowledge subscription
-  res.json({ subscribed: true, uploadId, notifyEmail });
-});
-
-// Save a pack to a user's saved list (persisted to disk)
-devRouter.post('/api/packs/:id/save', (req: Request, res: Response) => {
-  const packId = req.params.id;
-  const { userId } = req.body || {};
-  if (!packId) return res.status(400).json({ error: 'pack id required' });
-  if (!userId) return res.status(400).json({ error: 'userId required' });
-
-  const state = readSavedState();
-  const pack = packs.get(packId) || state.snapshots[packId];
-  if (!pack) {
-    return res.status(404).json({ error: 'Pack not found. Spin or craft a pack before saving.' });
-  }
-
-  const existing = state.users[userId] ? state.users[userId].filter((id) => id !== packId) : [];
-  existing.unshift(packId);
-  state.users[userId] = existing.slice(0, 100);
-  state.snapshots[packId] = pack;
-  packs.set(packId, pack);
-  writeSavedState(state);
-
-  res.json({ saved: true, userId, packId, snapshot: pack });
-});
-
-// Get saved packs for a user
-devRouter.get('/api/packs/saved', (req: Request, res: Response) => {
-  const userId = (req.query.userId as string) || '';
-  if (!userId) return res.status(400).json({ error: 'userId query param required' });
-  const state = readSavedState();
-  const ids = state.users[userId] || [];
-  const packsList = ids
-    .map((id) => state.snapshots[id])
-    .filter((entry): entry is FuelPack | ModePack => Boolean(entry));
-
-  res.json({ userId, saved: ids, packs: packsList });
-});
 
 // Start server only when this file is run directly. This lets tests import the app
 // without starting a real network listener.
