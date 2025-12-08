@@ -20,7 +20,14 @@ import {
   RelevanceTimeframe,
   RelevanceTone,
   RelevanceSemantic,
-  ModeDefinition
+  ModeDefinition,
+  LyricistModePack,
+  ProducerModePack,
+  EditorModePack,
+  MemeSound,
+  NewsPrompt,
+  SampleReference,
+  InspirationClip
 } from './types';
 import {
   generateModePack,
@@ -43,6 +50,10 @@ const LISTEN_PORT = Number(PORT) || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  console.log(`[request] ${req.method} ${req.url}`);
+  next();
+});
 
 // Simple in-memory stores for MVP
 const packs = new Map<string, FuelPack | ModePack>();
@@ -52,6 +63,7 @@ const services = createAllServices();
 
 const modeDefinitions: ModeDefinition[] = listModeDefinitions();
 const modeIds = new Set(modeDefinitions.map((definition) => definition.id));
+const FALLBACK_FILTERS: RelevanceFilter = { timeframe: 'fresh', tone: 'funny', semantic: 'tight' };
 
 function parseRelevanceFilters(query: any): Partial<RelevanceFilter> {
   const filters: Partial<RelevanceFilter> = {};
@@ -62,6 +74,127 @@ function parseRelevanceFilters(query: any): Partial<RelevanceFilter> {
   if (tone && ['funny', 'deep', 'dark'].includes(tone)) filters.tone = tone;
   if (semantic && ['tight', 'balanced', 'wild'].includes(semantic)) filters.semantic = semantic;
   return filters;
+}
+
+function coalesceFilters(filters?: Partial<RelevanceFilter>): RelevanceFilter {
+  return {
+    timeframe: filters?.timeframe ?? FALLBACK_FILTERS.timeframe,
+    tone: filters?.tone ?? FALLBACK_FILTERS.tone,
+    semantic: filters?.semantic ?? FALLBACK_FILTERS.semantic
+  };
+}
+
+function buildFallbackLyricistPack(body: ModePackRequest, filters: RelevanceFilter): LyricistModePack {
+  const words = listMockWords(filters);
+  const headlines = listMockNews(filters);
+  const news: NewsPrompt = headlines[0] ?? {
+    headline: 'Write about the moment right now.',
+    context: 'Keep it personal and punchy.',
+    timeframe: filters.timeframe,
+    source: 'Inspire'
+  };
+  const toneLabel = filters.tone === 'dark' ? 'grit' : filters.tone === 'deep' ? 'depth' : 'punchlines';
+  const memeSound: MemeSound = { name: 'Fallback meme sound', description: `Lean into ${toneLabel}.`, tone: filters.tone };
+  return {
+    id: createId('lyricist'),
+    timestamp: Date.now(),
+    mode: 'lyricist',
+    submode: body.submode,
+    title: `${(body.genre ?? 'r&b').toUpperCase()} spark session (fallback)`,
+    headline: 'Flip this headline into bars.',
+    summary: 'Mock pack generated while services warm up.',
+    filters,
+    genre: body.genre ?? 'r&b',
+    powerWords: words.slice(0, 4),
+    rhymeFamilies: ['-ight', '-ow', '-ame'],
+    flowPrompts: ['Keep it tight for 8 bars.', 'Land an internal rhyme each line.'],
+    memeSound,
+    topicChallenge: 'Turn the headline into a hook.',
+    newsPrompt: news,
+    storyArc: { start: 'charged', middle: 'surging', end: 'victorious' },
+    chordMood: 'Minor 7th velvet',
+    lyricFragments: ['"City lights blink Morse in the puddles"', '"Laughing in emojis, trauma in draft folders"'],
+    wordLab: words.slice(0, 6).map((word, index) => ({ word, score: 95 - index * 3, numSyllables: Math.max(1, word.split(/[-\s]/).length) }))
+  };
+}
+
+function buildFallbackProducerPack(body: ModePackRequest, filters: RelevanceFilter): ProducerModePack {
+  const samples = listMockSamples(filters);
+  const primary: SampleReference = samples[0] ?? {
+    title: 'Fallback sample',
+    source: 'Inspire',
+    url: 'https://example.com/sample',
+    tags: ['mock'],
+    timeframe: filters.timeframe
+  };
+  const secondary: SampleReference = samples[1] ?? primary;
+  const clip: InspirationClip = {
+    title: 'Fallback clip',
+    description: 'Use this as a pacing cue.',
+    timeframe: filters.timeframe,
+    tone: filters.tone
+  };
+  return {
+    id: createId('producer'),
+    timestamp: Date.now(),
+    mode: 'producer',
+    submode: body.submode,
+    title: `${body.submode} lab session (fallback)`,
+    headline: 'Flip textures into something unrecognizable.',
+    summary: 'Mock pack generated while services warm up.',
+    filters,
+    bpm: 96,
+    key: 'Am',
+    sample: primary,
+    secondarySample: secondary,
+    constraints: ['Limit yourself to 3 layers.', 'No reverb until the hook.'],
+    fxIdeas: ['Bitcrush the drums lightly.', 'Automate a tape stop into the pre-hook.'],
+    instrumentPalette: ['Analog pad', 'Granular vox chop', 'Live percussion loop'],
+    videoSnippet: clip,
+    referenceInstrumentals: [clip],
+    challenge: 'Create tension by muting the drums for eight bars.'
+  };
+}
+
+function buildFallbackEditorPack(body: ModePackRequest, filters: RelevanceFilter): EditorModePack {
+  const moodboard: InspirationClip[] = listMockMemes(filters).slice(0, 3).map((meme, index) => ({
+    title: meme.name ?? `Meme ${index + 1}`,
+    description: 'Use this beat for timing.',
+    url: meme.url,
+    timeframe: filters.timeframe,
+    tone: filters.tone
+  }));
+  return {
+    id: createId('editor'),
+    timestamp: Date.now(),
+    mode: 'editor',
+    submode: body.submode,
+    title: `${body.submode} edit card (fallback)`,
+    headline: 'Cut to the beat of culture.',
+    summary: 'Mock pack generated while services warm up.',
+    filters,
+    format: '16:9 classic',
+    durationSeconds: 15,
+    moodboard,
+    audioPrompts: [{ name: 'Fallback sting', description: 'Land on the beat.', tone: filters.tone }],
+    visualConstraints: ['Hit three cuts in the first four seconds.', 'End on a close-up.'],
+    timelineBeats: ['Open with motion', 'Mid pivot', 'Punchline close'],
+    challenge: 'Land a punchline before the audience scrolls away.',
+    titlePrompt: 'Legendary Remix'
+  };
+}
+
+function buildFallbackModePack(mode: CreativeMode, body: ModePackRequest, filters: RelevanceFilter): ModePack {
+  switch (mode) {
+    case 'lyricist':
+      return buildFallbackLyricistPack(body, filters);
+    case 'producer':
+      return buildFallbackProducerPack(body, filters);
+    case 'editor':
+      return buildFallbackEditorPack(body, filters);
+    default:
+      throw new Error(`Unsupported fallback mode: ${mode}`);
+  }
 }
 
 interface SavedState {
@@ -146,6 +279,10 @@ function buildApiRouter() {
       return res.status(400).json({ error: 'submode is required' });
     }
 
+    const filters = coalesceFilters(body.filters);
+    const started = Date.now();
+    console.log(`[fuel-pack] ${mode}/${body.submode} req filters=${JSON.stringify(filters)}`);
+
     const definition = modeDefinitions.find((entry) => entry.id === mode);
     const submodeValid = definition?.submodes.some((sub) => sub.id === body.submode) ?? false;
     if (!submodeValid) {
@@ -153,12 +290,25 @@ function buildApiRouter() {
     }
 
     try {
-      const pack = await generateModePack(mode, body, services);
+      const useMockFallback = process.env.USE_MOCK_FALLBACK !== 'false';
+      const timeoutMs = Number(process.env.FUEL_PACK_TIMEOUT_MS ?? 5000);
+      const pack = await Promise.race([
+        generateModePack(mode, { ...body, filters }, useMockFallback ? {} : services),
+        new Promise<ModePack>((_, reject) => setTimeout(() => reject(new Error('generateModePack timed out')), timeoutMs))
+      ]);
       packs.set(pack.id, pack);
       res.status(201).json({ pack });
+      console.log(`[fuel-pack] ok ${mode}/${body.submode} in ${Date.now() - started}ms id=${pack.id}`);
     } catch (error) {
-      console.error('Error generating mode pack:', error);
-      res.status(500).json({ error: 'Failed to generate pack for mode' });
+      console.error('[fuel-pack] error', error);
+      try {
+        const fallbackPack = buildFallbackModePack(mode, { ...body, filters }, filters);
+        res.status(201).json({ pack: fallbackPack });
+        console.log(`[fuel-pack] fallback ${mode}/${body.submode} in ${Date.now() - started}ms id=${fallbackPack.id}`);
+      } catch (fallbackError) {
+        console.error('[fuel-pack] fallback error', fallbackError);
+        res.status(500).json({ error: 'Failed to generate pack for mode' });
+      }
     }
   });
 

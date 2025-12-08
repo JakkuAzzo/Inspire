@@ -245,10 +245,11 @@ export class WordService {
 
 // Factory function to create WordService with environment variables
 export function createWordService(): WordService {
+  const useMockFallback = process.env.USE_MOCK_FALLBACK !== 'false';
   return new WordService({
     datamuseUrl: process.env.DATAMUSE_API_URL || 'https://api.datamuse.com',
     randomWordUrl: process.env.RANDOM_WORD_API_URL || 'https://random-word-api.herokuapp.com',
     dictionaryUrl: process.env.DICTIONARY_API_URL || 'https://api.dictionaryapi.dev',
-    useMockFallback: process.env.USE_MOCK_FALLBACK === 'true'
+    useMockFallback
   });
 }

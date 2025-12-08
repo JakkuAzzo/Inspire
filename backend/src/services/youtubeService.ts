@@ -104,8 +104,9 @@ export class YouTubeService {
 }
 
 export function createYouTubeService(): YouTubeService {
+  const useMockFallback = process.env.USE_MOCK_FALLBACK !== 'false';
   return new YouTubeService({
     pipedApiUrl: process.env.PIPED_API_URL || 'https://piped.video/api/v1',
-    useMockFallback: process.env.USE_MOCK_FALLBACK === 'true'
+    useMockFallback
   });
 }

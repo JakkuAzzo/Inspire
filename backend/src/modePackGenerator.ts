@@ -22,6 +22,8 @@ import { WordService } from './services/wordService';
 import { AudioService, Sound, Track } from './services/audioService';
 import { TrendService } from './services/trendService';
 import { YouTubeService, InstrumentalVideo } from './services/youtubeService';
+import { Meme } from './services/memeService';
+import { mockMemes } from './mocks/memeMocks';
 
 export interface ModePackServices {
   wordService?: WordService;
@@ -655,9 +657,15 @@ export function listMockWords(filters?: Partial<RelevanceFilter>): string[] {
   return LYRICIST_POWER_WORDS.filter((word) => word.timeframe === applied.timeframe).map((word) => word.value);
 }
 
-export function listMockMemes(filters?: Partial<RelevanceFilter>): MemeSound[] {
+export function listMockMemes(filters?: Partial<RelevanceFilter>): Meme[] {
   const applied = validateFilters(filters);
-  return filterByTone(MEME_SOUNDS, applied.tone);
+  const pool = [...mockMemes];
+  const seeded = Math.abs((applied.timeframe + applied.tone + applied.semantic).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0));
+  const sorted = pool
+    .map((item, index) => ({ item, score: Math.sin(seeded + index) }))
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.item);
+  return sorted.slice(0, Math.min(6, sorted.length));
 }
 
 export function listMockSamples(filters?: Partial<RelevanceFilter>): SampleReference[] {

@@ -254,11 +254,12 @@ export class AudioService {
 
 // Factory function to create AudioService with environment variables
 export function createAudioService(): AudioService {
+  const useMockFallback = process.env.USE_MOCK_FALLBACK !== 'false';
   return new AudioService({
     freesoundUrl: process.env.FREESOUND_API_URL || 'https://freesound.org/apiv2',
     freesoundApiKey: process.env.FREESOUND_API_KEY,
     jamendoUrl: process.env.JAMENDO_API_URL || 'https://api.jamendo.com/v3.0',
     jamendoClientId: process.env.JAMENDO_CLIENT_ID,
-    useMockFallback: process.env.USE_MOCK_FALLBACK === 'true'
+    useMockFallback
   });
 }

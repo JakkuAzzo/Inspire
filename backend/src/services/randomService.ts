@@ -231,9 +231,10 @@ export class RandomService {
 
 // Factory function to create RandomService with environment variables
 export function createRandomService(): RandomService {
+  const useMockFallback = process.env.USE_MOCK_FALLBACK !== 'false';
   return new RandomService({
     boredApiUrl: process.env.BORED_API_URL || 'https://www.boredapi.com/api',
     randomDataApiUrl: process.env.RANDOM_DATA_API_URL || 'https://random-data-api.com/api',
-    useMockFallback: process.env.USE_MOCK_FALLBACK === 'true'
+    useMockFallback
   });
 }

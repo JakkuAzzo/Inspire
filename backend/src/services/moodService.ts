@@ -197,10 +197,11 @@ export class MoodService {
 
 // Factory function to create MoodService with environment variables
 export function createMoodService(): MoodService {
+  const useMockFallback = process.env.USE_MOCK_FALLBACK !== 'false';
   return new MoodService({
     huggingFaceUrl: process.env.HUGGINGFACE_API_URL || 'https://api-inference.huggingface.co',
     huggingFaceApiKey: process.env.HUGGINGFACE_API_KEY,
     emotionModel: process.env.HUGGINGFACE_EMOTION_MODEL || 'j-hartmann/emotion-english-distilroberta-base',
-    useMockFallback: process.env.USE_MOCK_FALLBACK === 'true'
+    useMockFallback
   });
 }

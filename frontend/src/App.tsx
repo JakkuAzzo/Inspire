@@ -13,8 +13,10 @@ import type {
 	InspireAnyPack,
 	LyricistModePack,
 	ModeDefinition,
+	ModePackBase,
 	ModePack,
 	ModePackRequest,
+	MemeTemplate,
 	ProducerModePack,
 	RemixMeta,
 	RelevanceFilter,
@@ -523,16 +525,8 @@ function decodePack(encoded: string): InspireAnyPack | null {
 }
 
 function getPackId(pack: InspireAnyPack): string {
-	return (pack as ModePack).id ?? (pack as FuelPack).id;
-}
-
-function loadStoredUserId() {
-	if (typeof window === 'undefined') return `creator-${Date.now().toString(36)}`;
-	const cached = window.localStorage.getItem('inspire:userId');
-	if (cached) return cached;
-	const generated = `creator-${Math.random().toString(36).slice(2, 8)}`;
-	window.localStorage.setItem('inspire:userId', generated);
-	return generated;
+	if ((pack as ModePackBase | FuelPack)?.id) return pack.id;
+	return 'unknown-pack';
 }
 
 function loadCreatorStats(userId: string): CreatorStats {
@@ -563,6 +557,11 @@ function persistCreatorStats(userId: string, stats: CreatorStats) {
 function computeFavoriteTone(toneCounts: Record<RelevanceTone, number>): RelevanceTone | null {
 	const sorted = Object.entries(toneCounts).sort((a, b) => b[1] - a[1]);
 	return sorted[0]?.[1] ? (sorted[0][0] as RelevanceTone) : null;
+}
+
+function loadStoredUserId() {
+	if (typeof window === 'undefined') return `creator-${Date.now().toString(36)}`;
+	return window.localStorage.getItem('inspire:userId') ?? `creator-${Date.now().toString(36)}`;
 }
 
 function formatShareText(pack: InspireAnyPack, userId: string) {
@@ -728,18 +727,29 @@ function App() {
 	});
 	const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
 	const [showAccountModal, setShowAccountModal] = useState(false);
+	const [showCommunityOverlay, setShowCommunityOverlay] = useState(false);
 	const [controlsCollapsed, setControlsCollapsed] = useState<boolean>(() => {
-		if (typeof window === 'undefined') return false;
-		return window.localStorage.getItem(CONTROLS_COLLAPSED_KEY) === 'true';
+		if (typeof window === 'undefined') return true;
+		const stored = window.localStorage.getItem(CONTROLS_COLLAPSED_KEY);
+		if (stored === null) return true;
+		return stored === 'true';
 	});
 	const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
 	const [focusMode, setFocusMode] = useState(false);
+	const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
+	const [focusStyle, setFocusStyle] = useState<'scroll' | 'rain' | 'flash'>('scroll');
+	const [focusDensity, setFocusDensity] = useState<number>(8);
+	const [focusSpeed, setFocusSpeed] = useState<number>(1);
+	const [focusControlsOpen, setFocusControlsOpen] = useState(false);
 	const [collaborationMode, setCollaborationMode] = useState<'solo' | 'live' | 'collaborative'>('solo');
 	const [activeSessions] = useState<LiveSession[]>(LIVE_SESSION_PRESETS);
 	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 	const [viewerMode, setViewerMode] = useState<'idle' | 'spectating' | 'joining'>('idle');
 	const [deckOrder, setDeckOrder] = useState<string[]>([]);
 	const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
+	const [combinedFocusCardIds, setCombinedFocusCardIds] = useState<string[]>([]);
+	const [mixerHover, setMixerHover] = useState(false);
+	const [chipPicker, setChipPicker] = useState<{ type: 'powerWord' | 'instrument' | 'headline' | 'meme' | 'sample'; index?: number } | null>(null);
 	const dragSourceRef = useRef<string | null>(null);
 	const audioContextRef = useRef<AudioContext | null>(null);
 	const [communityPosts] = useState<CommunityPost[]>(COMMUNITY_POSTS);
@@ -775,23 +785,56 @@ function App() {
 	const [wordLoading, setWordLoading] = useState(false);
 	const [wordError, setWordError] = useState<string | null>(null);
 
-	// Meme Caption overlay
-	const [showMemeOverlay, setShowMemeOverlay] = useState(false);
-	const [memeTemplates, setMemeTemplates] = useState<Array<{ id: string; name: string; url: string }>>([]);
-	const [memeTemplateId, setMemeTemplateId] = useState<string>('');
-	const [memeCaptions, setMemeCaptions] = useState<string[]>(['', '']);
-	const [memeResultUrl, setMemeResultUrl] = useState<string | null>(null);
-	const [memeLoading, setMemeLoading] = useState(false);
-	const [memeError, setMemeError] = useState<string | null>(null);
-
 	// Inspiration Image (keyless Picsum via backend)
 	const [inspirationImageUrl, setInspirationImageUrl] = useState<string | null>(null);
 	const [inspirationImageLoading, setInspirationImageLoading] = useState(false);
+
+	// Meme stimuli (pre-existing templates)
+	const [memeStimuli, setMemeStimuli] = useState<MemeTemplate[]>([]);
+	const [memeStimuliError, setMemeStimuliError] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (!focusMode) {
+			setMixerHover(false);
+		}
+	}, [focusMode]);
 
 
 	useEffect(() => {
 		youtubeVideosRef.current = youtubeVideos;
 	}, [youtubeVideos]);
+
+	useEffect(() => {
+		if (!isModePack(fuelPack)) {
+			setMemeStimuli([]);
+			setMemeStimuliError(null);
+			return;
+		}
+
+		const controller = new AbortController();
+		const params = new URLSearchParams({
+			timeframe: fuelPack.filters.timeframe,
+			tone: fuelPack.filters.tone,
+			semantic: fuelPack.filters.semantic
+		});
+
+		const loadMemes = async () => {
+			try {
+				const res = await fetch(`/api/mock/memes?${params.toString()}`, { signal: controller.signal });
+				if (!res.ok) throw new Error('Failed to load meme stimuli');
+				const data = await res.json();
+				setMemeStimuli(Array.isArray(data.items) ? data.items : []);
+				setMemeStimuliError(null);
+			} catch (err) {
+				if (controller.signal.aborted) return;
+				setMemeStimuli([]);
+				setMemeStimuliError('Unable to load meme stimuli');
+			}
+		};
+
+		void loadMemes();
+		return () => controller.abort();
+	}, [fuelPack]);
 
 	const activeModeDefinition = mode ? modeDefinitions.find((entry) => entry.id === mode) ?? null : null;
 	const activeSubmodeDefinition = useMemo(
@@ -1037,6 +1080,7 @@ function App() {
 	}, []);
 
 	const handleFocusModeToggle = useCallback(() => {
+		setFocusModeType('single');
 		setFocusMode((prev) => !prev);
 	}, []);
 
@@ -1308,6 +1352,7 @@ function App() {
 			setPack(forkedPack, `Remixed from ${sourcePack.author ?? post.author}`);
 			setMode(forkedPack.mode);
 			setSubmode(forkedPack.submode);
+			setShowCommunityOverlay(false);
 			if (forkedPack.mode === 'lyricist') setGenre(forkedPack.genre);
 		},
 		[userId, setPack, setMode, setSubmode, setGenre]
@@ -1500,16 +1545,57 @@ function App() {
 			);
 		};
 
+		const buildMemeCard = (): DeckCard | null => {
+			if (memeStimuli.length === 0 && !memeStimuliError) {
+				return {
+					id: 'meme-stimuli',
+					label: 'Meme Stimuli',
+					preview: 'Loading meme templates…',
+					detail: <p className="hint">Fetching pre-existing meme templates for this pack.</p>
+				};
+			}
+			if (memeStimuliError) {
+				return {
+					id: 'meme-stimuli',
+					label: 'Meme Stimuli',
+					preview: memeStimuliError,
+					detail: <p className="error">{memeStimuliError}</p>
+				};
+			}
+			if (!memeStimuli.length) return null;
+			const preview = memeStimuli
+				.map((meme) => meme.name)
+				.slice(0, 3)
+				.join(' · ');
+			return {
+				id: 'meme-stimuli',
+				label: 'Meme Stimuli',
+				preview: preview || 'Meme templates',
+				detail: (
+					<div className="meme-stimuli-grid">
+						{memeStimuli.map((meme) => (
+							<a key={meme.id} className="meme-thumb" href={meme.url} target="_blank" rel="noreferrer">
+								<img src={meme.url} alt={meme.name} loading="lazy" />
+								<span>{meme.name}</span>
+							</a>
+						))}
+					</div>
+				)
+			};
+		};
+
 		if (isLyricistPack(fuelPack)) {
-			return [
+			const lyricistCards: Array<DeckCard | undefined> = [
 				{
 					id: 'power-words',
 					label: 'Power Words',
 					preview: fuelPack.powerWords.slice(0, 3).join(' · '),
 					detail: (
 						<div className="word-grid">
-							{fuelPack.powerWords.map((word) => (
-								<span key={word} className="word-chip">{word}</span>
+							{fuelPack.powerWords.map((word, index) => (
+								<button key={word} type="button" className="word-chip interactive" onClick={() => setChipPicker({ type: 'powerWord', index })}>
+									{word}
+								</button>
 							))}
 						</div>
 					)
@@ -1534,7 +1620,10 @@ function App() {
 					preview: fuelPack.newsPrompt.headline,
 					detail: (
 						<div className="card-detail-copy">
-							<p className="headline">{fuelPack.newsPrompt.headline}</p>
+							<div className="headline-row">
+								<p className="headline">{fuelPack.newsPrompt.headline}</p>
+								<button type="button" className="btn micro tertiary" onClick={() => setChipPicker({ type: 'headline' })}>Swap</button>
+							</div>
 							<p>{fuelPack.newsPrompt.context}</p>
 							<small>{fuelPack.newsPrompt.source}</small>
 						</div>
@@ -1589,22 +1678,32 @@ function App() {
 							</div>
 						</div>
 					)
-				} : undefined
+				} : undefined,
+				buildMemeCard() || undefined
 			].filter(Boolean) as DeckCard[];
+			return lyricistCards;
 		}
 
 		if (isProducerPack(fuelPack)) {
-			return [
+			const constraints = fuelPack.constraints ?? [];
+			const fxIdeas = fuelPack.fxIdeas ?? [];
+			const palette = fuelPack.instrumentPalette ?? [];
+			const sample = fuelPack.sample ?? { title: 'Sample unavailable', source: 'Inspire', tags: [] } as any;
+			const videoSnippet = fuelPack.videoSnippet ?? { title: 'Visual cue', description: 'Build tension visually.' } as any;
+			const challenge = fuelPack.challenge ?? 'Flip the palette into something new.';
+			const previewFx = fxIdeas.length ? fxIdeas.slice(0, 2).join(' · ') : 'No FX ideas available';
+			const previewPalette = palette.length ? palette.slice(0, 3).join(' · ') : 'Palette warming up';
+			const producerCards: Array<DeckCard | undefined> = [
 				{
 					id: 'main-sample',
 					label: 'Main Sample',
-					preview: `${fuelPack.sample.title} • ${fuelPack.sample.source}`,
+					preview: `${sample.title} • ${sample.source}`,
 					detail: (
 						<div className="card-detail-copy">
-							<p>{fuelPack.sample.title}</p>
-							<p>{fuelPack.sample.source}</p>
+							<p>{sample.title}</p>
+							<p>{sample.source}</p>
 							<div className="tags">
-								{fuelPack.sample.tags.map((tag) => (
+								{sample.tags?.map((tag: string) => (
 									<span key={tag} className="tag">{tag}</span>
 								))}
 							</div>
@@ -1614,10 +1713,10 @@ function App() {
 				{
 					id: 'constraints',
 					label: 'Constraints',
-					preview: fuelPack.constraints[0] ?? 'Flip the arrangement',
+					preview: constraints[0] ?? 'Flip the arrangement',
 					detail: (
 						<ul>
-							{fuelPack.constraints.map((constraint) => (
+							{constraints.map((constraint) => (
 								<li key={constraint}>{constraint}</li>
 							))}
 						</ul>
@@ -1626,10 +1725,10 @@ function App() {
 				{
 					id: 'fx-ideas',
 					label: 'FX Ideas',
-					preview: fuelPack.fxIdeas.slice(0, 2).join(' · '),
+					preview: previewFx,
 					detail: (
 						<ul className="fx-grid">
-							{fuelPack.fxIdeas.map((idea) => (
+							{fxIdeas.map((idea) => (
 								<li key={idea}>{idea}</li>
 							))}
 						</ul>
@@ -1638,11 +1737,15 @@ function App() {
 				{
 					id: 'palette',
 					label: 'Instrument Palette',
-					preview: fuelPack.instrumentPalette.slice(0, 3).join(' · '),
+					preview: previewPalette,
 					detail: (
 						<ul>
-							{fuelPack.instrumentPalette.map((item) => (
-								<li key={item}>{item}</li>
+							{palette.map((item, index) => (
+								<li key={item}>
+									<button type="button" className="chip micro" onClick={() => setChipPicker({ type: 'instrument', index })}>
+										{item}
+									</button>
+								</li>
 							))}
 						</ul>
 					)
@@ -1650,19 +1753,19 @@ function App() {
 				{
 					id: 'video-cue',
 					label: 'Visual Cue',
-					preview: fuelPack.videoSnippet.title,
+					preview: videoSnippet.title ?? 'Visual cue',
 					detail: (
 						<div className="card-detail-copy">
-							<p>{fuelPack.videoSnippet.title}</p>
-							<p>{fuelPack.videoSnippet.description}</p>
+							<p>{videoSnippet.title}</p>
+							<p>{videoSnippet.description}</p>
 						</div>
 					)
 				},
 				{
 					id: 'challenge',
 					label: 'Build Challenge',
-					preview: fuelPack.challenge,
-					detail: <p>{fuelPack.challenge}</p>
+					preview: challenge,
+					detail: <p>{challenge}</p>
 				},
 				inspirationImageUrl ? {
 					id: 'inspire-image',
@@ -1678,91 +1781,104 @@ function App() {
 							</div>
 						</div>
 					)
-				} : undefined
+				} : undefined,
+				buildMemeCard() || undefined
 			].filter(Boolean) as DeckCard[];
+			return producerCards;
 		}
 
-		const editorPack = fuelPack as EditorModePack;
-		return [
-			{
-				id: 'moodboard',
-				label: 'Moodboard Clips',
-				preview: editorPack.moodboard.map((clip) => clip.title).slice(0, 2).join(' · '),
-				detail: (
-					<div className="clip-grid">
-						{editorPack.moodboard.map((clip) => (
-							<div key={clip.title} className="clip-card">
-								<strong>{clip.title}</strong>
-								<span>{clip.description}</span>
-							</div>
-						))}
-					</div>
-				)
-			},
-			{
-				id: 'audio-prompts',
-				label: 'Audio Prompts',
-				preview: editorPack.audioPrompts.map((prompt) => prompt.name).slice(0, 3).join(' · '),
-				detail: (
-					<div className="word-grid">
-						{editorPack.audioPrompts.map((prompt) => (
-							<span key={prompt.name} className="word-chip">{prompt.name}</span>
-						))}
-					</div>
-				)
-			},
-			{
-				id: 'timeline',
-				label: 'Timeline Beats',
-				preview: editorPack.timelineBeats.slice(0, 2).join(' · '),
-				detail: (
-					<ul>
-						{editorPack.timelineBeats.map((beat) => (
-							<li key={beat}>{beat}</li>
-						))}
-					</ul>
-				)
-			},
-			{
-				id: 'constraints',
-				label: 'Visual Constraints',
-				preview: editorPack.visualConstraints.slice(0, 2).join(' · '),
-				detail: (
-					<ul>
-						{editorPack.visualConstraints.map((constraint) => (
-							<li key={constraint}>{constraint}</li>
-						))}
-					</ul>
-				)
-			},
-			{
-				id: 'challenge',
-				label: 'Director Challenge',
-				preview: editorPack.challenge,
-				detail: (
-					<div className="card-detail-copy">
-						<p>{editorPack.challenge}</p>
-						<p className="title-prompt">Title prompt: {editorPack.titlePrompt}</p>
-					</div>
-				)
-			},
-			inspirationImageUrl ? {
-				id: 'inspire-image',
-				label: 'Inspiration Image',
-				preview: 'Visual spark loaded',
-				detail: (
-					<div className="image-wrap">
-						<img src={inspirationImageUrl} alt="Inspiration" style={{ maxWidth: '100%', borderRadius: 8 }} />
-						<div style={{ marginTop: 8 }}>
-							<button type="button" className="btn micro" onClick={refreshInspirationImage} disabled={inspirationImageLoading}>
-								{inspirationImageLoading ? 'Refreshing…' : 'Refresh image'}
-							</button>
+		if (isEditorPack(fuelPack)) {
+			const moodboard = fuelPack.moodboard ?? [];
+			const audioPrompts = fuelPack.audioPrompts ?? [];
+			const timelineBeats = fuelPack.timelineBeats ?? [];
+			const visualConstraints = fuelPack.visualConstraints ?? [];
+			const challenge = fuelPack.challenge ?? 'Cut a sequence that bends expectations.';
+			const titlePrompt = fuelPack.titlePrompt ?? 'Craft a title that surprises the viewer.';
+			const editorCards: Array<DeckCard | undefined> = [
+				{
+					id: 'moodboard',
+					label: 'Moodboard Clips',
+					preview: moodboard.map((clip) => clip.title).slice(0, 2).join(' · ') || 'Moodboard forming',
+					detail: (
+						<div className="clip-grid">
+							{moodboard.map((clip) => (
+								<div key={clip.title} className="clip-card">
+									<strong>{clip.title}</strong>
+									<span>{clip.description}</span>
+								</div>
+							))}
 						</div>
-					</div>
-				)
-			} : undefined
-		].filter(Boolean) as DeckCard[];
-	}, [fuelPack, focusMode]);
+					)
+				},
+				{
+					id: 'audio-prompts',
+					label: 'Audio Prompts',
+					preview: audioPrompts.map((prompt) => prompt.name).slice(0, 3).join(' · ') || 'Audio prompts loading',
+					detail: (
+						<div className="word-grid">
+							{audioPrompts.map((prompt) => (
+								<span key={prompt.name} className="word-chip">{prompt.name}</span>
+							))}
+						</div>
+					)
+				},
+				{
+					id: 'timeline',
+					label: 'Timeline Beats',
+					preview: timelineBeats.slice(0, 2).join(' · ') || 'Timeline forming',
+					detail: (
+						<ul>
+							{timelineBeats.map((beat) => (
+								<li key={beat}>{beat}</li>
+							))}
+						</ul>
+					)
+				},
+				{
+					id: 'constraints',
+					label: 'Visual Constraints',
+					preview: visualConstraints.slice(0, 2).join(' · ') || 'Visual constraints incoming',
+					detail: (
+						<ul>
+							{visualConstraints.map((constraint) => (
+								<li key={constraint}>{constraint}</li>
+							))}
+						</ul>
+					)
+				},
+				{
+					id: 'challenge',
+					label: 'Director Challenge',
+					preview: challenge,
+					detail: (
+						<div className="card-detail-copy">
+							<p>{challenge}</p>
+							<p className="title-prompt">Title prompt: {titlePrompt}</p>
+						</div>
+					)
+				},
+				inspirationImageUrl ? {
+					id: 'inspire-image',
+					label: 'Inspiration Image',
+					preview: 'Visual spark loaded',
+					detail: (
+						<div className="image-wrap">
+							<img src={inspirationImageUrl} alt="Inspiration" style={{ maxWidth: '100%', borderRadius: 8 }} />
+							<div style={{ marginTop: 8 }}>
+								<button type="button" className="btn micro" onClick={refreshInspirationImage} disabled={inspirationImageLoading}>
+									{inspirationImageLoading ? 'Refreshing…' : 'Refresh image'}
+								</button>
+							</div>
+						</div>
+					)
+				} : undefined,
+				buildMemeCard() || undefined
+			].filter(Boolean) as DeckCard[];
+			return editorCards;
+		}
+
+		return [];
+	}, [fuelPack, focusMode, memeStimuli, memeStimuliError, inspirationImageUrl, inspirationImageLoading]);
 
 	useEffect(() => {
 		if (!packDeck.length) {
@@ -1786,6 +1902,31 @@ function App() {
 
 	const selectedCard = orderedPackDeck.find((card) => card.id === expandedCard) ?? null;
 	const showingDetail = Boolean(selectedCard);
+	const handleMixerDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
+		event.preventDefault();
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'copy';
+		}
+		setMixerHover(true);
+	}, []);
+
+	const handleMixerDragLeave = useCallback(() => {
+		setMixerHover(false);
+	}, []);
+
+	const handleMixerDrop = useCallback(
+		(event: ReactDragEvent<HTMLDivElement>) => {
+			event.preventDefault();
+			setMixerHover(false);
+			const cardId = event.dataTransfer.getData('text/plain') || dragSourceRef.current;
+			if (!cardId) return;
+			const card = orderedPackDeck.find((entry) => entry.id === cardId);
+			if (!card) return;
+			setCombinedFocusCardIds((current) => (current.includes(card.id) ? current : [...current, card.id]));
+		},
+		[orderedPackDeck]
+	);
+
 
 		useEffect(() => {
 			if (!focusMode) return;
@@ -1795,6 +1936,7 @@ function App() {
 			const onKeyDown = (event: globalThis.KeyboardEvent) => {
 				if (event.key === 'Escape') {
 					setFocusMode(false);
+					setFocusModeType('single');
 					setExpandedCard(null);
 				}
 			};
@@ -1931,50 +2073,231 @@ function App() {
 		}
 	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
 
-	const openMemeOverlay = useCallback(async () => {
-		setShowMemeOverlay(true);
-		setMemeLoading(true);
-		setMemeError(null);
-		setMemeResultUrl(null);
-		try {
-			const res = await fetch('/api/memes/templates');
-			if (!res.ok) throw new Error('Failed to fetch templates');
-			const data = await res.json();
-			setMemeTemplates(Array.isArray(data.items) ? data.items : []);
-			if (Array.isArray(data.items) && data.items[0]?.id) setMemeTemplateId(data.items[0].id);
-		} catch (err) {
-			setMemeTemplates([]);
-			setMemeError('Unable to load meme templates');
-		} finally {
-			setMemeLoading(false);
-		}
-	}, []);
-
-	const runMemeCaption = useCallback(async () => {
-		if (!memeTemplateId) return;
-		setMemeLoading(true);
-		setMemeError(null);
-		setMemeResultUrl(null);
-		try {
-			const res = await fetch('/api/memes/caption', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ templateId: memeTemplateId, captions: memeCaptions })
-			});
-			if (!res.ok) throw new Error('Caption failed');
-			const data = await res.json();
-			setMemeResultUrl(data.url ?? null);
-		} catch (err) {
-			setMemeError('Unable to caption meme');
-		} finally {
-			setMemeLoading(false);
-		}
-	}, [memeTemplateId, memeCaptions]);
 	const workspaceMainClassName = `workspace-main${isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail ? ' with-queue' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`;
 	const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
 	const packStageClassName = `pack-stage glass${focusMode ? ' focus-mode' : ''}`;
+	const headerChips = useMemo(() => {
+		if (!fuelPack || !isModePack(fuelPack)) return [] as Array<{ label: string; type: 'headline' | 'powerWord' | 'instrument' | 'meme' | 'sample'; index?: number }>;
+		if (isLyricistPack(fuelPack)) {
+			return [
+				{ label: fuelPack.newsPrompt.headline, type: 'headline' },
+				{ label: fuelPack.powerWords[0] ?? 'Swap word', type: 'powerWord', index: 0 },
+				{ label: memeStimuli[0]?.name ?? 'Swap meme', type: 'meme' }
+			];
+		}
+		if (isProducerPack(fuelPack)) {
+			return [
+				{ label: fuelPack.sample?.title ?? 'Swap sample', type: 'sample' },
+				{ label: fuelPack.instrumentPalette?.[0] ?? 'Swap instrument', type: 'instrument', index: 0 },
+				{ label: memeStimuli[0]?.name ?? 'Swap meme', type: 'meme' }
+			];
+		}
+		if (isEditorPack(fuelPack)) {
+			return [] as Array<{ label: string; type: 'headline' | 'powerWord' | 'instrument' | 'meme' | 'sample'; index?: number }>;
+		}
+		return [] as Array<{ label: string; type: 'headline' | 'powerWord' | 'instrument' | 'meme' | 'sample'; index?: number }>;
+	}, [fuelPack, memeStimuli]);
 	const challengeText = useMemo(() => resolveChallengeText(fuelPack), [fuelPack]);
 	const lyricistPack = isLyricistPack(fuelPack) ? fuelPack : null;
+	const producerPack = isProducerPack(fuelPack) ? fuelPack : null;
+	const editorPack = isEditorPack(fuelPack) ? fuelPack : null;
+	const focusItems = useMemo(() => {
+		const items: string[] = [];
+		if (lyricistPack) {
+			items.push(lyricistPack.newsPrompt.headline, ...lyricistPack.powerWords, ...lyricistPack.flowPrompts, ...lyricistPack.lyricFragments, lyricistPack.topicChallenge, lyricistPack.chordMood);
+		}
+		if (producerPack) {
+			items.push(
+				producerPack.sample?.title ?? producerPack.title,
+				...(producerPack.instrumentPalette ?? []),
+				...(producerPack.fxIdeas ?? []),
+				...(producerPack.constraints ?? []),
+				producerPack.challenge ?? ''
+			);
+		}
+		if (editorPack) {
+			items.push(
+				...editorPack.moodboard.map((clip) => clip.title),
+				...editorPack.audioPrompts.map((prompt) => prompt.name),
+				...editorPack.timelineBeats,
+				...editorPack.visualConstraints,
+				editorPack.challenge
+			);
+		}
+		if (memeStimuli.length) {
+			items.push(...memeStimuli.map((meme) => meme.name));
+		}
+		if (combinedFocusCardIds.length && orderedPackDeck.length) {
+			combinedFocusCardIds.forEach((id) => {
+				const card = orderedPackDeck.find((entry) => entry.id === id);
+				if (!card) return;
+				items.unshift(card.label, card.preview);
+			});
+		}
+		return Array.from(new Set(items.filter(Boolean)));
+	}, [combinedFocusCardIds, editorPack, lyricistPack, memeStimuli, orderedPackDeck, producerPack]);
+	const visibleFocusItems = useMemo(() => focusItems.slice(0, Math.max(focusDensity, 6)), [focusDensity, focusItems]);
+	const focusSpeedMs = useMemo(() => Math.max(4, 24 / Math.max(0.35, focusSpeed)), [focusSpeed]);
+
+	const HeadlineStream = ({ anchored = false, compact = false, forceActive = false }: { anchored?: boolean; compact?: boolean; forceActive?: boolean }) => {
+		if (!visibleFocusItems.length) return null;
+		const baseClass = `headline-stream ${(focusMode || forceActive) ? 'focus-active' : 'idle'} mode-${focusStyle}${anchored ? ' anchored' : ''}${compact ? ' compact' : ''}`;
+		return (
+			<div
+				className={baseClass}
+				style={{ '--stream-speed': `${focusSpeedMs}s` } as CSSProperties}
+				aria-hidden="true"
+			>
+				{visibleFocusItems.map((text, index) => {
+					const stagger = (index % 5) * 0.65;
+					const delay = focusStyle === 'scroll' ? `${stagger * -1}s` : `${stagger}s`;
+					const duration = focusStyle === 'rain' ? `${Math.max(4, focusSpeedMs * 0.6)}s` : `${focusSpeedMs}s`;
+					const drift = (index % 4) * 8 - 12;
+					return (
+						<span
+							key={`stream-${index}-${text}`}
+							className="stream-chip"
+							style={{ animationDelay: delay, animationDuration: duration, '--drift': `${drift}px` } as CSSProperties}
+						>
+							{text}
+						</span>
+					);
+				})}
+			</div>
+		);
+	};
+
+	const combinedFocusCards = useMemo(() => {
+		return combinedFocusCardIds
+			.map((id) => orderedPackDeck.find((entry) => entry.id === id))
+			.filter(Boolean) as DeckCard[];
+	}, [combinedFocusCardIds, orderedPackDeck]);
+
+	const removeCombinedCard = useCallback((cardId: string) => {
+		setCombinedFocusCardIds((current) => current.filter((id) => id !== cardId));
+	}, []);
+
+	const renderPackDetail = (inFocusOverlay: boolean) => {
+		if (!selectedCard) return null;
+		return (
+			<div className={`pack-card-detail glass${inFocusOverlay ? ' focus-mode' : ''}`}>
+				<div className="detail-toolbox">
+					<div className="timer-toggle" role="group" aria-label="Auto refresh timer">
+						<span className="label">Auto refresh</span>
+						{[2000, 5000, 30000].map((interval) => (
+							<button
+								key={interval}
+								type="button"
+								className={autoRefreshMs === interval ? 'chip active' : 'chip'}
+								onClick={() => handleAutoRefreshSelect(interval)}
+							>
+								{interval < 1000 ? `${interval}ms` : `${interval / 1000}s`}
+							</button>
+						))}
+						<button
+							type="button"
+							className={!autoRefreshMs ? 'chip active' : 'chip'}
+							onClick={() => handleAutoRefreshSelect(null)}
+						>
+							Off
+						</button>
+					</div>
+					<button
+						type="button"
+						className={`btn secondary focus-toggle${focusMode ? ' active' : ''}`}
+						onClick={() => {
+							if (!selectedCard && orderedPackDeck.length) {
+								setExpandedCard(orderedPackDeck[0].id);
+							}
+							setFocusModeType('single');
+							handleFocusModeToggle();
+						}}
+					>
+						{focusMode ? 'Exit Focus Mode' : 'Focus Mode'}
+					</button>
+				</div>
+				<div className="detail-content">
+					<h4>{selectedCard.label}</h4>
+					<div className="detail-body">{selectedCard.detail}</div>
+				</div>
+				{fuelPack && (
+					<>
+						<HeadlineStream anchored forceActive={inFocusOverlay} />
+						<div className="detail-challenge">
+							<span className="label">Prompt Challenge</span>
+							<p>{challengeText}</p>
+						</div>
+					</>
+				)}
+			</div>
+		);
+	};
+
+	const chipOptions = useMemo(() => {
+		if (!chipPicker) return [] as string[];
+		if (chipPicker.type === 'powerWord' && lyricistPack) {
+			return Array.from(new Set([...lyricistPack.powerWords, ...lyricistPack.flowPrompts, ...lyricistPack.lyricFragments]));
+		}
+		if (chipPicker.type === 'headline' && lyricistPack) {
+			return Array.from(new Set([lyricistPack.newsPrompt.headline, lyricistPack.topicChallenge, ...lyricistPack.lyricFragments]));
+		}
+		if (chipPicker.type === 'instrument' && producerPack) {
+			return Array.from(new Set([producerPack.sample?.title ?? producerPack.title, ...(producerPack.instrumentPalette ?? []), ...(producerPack.fxIdeas ?? [])]));
+		}
+		if (chipPicker.type === 'sample' && producerPack) {
+			return Array.from(new Set([
+				producerPack.sample?.title,
+				producerPack.secondarySample?.title,
+				...(producerPack.instrumentPalette ?? []),
+				...(producerPack.constraints ?? [])
+			].filter(Boolean) as string[]));
+		}
+		if (chipPicker.type === 'meme' && memeStimuli.length) {
+			return Array.from(new Set(memeStimuli.map((meme) => meme.name)));
+		}
+		return [] as string[];
+	}, [chipPicker, lyricistPack, memeStimuli, producerPack]);
+
+	const closeChipPicker = useCallback(() => setChipPicker(null), []);
+
+	const handleChipChoice = useCallback(
+		(value: string) => {
+			if (!chipPicker) return;
+			setChipPicker(null);
+			setFuelPack((current) => {
+				if (!current || !isModePack(current)) return current;
+				if (chipPicker.type === 'powerWord' && isLyricistPack(current) && typeof chipPicker.index === 'number') {
+					const nextWords = [...current.powerWords];
+					nextWords[chipPicker.index] = value;
+					return { ...current, powerWords: nextWords, topicChallenge: current.topicChallenge ?? value } as InspireAnyPack;
+				}
+				if (chipPicker.type === 'headline' && isLyricistPack(current)) {
+					return { ...current, newsPrompt: { ...current.newsPrompt, headline: value } } as InspireAnyPack;
+				}
+				if (chipPicker.type === 'instrument' && isProducerPack(current) && typeof chipPicker.index === 'number') {
+					const nextPalette = [...(current.instrumentPalette ?? [])];
+					nextPalette[chipPicker.index] = value;
+					return { ...current, instrumentPalette: nextPalette, challenge: current.challenge ?? `Flip ${value}` } as InspireAnyPack;
+				}
+				if (chipPicker.type === 'sample' && isProducerPack(current)) {
+					const nextSample = { ...(current.sample ?? { source: 'Inspire', url: '', tags: [], timeframe: current.filters.timeframe }), title: value };
+					return { ...current, sample: nextSample, challenge: current.challenge ?? `Flip ${value}` } as InspireAnyPack;
+				}
+				return current;
+			});
+			if (chipPicker.type === 'meme' && value && memeStimuli.length) {
+				setMemeStimuli((current) => {
+					const next = [...current];
+					const found = current.find((meme) => meme.name === value);
+					if (found) {
+						return [found, ...next.filter((entry) => entry.name !== found.name)];
+					}
+					return current;
+				});
+			}
+		},
+		[chipPicker, memeStimuli.length]
+	);
 	const heroMetaContent = (
 		<>
 			<div className="theme-switcher">
@@ -2023,6 +2346,16 @@ function App() {
 				</div>
 			</div>
 		</>
+	);
+
+	const communityFeedTrigger = (
+		<button
+			type="button"
+			className="btn micro tertiary community-feed-trigger"
+			onClick={() => setShowCommunityOverlay(true)}
+		>
+			Open community feed
+		</button>
 	);
 
 	return (
@@ -2116,15 +2449,6 @@ function App() {
 							<button
 								type="button"
 								className="icon-button"
-								title="Meme Caption"
-								aria-label="Open Meme Caption"
-								onClick={openMemeOverlay}
-							>
-								🖼️
-							</button>
-							<button
-								type="button"
-								className="icon-button"
 								title={controlsToggleLabel}
 								aria-label={controlsToggleLabel}
 								aria-pressed={!controlsCollapsed}
@@ -2132,6 +2456,15 @@ function App() {
 								onClick={toggleWorkspaceControls}
 							>
 								🎛️
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Focus animation mode"
+								aria-label="Focus animation mode"
+								onClick={() => setFocusControlsOpen(true)}
+							>
+								🌐
 							</button>
 						</div>
 						<button
@@ -2155,11 +2488,55 @@ function App() {
 			) : (
 				<header className="hero">
 					<div className="hero-copy">
-						<div className="hero-brand">
-							<img src={inspireLogo} alt="Inspire" />
+						<div className="hero-heading">
+							<div className="hero-brand">
+								<img src={inspireLogo} alt="Inspire" />
+							</div>
+							<h1>Make Something</h1>
 						</div>
-						<h1>Make Something</h1>
 						<p className="hero-tagline">Choose your creative studio and spin a fresh challenge.</p>
+						<div className="hero-panels">
+							<section className="session-hub glass">
+								<div className="session-column">
+									<div className="session-heading">
+										<h3>Spectate live</h3>
+										<p>Jump into an active room.</p>
+									</div>
+									<ul>
+										{liveSessions.map((session) => (
+											<li key={session.id}>
+												<div className="session-meta">
+													<strong>{session.title}</strong>
+													<span>{session.owner} · {session.participants} viewers</span>
+												</div>
+												<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
+													Spectate
+												</button>
+											</li>
+										))}
+									</ul>
+								</div>
+								<div className="session-column">
+									<div className="session-heading">
+										<h3>Join a collab</h3>
+										<p>Build alongside other artists.</p>
+									</div>
+									<ul>
+										{collaborativeSessions.map((session) => (
+											<li key={session.id}>
+												<div className="session-meta">
+													<strong>{session.title}</strong>
+													<span>{session.owner} · {session.participants} creators</span>
+												</div>
+												<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
+													Join
+												</button>
+											</li>
+										))}
+									</ul>
+								</div>
+							</section>
+						</div>
 					</div>
 					<div className="hero-meta glass">
 						{heroMetaContent}
@@ -2179,116 +2556,85 @@ function App() {
 
 			{!mode && (
 				showModePicker ? (
-					<section className="mode-selector">
-						{modeDefinitions.map((entry) => (
-							<button
-								key={entry.id}
-								type="button"
-								className="mode-card"
-								onClick={() => handleModeSelect(entry.id)}
-								onPointerMove={handleModeCardParallax}
-								onPointerLeave={handleModeCardLeave}
-							>
-								<span className="mode-card-glow" aria-hidden="true" />
-								<span className="icon" aria-hidden="true">{entry.icon}</span>
-								<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
-								<p>{entry.description}</p>
-							</button>
-						))}
-					</section>
+					<>
+						<section className="mode-selector">
+							{modeDefinitions.map((entry) => (
+								<button
+									key={entry.id}
+									type="button"
+									className="mode-card"
+									onClick={() => handleModeSelect(entry.id)}
+									onPointerMove={handleModeCardParallax}
+									onPointerLeave={handleModeCardLeave}
+								>
+									<span className="mode-card-glow" aria-hidden="true" />
+									<span className="icon" aria-hidden="true">{entry.icon}</span>
+									<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
+									<p>{entry.description}</p>
+								</button>
+							))}
+						</section>
+						<div className="mode-gate-row">
+							<span aria-hidden="true" />
+							{communityFeedTrigger}
+						</div>
+					</>
 				) : (
-					<div className="mode-gate">
-						<button type="button" className="btn primary" onClick={() => setShowModePicker(true)}>
-							Get Started - Pick a Lab
-						</button>
+					<div className="mode-gate-row">
+						<div className="mode-gate">
+							<button type="button" className="btn primary" onClick={() => setShowModePicker(true)}>
+								Get Started - Pick a Lab
+							</button>
+						</div>
+						{communityFeedTrigger}
 					</div>
 				)
 			)}
 
-		{!mode && !showOnboarding && (
-			<div className="discover-row">
-				<section className="session-hub glass">
-					<div className="session-column">
-						<div className="session-heading">
-							<h3>Spectate a live studio</h3>
-							<p>Drop into a creator's workspace and follow their flow in real time.</p>
+			{!mode && !showOnboarding && null}
+
+			{showCommunityOverlay && (
+				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Community feed" onClick={() => setShowCommunityOverlay(false)}>
+					<div className="community-overlay glass" onClick={(event) => event.stopPropagation()}>
+						<div className="overlay-header">
+							<h3>Community feed</h3>
+							<button type="button" className="icon-button" aria-label="Close community feed" onClick={() => setShowCommunityOverlay(false)}>✕</button>
 						</div>
-						<ul>
-							{liveSessions.map((session) => (
-								<li key={session.id}>
-									<div className="session-meta">
-										<strong>{session.title}</strong>
-										<span>{session.owner} · {session.participants} viewers</span>
+						<div className="feed-scroll">
+							{communityPosts.map((post) => (
+								<article key={post.id} className="feed-card">
+									<div className="feed-meta">
+										<span className="feed-author">{post.author}</span>
+										<span className="feed-timestamp">{formatRelativeTime(post.createdAt)}</span>
 									</div>
-									<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
-										Spectate
-									</button>
-								</li>
+									<p className="feed-content">{post.content}</p>
+									{post.featuredPack && (
+										<div className="feed-pack">
+											<strong>{post.featuredPack.title}</strong>
+											<span className="feed-pack-subtitle">
+												Remixed from {post.featuredPack.remixOf?.author ?? post.author}
+											</span>
+											<button
+												type="button"
+												className="btn micro"
+												onClick={() => handleForkCommunityPost(post)}
+												title="Fork this pack into your studio"
+											>
+												Fork & Remix
+											</button>
+										</div>
+									)}
+									<div className="feed-stats" aria-label="Engagement stats">
+										<span>❤️ {post.reactions}</span>
+										<span>💬 {post.comments}</span>
+										<span>♻️ {post.remixCount}</span>
+									</div>
+								</article>
 							))}
-						</ul>
-					</div>
-					<div className="session-column">
-						<div className="session-heading">
-							<h3>Join a collaboration</h3>
-							<p>Enter an open room and build alongside other artists.</p>
 						</div>
-						<ul>
-							{collaborativeSessions.map((session) => (
-								<li key={session.id}>
-									<div className="session-meta">
-										<strong>{session.title}</strong>
-										<span>{session.owner} · {session.participants} creators</span>
-									</div>
-									<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
-										Join
-									</button>
-								</li>
-							))}
-						</ul>
 					</div>
-				</section>
-				<section className="community-feed glass" aria-live="polite">
-					<header className="feed-header">
-						<div>
-							<h3>Community Feed</h3>
-							<p>See what the Inspire crew shipped today and fork a pack into your workspace.</p>
-						</div>
-					</header>
-					<div className="feed-grid">
-						{communityPosts.map((post) => (
-							<article key={post.id} className="feed-card">
-								<div className="feed-meta">
-									<span className="feed-author">{post.author}</span>
-									<span className="feed-timestamp">{formatRelativeTime(post.createdAt)}</span>
-								</div>
-								<p className="feed-content">{post.content}</p>
-								{post.featuredPack && (
-									<div className="feed-pack">
-										<strong>{post.featuredPack.title}</strong>
-										<span className="feed-pack-subtitle">
-											Remixed from {post.featuredPack.remixOf?.author ?? post.author}
-										</span>
-										<button
-											type="button"
-											className="btn micro"
-											onClick={() => handleForkCommunityPost(post)}
-											title="Fork this pack into your studio"
-										>
-											Fork & Remix
-										</button>
-									</div>
-								)}
-								<div className="feed-stats" aria-label="Engagement stats">
-									<span>❤️ {post.reactions}</span>
-									<span>💬 {post.comments}</span>
-									<span>♻️ {post.remixCount}</span>
-								</div>
-							</article>
-							))}
-					</div>
-				</section>
-			</div>
-		)}
+				</div>
+			)}
 
 			{mode && !submode && activeModeDefinition && (
 				<section className="submode-panel glass">
@@ -2309,40 +2655,46 @@ function App() {
 			{mode && submode && (
 				<main className={workspaceClassName}>
 					{!controlsCollapsed && !focusMode && !showingDetail && (
-						<div className="workspace-controls" id="workspaceControls">
-							<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
-								<RelevanceSlider value={filters} onChange={setFilters} />
-							</CollapsibleSection>
+						<div className="workspace-controls-overlay" role="dialog" aria-modal="true" aria-label="Workspace controls" onClick={toggleWorkspaceControls}>
+							<div className="workspace-controls" id="workspaceControls" onClick={(event) => event.stopPropagation()}>
+								<div className="controls-overlay-header">
+									<h3>Workspace Controls</h3>
+									<button type="button" className="btn ghost micro" onClick={toggleWorkspaceControls}>Close</button>
+								</div>
+								<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
+									<RelevanceSlider value={filters} onChange={setFilters} />
+								</CollapsibleSection>
 
-							{mode === 'lyricist' && (
-								<CollapsibleSection title="Genre Priority" icon="🎶" description="Tune the dataset toward a sonic lane." defaultOpen>
-									<div className="option-group">
-										{LYRICIST_GENRES.map((option) => (
-											<button
-												key={option.value}
-												type="button"
-												className={option.value === genre ? 'chip active' : 'chip'}
-												onClick={() => setGenre(option.value)}
-											>
-												{option.label}
-											</button>
-										))}
+								{mode === 'lyricist' && (
+									<CollapsibleSection title="Genre Priority" icon="🎶" description="Tune the dataset toward a sonic lane." defaultOpen>
+										<div className="option-group">
+											{LYRICIST_GENRES.map((option) => (
+												<button
+													key={option.value}
+													type="button"
+													className={option.value === genre ? 'chip active' : 'chip'}
+													onClick={() => setGenre(option.value)}
+												>
+													{option.label}
+												</button>
+											))}
+										</div>
+									</CollapsibleSection>
+								)}
+
+								<CollapsibleSection title="Archive" icon="🗄️" description="Load any pack by id." defaultOpen={false}>
+									<div className="lookup-inline">
+										<input
+											placeholder="Enter pack id to load"
+											value={lookupId}
+											onChange={(event) => setLookupId(event.target.value)}
+										/>
+										<button className="btn tertiary" type="button" onClick={handleLoadById} disabled={!lookupId.trim() || loading === 'load'}>
+											{loading === 'load' ? 'Loading…' : 'Load by ID'}
+										</button>
 									</div>
 								</CollapsibleSection>
-							)}
-
-							<CollapsibleSection title="Archive" icon="🗄️" description="Load any pack by id." defaultOpen={false}>
-								<div className="lookup-inline">
-									<input
-										placeholder="Enter pack id to load"
-										value={lookupId}
-										onChange={(event) => setLookupId(event.target.value)}
-									/>
-									<button className="btn tertiary" type="button" onClick={handleLoadById} disabled={!lookupId.trim() || loading === 'load'}>
-										{loading === 'load' ? 'Loading…' : 'Load by ID'}
-									</button>
-								</div>
-							</CollapsibleSection>
+							</div>
 						</div>
 					)}
 
@@ -2363,9 +2715,24 @@ function App() {
 											<p className="summary">{showingDetail && selectedCard ? `Pack: ${fuelPack.title}` : fuelPack.summary}</p>
 										</div>
 										<div className="chips">
-											<span className="chip">{fuelPack.filters.timeframe}</span>
-											<span className="chip">{fuelPack.filters.tone}</span>
-											<span className="chip">{fuelPack.filters.semantic}</span>
+											{headerChips.length
+												? headerChips.map((chip, index) => (
+													<button
+														key={`${chip.type}-${index}-${chip.label}`}
+														type="button"
+														className="chip interactive"
+														onClick={() => setChipPicker({ type: chip.type, index: chip.index })}
+													>
+														{chip.label}
+													</button>
+												))
+												: (
+													<>
+														<span className="chip">{fuelPack.filters.timeframe}</span>
+														<span className="chip">{fuelPack.filters.tone}</span>
+														<span className="chip">{fuelPack.filters.semantic}</span>
+													</>
+												)}
 										</div>
 									</header>
 								)}
@@ -2424,65 +2791,38 @@ function App() {
 												))}
 											</div>
 										)}
-										{selectedCard && (
-											<div className={`pack-card-detail glass${focusMode ? ' focus-mode' : ''}`}>
-												<div className="detail-toolbox">
-													<div className="timer-toggle" role="group" aria-label="Auto refresh timer">
-														<span className="label">Auto refresh</span>
-														{[2000, 5000, 30000].map((interval) => (
-															<button
-																key={interval}
-																type="button"
-																className={autoRefreshMs === interval ? 'chip active' : 'chip'}
-																onClick={() => handleAutoRefreshSelect(interval)}
-															>
-																{interval < 1000 ? `${interval}ms` : `${interval / 1000}s`}
-															</button>
-														))}
+										{isModePack(fuelPack) && !focusMode && !showingDetail && (
+											<section
+												className={`focus-mixer glass${mixerHover ? ' hover' : ''}`}
+												onDragOver={handleMixerDragOver}
+												onDragLeave={handleMixerDragLeave}
+												onDrop={handleMixerDrop}
+											>
+												<div className="focus-mixer-header">
+													<div>
+														<p className="label">Combined focus mode</p>
+														<h4>Drag cards to build a shared stream</h4>
+														<p className="hint">Drop any card here to add its headline to the focus stream.</p>
+													</div>
+													<div className="mixer-actions">
+														<button type="button" className="btn tertiary micro" onClick={() => setCombinedFocusCardIds([])}>Clear</button>
 														<button
 															type="button"
-															className={!autoRefreshMs ? 'chip active' : 'chip'}
-															onClick={() => handleAutoRefreshSelect(null)}
+															className="btn secondary micro"
+															onClick={() => {
+																setFocusModeType('combined');
+																setFocusMode(true);
+																if (!expandedCard && orderedPackDeck.length) setExpandedCard(orderedPackDeck[0].id);
+															}}
 														>
-															Off
+															Focus with mix
 														</button>
 													</div>
-													<button
-														type="button"
-														className={`btn secondary focus-toggle${focusMode ? ' active' : ''}`}
-														onClick={() => {
-															if (!selectedCard && orderedPackDeck.length) {
-																setExpandedCard(orderedPackDeck[0].id);
-															}
-															handleFocusModeToggle();
-														}}
-													>
-														{focusMode ? 'Exit Focus Mode' : 'Focus Mode'}
-													</button>
 												</div>
-												<div className="detail-content">
-													<h4>{selectedCard.label}</h4>
-													<div className="detail-body">{selectedCard.detail}</div>
-												</div>
-												{fuelPack && (
-													<>
-														{lyricistPack && (
-															<div className="headline-stream" aria-hidden="true">
-																{Array.from({ length: 6 }).map((_, index) => (
-																	<span key={`headline-${index}`}>
-																		{lyricistPack.newsPrompt.headline} · {lyricistPack.newsPrompt.source}
-																	</span>
-																))}
-															</div>
-														)}
-														<div className="detail-challenge">
-															<span className="label">Prompt Challenge</span>
-															<p>{challengeText}</p>
-														</div>
-													</>
-												)}
-											</div>
+												<HeadlineStream compact />
+											</section>
 										)}
+										{selectedCard && !focusMode && renderPackDetail(false)}
 									</>
 								)}
 							</>
@@ -2565,6 +2905,142 @@ function App() {
 				</main>
 			)}
 
+			{focusMode && (
+				<div
+					className="focus-overlay"
+					role="dialog"
+					aria-modal="true"
+					aria-label={focusModeType === 'combined' ? 'Combined focus mode' : 'Focus mode'}
+					onClick={() => {
+						setFocusMode(false);
+						setFocusModeType('single');
+					}}
+				>
+					<div className="focus-overlay-inner" onClick={(event) => event.stopPropagation()}>
+						<div className="focus-overlay-actions">
+							<button type="button" className="btn ghost micro" onClick={() => { setFocusMode(false); setFocusModeType('single'); }}>Exit focus</button>
+							{focusModeType === 'combined' && (
+								<button type="button" className="btn tertiary micro" onClick={() => setCombinedFocusCardIds([])}>Clear combined</button>
+							)}
+						</div>
+						{focusModeType === 'single' && selectedCard && renderPackDetail(true)}
+						{focusModeType === 'combined' && (
+							<div
+								className={`combined-focus glass${mixerHover ? ' hover' : ''}`}
+								onDragOver={handleMixerDragOver}
+								onDragLeave={handleMixerDragLeave}
+								onDrop={handleMixerDrop}
+							>
+								<div className="combined-focus-header">
+									<div>
+										<p className="label">Combined focus mode</p>
+										<h3>Drag pack cards here to mix focus</h3>
+										<p className="hint">Drag any pack deck card into this drop zone to add it to the combined focus stream.</p>
+									</div>
+									<div className="mixer-actions">
+										<button type="button" className="btn ghost micro" onClick={() => setCombinedFocusCardIds([])}>Clear</button>
+									</div>
+								</div>
+								<div className={`combined-drop${mixerHover ? ' hover' : ''}`} aria-label="Combined focus drop area">
+									<span className="drop-instruction">Drop pack cards here</span>
+									<span className="drop-sub">Drag from the pack deck to build this mix.</span>
+								</div>
+								<div className="combined-list">
+									{combinedFocusCards.length === 0 && <p className="hint">No cards added yet. Drag cards from the deck into this space.</p>}
+									{combinedFocusCards.map((card) => (
+										<div key={card.id} className="combined-chip">
+											<div>
+												<strong>{card.label}</strong>
+												<span>{card.preview}</span>
+											</div>
+											<button type="button" className="icon-button" aria-label={`Remove ${card.label}`} onClick={() => removeCombinedCard(card.id)}>✕</button>
+										</div>
+									))}
+								</div>
+								<div className="combined-stream">
+									<HeadlineStream anchored forceActive />
+								</div>
+							</div>
+						)}
+					</div>
+				</div>
+			)}
+
+			{focusControlsOpen && (
+				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Focus mode controls">
+					<div className="focus-controls-panel glass">
+						<div className="overlay-header">
+							<h3>Focus word mode</h3>
+							<button type="button" className="icon-button" aria-label="Close focus controls" onClick={() => setFocusControlsOpen(false)}>✕</button>
+						</div>
+						<div className="focus-controls-grid">
+							<div>
+								<span className="label">Animation</span>
+								<div className="nav-toggle-group">
+									{[['scroll', 'Scroll'], ['rain', 'Rain'], ['flash', 'Flash']].map(([value, label]) => (
+										<button
+											key={value}
+											type="button"
+											className={`nav-pill${focusStyle === value ? ' active' : ''}`}
+											onClick={() => setFocusStyle(value as 'scroll' | 'rain' | 'flash')}
+										>
+											{label}
+										</button>
+									))}
+								</div>
+							</div>
+							<div className="control-field">
+								<label htmlFor="focusDensity">Visible items</label>
+								<input
+									id="focusDensity"
+									type="range"
+									min={4}
+									max={24}
+									value={focusDensity}
+									onChange={(event) => setFocusDensity(Number(event.target.value))}
+								/>
+								<span className="range-value">{focusDensity}</span>
+							</div>
+							<div className="control-field">
+								<label htmlFor="focusSpeed">Speed</label>
+								<input
+									id="focusSpeed"
+									type="range"
+									min={0.5}
+									max={3}
+									step={0.1}
+									value={focusSpeed}
+									onChange={(event) => setFocusSpeed(Number(event.target.value))}
+								/>
+								<span className="range-value">{focusSpeed.toFixed(1)}x</span>
+							</div>
+							<div className="control-preview">
+								<HeadlineStream anchored compact forceActive />
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{chipPicker && (
+				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Choose a chip option">
+					<div className="chip-picker glass">
+						<div className="overlay-header">
+							<h3>Swap chip</h3>
+							<button type="button" className="icon-button" aria-label="Close chip chooser" onClick={closeChipPicker}>✕</button>
+						</div>
+						<div className="chip-picker-grid">
+							{chipOptions.length === 0 && <p className="hint">No alternatives found.</p>}
+							{chipOptions.map((option) => (
+								<button key={option} type="button" className="chip" onClick={() => handleChipChoice(option)}>
+									{option}
+								</button>
+							))}
+						</div>
+					</div>
+				</div>
+			)}
+
 			{showChallengeOverlay && (
 				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-labelledby="challengeOverlayTitle" aria-describedby="challengeOverlayDescription">
 					<div className="challenge-overlay glass">
@@ -2615,12 +3091,17 @@ function App() {
 										)}
 									</ul>
 								</section>
+								<section className="challenge-card">
+									<h3>How to complete</h3>
+									<ul className="challenge-steps">
+										<li>Generate a fuel pack in your current mode.</li>
+										<li>Use at least one constraint above in your submission.</li>
+										<li>Submit your best take before the timer resets.</li>
+									</ul>
+								</section>
 							</div>
 						</div>
 						<footer className="challenge-overlay-footer">
-							<button type="button" className="btn ghost" onClick={() => setShowChallengeOverlay(false)}>
-								Close
-							</button>
 							<button
 								type="button"
 								className="btn primary"
@@ -2782,47 +3263,6 @@ function App() {
 				</div>
 			)}
 
-			{showMemeOverlay && (
-				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-labelledby="memeOverlayTitle">
-					<div className="settings-overlay glass">
-						<div className="overlay-header">
-							<h2 id="memeOverlayTitle">Meme Caption</h2>
-							<button type="button" className="icon-button" aria-label="Close meme caption" onClick={() => setShowMemeOverlay(false)}>✕</button>
-						</div>
-						<div className="settings-section">
-							{memeLoading && <p>Loading…</p>}
-							{!memeLoading && memeError && <p className="error">{memeError}</p>}
-							{!memeLoading && !memeError && (
-								<div className="meme-form">
-									<label>
-										<span className="label">Template</span>
-										<select value={memeTemplateId} onChange={(e) => setMemeTemplateId(e.target.value)}>
-											{memeTemplates.map((t) => (
-												<option key={t.id} value={t.id}>{t.name}</option>
-											))}
-										</select>
-									</label>
-									{(() => { const t = memeTemplates.find(x => x.id === memeTemplateId); return t ? (
-										<div className="meme-preview">
-											<img src={t.url} alt={t.name} style={{ maxWidth: '100%', borderRadius: 8 }} />
-										</div>
-									) : null; })()}
-									<div className="meme-captions">
-										<input placeholder="Top text" value={memeCaptions[0] ?? ''} onChange={(e) => setMemeCaptions([e.target.value, memeCaptions[1] ?? ''])} />
-										<input placeholder="Bottom text" value={memeCaptions[1] ?? ''} onChange={(e) => setMemeCaptions([memeCaptions[0] ?? '', e.target.value])} />
-									</div>
-									<button className="btn micro" type="button" onClick={runMemeCaption} disabled={!memeTemplateId || memeLoading}>Generate</button>
-									{memeResultUrl && (
-										<div className="meme-result">
-											<a href={memeResultUrl} target="_blank" rel="noopener noreferrer">Open captioned meme</a>
-										</div>
-									)}
-								</div>
-							)}
-						</div>
-					</div>
-				</div>
-			)}
 
 			{showOnboarding && (
 				<div className="onboarding-backdrop" role="dialog" aria-modal="true">
