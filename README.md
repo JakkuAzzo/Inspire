@@ -1,7 +1,11 @@
 # Inspire
 
-![Inspire homescreen](./Current-Homescreen.png)
-![Inspire workspace](./Current-Workspace.png)
+Latest UI tour (captured with Playwright against `http://localhost:8080` on Dec 10, 2025):
+
+![Inspire home](./docs/screenshots/2025-12/01-home.png)
+![Community remix](./docs/screenshots/2025-12/03-remixed-pack.png)
+![Pack list](./docs/screenshots/2025-12/04-pack-list.png)
+![Pack detail](./docs/screenshots/2025-12/05-pack-detail.png)
 
 ## What Is Inspire?
 

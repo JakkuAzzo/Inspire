@@ -85,8 +85,8 @@ export class YouTubeService {
   }
 
   private toInstrumental(item: PipedSearchItem): InstrumentalVideo {
-    const id = item.url?.split('?v=').pop() ?? item.url ?? Math.random().toString(36).slice(2);
     const watchUrl = item.url?.startsWith('http') ? item.url : `https://piped.video${item.url ?? ''}`;
+    const id = this.extractVideoId(item.url ?? '') || Math.random().toString(36).slice(2);
 
     return {
       id,
@@ -96,6 +96,22 @@ export class YouTubeService {
       thumbnail: item.thumbnail,
       durationSeconds: item.duration
     };
+  }
+
+  private extractVideoId(url: string): string | null {
+    if (!url) return null;
+    // Handle standard YouTube links
+    if (url.includes('watch?v=')) {
+      const parsed = new URL(url.startsWith('http') ? url : `https://youtube.com${url}`);
+      const v = parsed.searchParams.get('v');
+      if (v) return v;
+    }
+    // Handle /watch/VIDEOID or /v/VIDEOID patterns
+    const match = url.match(/(?:watch\/|v\/|embed\/)([A-Za-z0-9_-]{6,})/);
+    if (match && match[1]) return match[1];
+    // Fallback to last path segment
+    const parts = url.split('/').filter(Boolean);
+    return parts.length ? parts[parts.length - 1].replace(/\?.*$/, '') : null;
   }
 
   private getFallback(limit: number): InstrumentalVideo[] {
