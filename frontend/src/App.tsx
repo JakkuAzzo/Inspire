@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import './App.css';
-import inspireLogo from './assets/Inspire_transparent.png';
+import inspireLogo from './assets/Inspire_transparent_white.png';
 
 import type {
 	ChallengeActivity,
@@ -137,6 +137,14 @@ interface YouTubeVideoPreview {
 	title: string;
 	channelTitle: string;
 	thumbnailUrl?: string;
+}
+
+interface NewsHeadline {
+	title: string;
+	url: string;
+	source?: string;
+	description?: string;
+	publishedAt?: string;
 }
 
 const LIVE_SESSION_PRESETS: LiveSession[] = [
@@ -734,6 +742,7 @@ function App() {
 		if (stored === null) return true;
 		return stored === 'true';
 	});
+	const [heroPanelsExpanded, setHeroPanelsExpanded] = useState(false);
 	const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
 	const [focusMode, setFocusMode] = useState(false);
 	const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
@@ -748,6 +757,7 @@ function App() {
 	const [deckOrder, setDeckOrder] = useState<string[]>([]);
 	const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
 	const [combinedFocusCardIds, setCombinedFocusCardIds] = useState<string[]>([]);
+	const [customWordInput, setCustomWordInput] = useState('');
 	const [mixerHover, setMixerHover] = useState(false);
 	const [chipPicker, setChipPicker] = useState<{ type: 'powerWord' | 'instrument' | 'headline' | 'meme' | 'sample'; index?: number } | null>(null);
 	const dragSourceRef = useRef<string | null>(null);
@@ -784,6 +794,9 @@ function App() {
 	const [wordResults, setWordResults] = useState<Array<{ word: string; score?: number; numSyllables?: number }>>([]);
 	const [wordLoading, setWordLoading] = useState(false);
 	const [wordError, setWordError] = useState<string | null>(null);
+	const [newsHeadlines, setNewsHeadlines] = useState<NewsHeadline[]>([]);
+	const [newsLoading, setNewsLoading] = useState(false);
+	const [newsError, setNewsError] = useState<string | null>(null);
 
 	// Inspiration Image (keyless Picsum via backend)
 	const [inspirationImageUrl, setInspirationImageUrl] = useState<string | null>(null);
@@ -959,6 +972,40 @@ function App() {
 	};
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [fuelPack, workspaceQueue]);
+
+	useEffect(() => {
+		if (!isModePack(fuelPack)) {
+			setNewsHeadlines([]);
+			setNewsError(null);
+			setNewsLoading(false);
+			return;
+		}
+
+		const controller = new AbortController();
+		setNewsLoading(true);
+		setNewsError(null);
+
+		const loadHeadlines = async () => {
+			try {
+				// Use the new pack-aware headlines endpoint for smarter content
+				const res = await fetch(`/api/packs/${encodeURIComponent(fuelPack.id)}/headlines?limit=5`, { signal: controller.signal });
+				if (!res.ok) throw new Error('Failed to load headlines');
+				const data = (await res.json()) as { items?: NewsHeadline[] };
+				const items = Array.isArray(data.items) ? data.items : [];
+				setNewsHeadlines(items);
+				setNewsLoading(false);
+			} catch (err) {
+				if (controller.signal.aborted) return;
+				console.warn('news headlines fetch failed', err);
+				setNewsError('Unable to load news headlines right now.');
+				setNewsHeadlines([]);
+				setNewsLoading(false);
+			}
+		};
+
+		void loadHeadlines();
+		return () => controller.abort();
+	}, [fuelPack]);
 
 	const ensureAudioContext = useCallback(() => {
 		if (typeof window === 'undefined') return null;
@@ -1170,6 +1217,11 @@ function App() {
 	const setPack = useCallback(
 		(pack: InspireAnyPack, message?: string) => {
 			setFuelPack(pack);
+			if (isModePack(pack)) {
+				setMode(pack.mode);
+				setSubmode(pack.submode);
+				if (pack.mode === 'lyricist') setGenre(pack.genre);
+			}
 			setPackAnimationKey(Date.now());
 			setExpandedCard(null);
 			setDeckOrder([]);
@@ -1331,6 +1383,22 @@ function App() {
 			setLoading(null);
 		}
 	}, [mode, submode, fuelPack, requestModePack, setPack, registerPackGenerated, filters, handleGeneratePack]);
+
+	const handleAddWordToPack = useCallback((word: string) => {
+		const trimmed = word.trim();
+		if (!trimmed) return;
+		setFuelPack((current) => {
+			if (!current || !isLyricistPack(current)) return current;
+			const nextWords = Array.from(new Set([trimmed, ...current.powerWords])).slice(0, 8);
+			return { ...current, powerWords: nextWords } as InspireAnyPack;
+		});
+	}, []);
+
+	const handleCustomWordSubmit = useCallback(() => {
+		if (!customWordInput.trim()) return;
+		handleAddWordToPack(customWordInput.trim());
+		setCustomWordInput('');
+	}, [customWordInput, handleAddWordToPack]);
 
 	const handleForkCommunityPost = useCallback(
 		(post: CommunityPost) => {
@@ -1585,21 +1653,34 @@ function App() {
 		};
 
 		if (isLyricistPack(fuelPack)) {
-			const lyricistCards: Array<DeckCard | undefined> = [
+			const lyricistCards = [
 				{
-					id: 'power-words',
-					label: 'Power Words',
+					id: 'word-explorer',
+					label: 'Word Explorer',
 					preview: fuelPack.powerWords.slice(0, 3).join(' · '),
 					detail: (
-						<div className="word-grid">
-							{fuelPack.powerWords.map((word, index) => (
-								<button key={word} type="button" className="word-chip interactive" onClick={() => setChipPicker({ type: 'powerWord', index })}>
-									{word}
-								</button>
-							))}
+						<div className="word-explorer-panel">
+							<div className="word-grid">
+								{fuelPack.powerWords.map((word, index) => (
+									<button key={word} type="button" className="word-chip interactive" onClick={() => setChipPicker({ type: 'powerWord', index })}>
+										{word}
+									</button>
+								))}
+							</div>
+							<div className="word-explorer-actions">
+								<input
+									type="text"
+									placeholder="Add custom word"
+									value={customWordInput}
+									onChange={(e) => setCustomWordInput(e.target.value)}
+									onKeyDown={(e) => { if (e.key === 'Enter') handleCustomWordSubmit(); }}
+								/>
+								<button type="button" className="btn micro" onClick={handleCustomWordSubmit}>Add</button>
+								<button type="button" className="btn tertiary micro" onClick={() => setShowWordExplorer(true)}>Open Word Explorer</button>
+							</div>
 						</div>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'story-arc',
 					label: 'Story Arc',
@@ -1613,7 +1694,7 @@ function App() {
 							<span>{fuelPack.storyArc.end}</span>
 						</div>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'headline',
 					label: 'Live Headline',
@@ -1628,7 +1709,7 @@ function App() {
 							<small>{fuelPack.newsPrompt.source}</small>
 						</div>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'flow-prompts',
 					label: 'Flow Prompts',
@@ -1640,7 +1721,7 @@ function App() {
 							))}
 						</ul>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'challenge',
 					label: 'Prompt Challenge',
@@ -1651,7 +1732,7 @@ function App() {
 							<p className="chord">Chord mood: {fuelPack.chordMood}</p>
 						</div>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'fragments',
 					label: 'Lyric Fragments',
@@ -1663,12 +1744,12 @@ function App() {
 							))}
 						</ul>
 					)
-				},
-				inspirationImageUrl ? {
+				} as DeckCard,
+				inspirationImageUrl ? ({
 					id: 'inspire-image',
 					label: 'Inspiration Image',
 					preview: 'Visual spark loaded',
-						detail: (
+					detail: (
 						<div className="image-wrap">
 							<img src={inspirationImageUrl} alt="Inspiration" style={{ maxWidth: '100%', borderRadius: 8 }} />
 							<div style={{ marginTop: 8 }}>
@@ -1678,8 +1759,8 @@ function App() {
 							</div>
 						</div>
 					)
-				} : undefined,
-				buildMemeCard() || undefined
+				} as DeckCard) : null,
+				buildMemeCard() as DeckCard | null
 			].filter(Boolean) as DeckCard[];
 			return lyricistCards;
 		}
@@ -1693,7 +1774,7 @@ function App() {
 			const challenge = fuelPack.challenge ?? 'Flip the palette into something new.';
 			const previewFx = fxIdeas.length ? fxIdeas.slice(0, 2).join(' · ') : 'No FX ideas available';
 			const previewPalette = palette.length ? palette.slice(0, 3).join(' · ') : 'Palette warming up';
-			const producerCards: Array<DeckCard | undefined> = [
+			const producerCards = [
 				{
 					id: 'main-sample',
 					label: 'Main Sample',
@@ -1709,7 +1790,7 @@ function App() {
 							</div>
 						</div>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'constraints',
 					label: 'Constraints',
@@ -1721,7 +1802,7 @@ function App() {
 							))}
 						</ul>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'fx-ideas',
 					label: 'FX Ideas',
@@ -1733,7 +1814,7 @@ function App() {
 							))}
 						</ul>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'palette',
 					label: 'Instrument Palette',
@@ -1749,7 +1830,7 @@ function App() {
 							))}
 						</ul>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'video-cue',
 					label: 'Visual Cue',
@@ -1760,14 +1841,14 @@ function App() {
 							<p>{videoSnippet.description}</p>
 						</div>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'challenge',
 					label: 'Build Challenge',
 					preview: challenge,
 					detail: <p>{challenge}</p>
-				},
-				inspirationImageUrl ? {
+				} as DeckCard,
+				inspirationImageUrl ? ({
 					id: 'inspire-image',
 					label: 'Inspiration Image',
 					preview: 'Visual spark loaded',
@@ -1781,8 +1862,8 @@ function App() {
 							</div>
 						</div>
 					)
-				} : undefined,
-				buildMemeCard() || undefined
+				} as DeckCard) : null,
+				buildMemeCard() as DeckCard | null
 			].filter(Boolean) as DeckCard[];
 			return producerCards;
 		}
@@ -1794,7 +1875,7 @@ function App() {
 			const visualConstraints = fuelPack.visualConstraints ?? [];
 			const challenge = fuelPack.challenge ?? 'Cut a sequence that bends expectations.';
 			const titlePrompt = fuelPack.titlePrompt ?? 'Craft a title that surprises the viewer.';
-			const editorCards: Array<DeckCard | undefined> = [
+			const editorCards = [
 				{
 					id: 'moodboard',
 					label: 'Moodboard Clips',
@@ -1809,7 +1890,7 @@ function App() {
 							))}
 						</div>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'audio-prompts',
 					label: 'Audio Prompts',
@@ -1821,7 +1902,7 @@ function App() {
 							))}
 						</div>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'timeline',
 					label: 'Timeline Beats',
@@ -1833,7 +1914,7 @@ function App() {
 							))}
 						</ul>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'constraints',
 					label: 'Visual Constraints',
@@ -1845,7 +1926,7 @@ function App() {
 							))}
 						</ul>
 					)
-				},
+				} as DeckCard,
 				{
 					id: 'challenge',
 					label: 'Director Challenge',
@@ -1856,8 +1937,8 @@ function App() {
 							<p className="title-prompt">Title prompt: {titlePrompt}</p>
 						</div>
 					)
-				},
-				inspirationImageUrl ? {
+				} as DeckCard,
+				inspirationImageUrl ? ({
 					id: 'inspire-image',
 					label: 'Inspiration Image',
 					preview: 'Visual spark loaded',
@@ -1871,8 +1952,8 @@ function App() {
 							</div>
 						</div>
 					)
-				} : undefined,
-				buildMemeCard() || undefined
+				} as DeckCard) : null,
+				buildMemeCard() as DeckCard | null
 			].filter(Boolean) as DeckCard[];
 			return editorCards;
 		}
@@ -2017,6 +2098,7 @@ function App() {
 	const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
 	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
 	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
+	const fatalError = error && !loading;
 
 	const handleSaveCurrentPack = useCallback(async () => {
 		if (!fuelPack || !isModePack(fuelPack)) return;
@@ -2167,16 +2249,6 @@ function App() {
 		);
 	};
 
-	const combinedFocusCards = useMemo(() => {
-		return combinedFocusCardIds
-			.map((id) => orderedPackDeck.find((entry) => entry.id === id))
-			.filter(Boolean) as DeckCard[];
-	}, [combinedFocusCardIds, orderedPackDeck]);
-
-	const removeCombinedCard = useCallback((cardId: string) => {
-		setCombinedFocusCardIds((current) => current.filter((id) => id !== cardId));
-	}, []);
-
 	const renderPackDetail = (inFocusOverlay: boolean) => {
 		if (!selectedCard) return null;
 		return (
@@ -2226,6 +2298,22 @@ function App() {
 						<div className="detail-challenge">
 							<span className="label">Prompt Challenge</span>
 							<p>{challengeText}</p>
+						</div>
+						<div className="news-headlines">
+							<span className="label">Linked Headlines</span>
+							{newsLoading && <p className="hint">Loading headlines…</p>}
+							{!newsLoading && newsError && <p className="error">{newsError}</p>}
+							{!newsLoading && !newsError && newsHeadlines.length > 0 && (
+								<ul>
+									{newsHeadlines.map((item, idx) => (
+										<li key={`${item.url}-${idx}`}>
+											<a href={item.url} target="_blank" rel="noreferrer">{item.title}</a>
+											{item.source && <span className="news-source"> · {item.source}</span>}
+										</li>
+									))}
+								</ul>
+							)}
+							{!newsLoading && !newsError && !newsHeadlines.length && <p className="hint">No linked headlines yet.</p>}
 						</div>
 					</>
 				)}
@@ -2373,6 +2461,18 @@ function App() {
 			<div className="ambient orb-right" aria-hidden="true" />
 			<div className="noise-overlay" aria-hidden="true" />
 
+			{fatalError && (
+				<div className="fatal-fallback glass" role="alert">
+					<h2>Something went wrong</h2>
+					<p>{error}</p>
+					<div className="fatal-actions">
+						<button type="button" className="btn" onClick={() => { setError(null); setFuelPack(null); setMode(null); setSubmode(null); setWorkspaceQueue([]); }}>
+							Back to studios
+						</button>
+					</div>
+				</div>
+			)}
+
 			{mode ? (
 				<header className="top-nav glass">
 					<div className="nav-left">
@@ -2486,62 +2586,70 @@ function App() {
 					</div>
 				</header>
 			) : (
-				<header className="hero">
-					<div className="hero-copy">
-						<div className="hero-heading">
-							<div className="hero-brand">
-								<img src={inspireLogo} alt="Inspire" />
+				<>
+					<header className="hero">
+						<div className="hero-copy">
+							<div className="hero-heading">
+								<img src={inspireLogo} alt="Inspire" className="hero-logo" />
+								<h1>Make Something</h1>
 							</div>
-							<h1>Make Something</h1>
+							<p className="hero-tagline">Choose your creative studio and spin a fresh challenge.</p>
 						</div>
-						<p className="hero-tagline">Choose your creative studio and spin a fresh challenge.</p>
-						<div className="hero-panels">
-							<section className="session-hub glass">
-								<div className="session-column">
-									<div className="session-heading">
-										<h3>Spectate live</h3>
-										<p>Jump into an active room.</p>
-									</div>
-									<ul>
-										{liveSessions.map((session) => (
-											<li key={session.id}>
-												<div className="session-meta">
-													<strong>{session.title}</strong>
-													<span>{session.owner} · {session.participants} viewers</span>
-												</div>
-												<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
-													Spectate
-												</button>
-											</li>
-										))}
-									</ul>
-								</div>
-								<div className="session-column">
-									<div className="session-heading">
-										<h3>Join a collab</h3>
-										<p>Build alongside other artists.</p>
-									</div>
-									<ul>
-										{collaborativeSessions.map((session) => (
-											<li key={session.id}>
-												<div className="session-meta">
-													<strong>{session.title}</strong>
-													<span>{session.owner} · {session.participants} creators</span>
-												</div>
-												<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
-													Join
-												</button>
-											</li>
-										))}
-									</ul>
-								</div>
-							</section>
+						<div className="hero-meta glass">
+							{heroMetaContent}
 						</div>
+					</header>
+					<div className={`hero-panels ${heroPanelsExpanded ? 'expanded' : ''}`}>
+						<section className="session-hub glass">
+							<div className="session-column">
+								<div className="session-heading">
+									<h3>Spectate live</h3>
+									<p>Jump into an active room.</p>
+								</div>
+								<ul>
+									{liveSessions.map((session) => (
+										<li key={session.id}>
+											<div className="session-meta">
+												<strong>{session.title}</strong>
+												<span>{session.owner} · {session.participants} viewers</span>
+											</div>
+											<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
+												Spectate
+											</button>
+										</li>
+									))}
+								</ul>
+							</div>
+							<div className="session-column">
+								<div className="session-heading">
+									<h3>Join a collab</h3>
+									<p>Build alongside other artists.</p>
+								</div>
+								<ul>
+									{collaborativeSessions.map((session) => (
+										<li key={session.id}>
+											<div className="session-meta">
+												<strong>{session.title}</strong>
+												<span>{session.owner} · {session.participants} creators</span>
+											</div>
+											<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
+												Join
+											</button>
+										</li>
+									))}
+								</ul>
+							</div>
+							<button
+								type="button"
+								className="hero-panels-toggle"
+								onClick={() => setHeroPanelsExpanded(!heroPanelsExpanded)}
+								title={heroPanelsExpanded ? 'Collapse' : 'Expand'}
+							>
+								{heroPanelsExpanded ? '✕' : '⬈'}
+							</button>
+						</section>
 					</div>
-					<div className="hero-meta glass">
-						{heroMetaContent}
-					</div>
-				</header>
+				</>
 			)}
 
 			{(loading || status || error) && (
@@ -2721,7 +2829,7 @@ function App() {
 														key={`${chip.type}-${index}-${chip.label}`}
 														type="button"
 														className="chip interactive"
-														onClick={() => setChipPicker({ type: chip.type, index: chip.index })}
+														onClick={() => setChipPicker({ type: chip.type as 'powerWord' | 'instrument' | 'headline' | 'meme' | 'sample', index: chip.index })}
 													>
 														{chip.label}
 													</button>
@@ -2800,9 +2908,8 @@ function App() {
 											>
 												<div className="focus-mixer-header">
 													<div>
-														<p className="label">Combined focus mode</p>
-														<h4>Drag cards to build a shared stream</h4>
-														<p className="hint">Drop any card here to add its headline to the focus stream.</p>
+														<p className="label">Combined focus</p>
+														<h4>Drop pack cards to mix</h4>
 													</div>
 													<div className="mixer-actions">
 														<button type="button" className="btn tertiary micro" onClick={() => setCombinedFocusCardIds([])}>Clear</button>
@@ -2815,11 +2922,14 @@ function App() {
 																if (!expandedCard && orderedPackDeck.length) setExpandedCard(orderedPackDeck[0].id);
 															}}
 														>
-															Focus with mix
+															Open focus mode
 														</button>
 													</div>
 												</div>
-												<HeadlineStream compact />
+												<div className={`combined-drop${mixerHover ? ' hover' : ''}`} aria-label="Combined focus drop area">
+													<span className="drop-instruction">Drop pack cards here</span>
+													<span className="drop-sub">{combinedFocusCardIds.length ? `${combinedFocusCardIds.length} added` : 'Drag from the pack deck to build this mix.'}</span>
+												</div>
 											</section>
 										)}
 										{selectedCard && !focusMode && renderPackDetail(false)}
@@ -2933,9 +3043,8 @@ function App() {
 							>
 								<div className="combined-focus-header">
 									<div>
-										<p className="label">Combined focus mode</p>
-										<h3>Drag pack cards here to mix focus</h3>
-										<p className="hint">Drag any pack deck card into this drop zone to add it to the combined focus stream.</p>
+										<p className="label">Combined focus</p>
+										<h3>Drop pack cards to mix</h3>
 									</div>
 									<div className="mixer-actions">
 										<button type="button" className="btn ghost micro" onClick={() => setCombinedFocusCardIds([])}>Clear</button>
@@ -2943,22 +3052,7 @@ function App() {
 								</div>
 								<div className={`combined-drop${mixerHover ? ' hover' : ''}`} aria-label="Combined focus drop area">
 									<span className="drop-instruction">Drop pack cards here</span>
-									<span className="drop-sub">Drag from the pack deck to build this mix.</span>
-								</div>
-								<div className="combined-list">
-									{combinedFocusCards.length === 0 && <p className="hint">No cards added yet. Drag cards from the deck into this space.</p>}
-									{combinedFocusCards.map((card) => (
-										<div key={card.id} className="combined-chip">
-											<div>
-												<strong>{card.label}</strong>
-												<span>{card.preview}</span>
-											</div>
-											<button type="button" className="icon-button" aria-label={`Remove ${card.label}`} onClick={() => removeCombinedCard(card.id)}>✕</button>
-										</div>
-									))}
-								</div>
-								<div className="combined-stream">
-									<HeadlineStream anchored forceActive />
+									<span className="drop-sub">{combinedFocusCardIds.length ? `${combinedFocusCardIds.length} added` : 'Drag from the pack deck to build this mix.'}</span>
 								</div>
 							</div>
 						)}
@@ -3254,7 +3348,15 @@ function App() {
 							{!wordLoading && !wordError && (
 								<div className="word-grid">
 									{wordResults.map((w) => (
-										<span key={w.word} className="word-chip" title={`${w.numSyllables ?? ''} syllables`}>{w.word}</span>
+										<button
+											key={w.word}
+											type="button"
+											className="word-chip interactive"
+											title={`${w.numSyllables ?? ''} syllables`}
+											onClick={() => handleAddWordToPack(w.word)}
+										>
+											{w.word}
+										</button>
 									))}
 								</div>
 							)}

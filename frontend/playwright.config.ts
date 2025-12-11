@@ -5,15 +5,15 @@ export default defineConfig({
 	timeout: 45_000,
 	retries: process.env.CI ? 1 : 0,
 	use: {
-		baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:4173',
+		baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080',
 		headless: true,
 		screenshot: 'only-on-failure',
 		video: 'off'
 	},
 	webServer: {
-		command: 'npm run dev -- --host 0.0.0.0 --port 4173 --strictPort',
-		url: 'http://localhost:4173',
+		command: 'cd .. && npm run dev',
+		url: 'http://localhost:8080',
 		reuseExistingServer: !process.env.CI,
-		timeout: 60_000
+		timeout: 120_000
 	}
 });

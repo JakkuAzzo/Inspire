@@ -84,6 +84,26 @@ function coalesceFilters(filters?: Partial<RelevanceFilter>): RelevanceFilter {
   };
 }
 
+function buildHeadlineQueryFromPack(pack: FuelPack | ModePack): string {
+  const parts: string[] = [];
+  if ('mode' in pack) {
+    parts.push(pack.mode);
+    if ('submode' in pack && pack.submode) parts.push(pack.submode);
+  }
+  const filters = (pack as any).filters as RelevanceFilter | undefined;
+  if (filters) {
+    parts.push(filters.tone, filters.semantic, filters.timeframe);
+  }
+  if ((pack as any).genre) parts.push((pack as any).genre);
+  if ((pack as any).powerWords) parts.push(...((pack as any).powerWords as string[]));
+  if ((pack as any).topicChallenge) parts.push((pack as any).topicChallenge as string);
+  if ((pack as any).sample?.title) parts.push((pack as any).sample.title as string);
+  if ((pack as any).instrumentPalette) parts.push(...((pack as any).instrumentPalette as string[]));
+  if ((pack as any).visualConstraints) parts.push(...((pack as any).visualConstraints as string[]));
+  if ((pack as any).newsPrompt?.headline) parts.push((pack as any).newsPrompt.headline as string);
+  return parts.filter(Boolean).join(' ');
+}
+
 function buildFallbackLyricistPack(body: ModePackRequest, filters: RelevanceFilter): LyricistModePack {
   const words = listMockWords(filters);
   const headlines = listMockNews(filters);
@@ -459,6 +479,44 @@ function buildApiRouter() {
     } catch (err) {
       console.error('instrumentals/search failed', err);
       res.status(500).json({ items: [] });
+    }
+  });
+
+  // News headlines search (uses SauravKanchan/NewsAPI static feeds)
+  router.get('/news/search', async (req: Request, res: Response) => {
+    try {
+      const q = String(req.query.q || req.query.query || '').trim();
+      const limitRaw = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+      const limit = Math.min(8, Math.max(1, Number.parseInt(String(limitRaw || '5'), 10) || 5));
+      if (!q) return res.status(400).json({ error: 'q is required' });
+      const items = await services.newsService.searchHeadlines(q, limit);
+      res.json({ items });
+    } catch (err) {
+      console.error('news/search failed', err);
+      res.status(500).json({ items: [] });
+    }
+  });
+
+  // Headlines linked to a generated pack
+  router.get('/packs/:id/headlines', async (req: Request, res: Response) => {
+    try {
+      const id = req.params.id;
+      const limitRaw = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+      const limit = Math.min(8, Math.max(1, Number.parseInt(String(limitRaw || '5'), 10) || 5));
+      let pack = packs.get(id);
+      if (!pack) {
+        const savedState = readSavedState();
+        pack = savedState.snapshots[id];
+        if (pack) packs.set(id, pack);
+      }
+      if (!pack) return res.status(404).json({ error: 'Pack not found' });
+
+      const query = buildHeadlineQueryFromPack(pack);
+      const items = query ? await services.newsService.searchHeadlines(query, limit) : [];
+      res.json({ packId: id, query, items });
+    } catch (err) {
+      console.error('packs/:id/headlines failed', err);
+      res.status(500).json({ packId: req.params.id, items: [] });
     }
   });
 

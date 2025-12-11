@@ -13,6 +13,7 @@ import { AudioService, createAudioService } from './audioService';
 import { TrendService, createTrendService } from './trendService';
 import { RandomService, createRandomService } from './randomService';
 import { YouTubeService, createYouTubeService } from './youtubeService';
+import { NewsService, createNewsService } from './newsService';
 
 export { WordService, createWordService } from './wordService';
 export type { Word, WordDefinition } from './wordService';
@@ -35,6 +36,9 @@ export type { Activity, CreativePrompt } from './randomService';
 export { YouTubeService, createYouTubeService } from './youtubeService';
 export type { InstrumentalVideo } from './youtubeService';
 
+export { NewsService, createNewsService } from './newsService';
+export type { NewsHeadline } from './newsService';
+
 export { ApiClient } from './apiClient';
 
 /**
@@ -48,6 +52,7 @@ export function createAllServices() {
     audioService: createAudioService(),
     trendService: createTrendService(),
     randomService: createRandomService(),
-    youtubeService: createYouTubeService()
+    youtubeService: createYouTubeService(),
+    newsService: createNewsService()
   };
 }
