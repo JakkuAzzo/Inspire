@@ -70,12 +70,19 @@ export class YouTubeService {
         return this.getFallback(limit);
       }
 
-      const parsed = items
-        .filter((item) => Boolean(item) && !item.isShort && item.title)
-        .slice(0, limit)
-        .map((item) => this.toInstrumental(item));
+      // Filter out Shorts and probe for embeddability via YouTube oEmbed
+      const playable: InstrumentalVideo[] = [];
+      for (const item of items) {
+        if (!item || item.isShort || !item.title) continue;
+        const vid = this.toInstrumental(item);
+        const ok = await this.isEmbeddableOnYouTube(vid.id);
+        if (ok) {
+          playable.push(vid);
+          if (playable.length >= limit) break;
+        }
+      }
 
-      return parsed.length ? parsed : this.getFallback(limit);
+      return playable.length ? playable : this.getFallback(limit);
     } catch (error) {
       if (this.config.useMockFallback) {
         return this.getFallback(limit);
@@ -112,6 +119,21 @@ export class YouTubeService {
     // Fallback to last path segment
     const parts = url.split('/').filter(Boolean);
     return parts.length ? parts[parts.length - 1].replace(/\?.*$/, '') : null;
+  }
+
+  /**
+   * Probe YouTube oEmbed to determine if a given video ID is embeddable.
+   * Non-embeddable or restricted videos typically return 401/403.
+   */
+  private async isEmbeddableOnYouTube(videoId: string): Promise<boolean> {
+    if (!videoId) return false;
+    const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&format=json`;
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   private getFallback(limit: number): InstrumentalVideo[] {
