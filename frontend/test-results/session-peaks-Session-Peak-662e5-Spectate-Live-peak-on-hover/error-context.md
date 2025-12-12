@@ -1,0 +1,97 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - button "Sign up or log in to Inspire" [ref=e4] [cursor=pointer]:
+    - generic [ref=e5]: Sign up / Log in
+    - generic [ref=e6]: ↗
+  - banner [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - img "Inspire" [ref=e10]
+        - heading "Make Something" [level=1] [ref=e11]
+      - paragraph [ref=e12]: Choose your creative studio and spin a fresh challenge.
+    - generic [ref=e13] [cursor=pointer]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: Mood themes
+        - generic:
+          - button "Aurora" [ref=e16]:
+            - generic [ref=e17]: ✨
+            - text: Aurora
+          - button "Lo-Fi" [ref=e18]:
+            - generic [ref=e19]: 🌙
+            - text: Lo-Fi
+          - button "Neon" [ref=e20]:
+            - generic [ref=e21]: 🌈
+            - text: Neon
+          - button "Vaporwave" [ref=e22]:
+            - generic [ref=e23]: 🌅
+            - text: Vaporwave
+          - button "Noir" [ref=e24]:
+            - generic [ref=e25]: 🖤
+            - text: Noir
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e28]: Daily streak
+          - generic [ref=e29]:
+            - text: "0"
+            - generic [ref=e30]: 🔥
+        - generic [ref=e31]:
+          - generic [ref=e32]: Packs generated
+          - generic [ref=e33]: "0"
+        - generic [ref=e34]:
+          - generic [ref=e35]: Favorite tone
+          - generic [ref=e36]: —
+        - button "Daily challenge 8h 13m 08s Resets 12:00 AM View progress →" [ref=e37]:
+          - generic [ref=e38]: Daily challenge
+          - generic [ref=e39]: 8h 13m 08s
+          - generic [ref=e40]: Resets 12:00 AM
+          - generic [ref=e41]: View progress →
+      - generic [ref=e42]:
+        - generic [ref=e43]: Achievements
+        - generic [ref=e45]: Create packs to unlock badges
+  - generic:
+    - generic [ref=e46] [cursor=pointer]:
+      - generic [ref=e47]:
+        - heading "Spectate live" [level=3] [ref=e48]
+        - paragraph: Jump into an active room.
+      - list [ref=e49]:
+        - listitem [ref=e50]:
+          - generic [ref=e51]:
+            - strong [ref=e52]: Hook Draft Lab
+            - generic [ref=e53]: "@auroraflow · 128 viewers"
+          - button "Spectate" [ref=e54]
+        - listitem [ref=e55]:
+          - generic [ref=e56]:
+            - strong [ref=e57]: Reel Speedrun
+            - generic [ref=e58]: "@cutcraft · 64 viewers"
+          - button "Spectate" [ref=e59]
+    - generic [ref=e60] [cursor=pointer]:
+      - generic [ref=e61]:
+        - heading "Join a collab" [level=3] [ref=e62]
+        - paragraph: Build alongside other artists.
+      - list [ref=e63]:
+        - listitem [ref=e64]:
+          - generic [ref=e65]:
+            - strong [ref=e66]: Texture Flip Collab
+            - generic [ref=e67]: "@midnightloops · 92 creators"
+          - button "Join" [ref=e68]
+    - generic [ref=e69] [cursor=pointer]:
+      - generic [ref=e70]:
+        - heading "Community feed" [level=3] [ref=e71]
+        - paragraph: Fresh remixes and drops.
+      - list [ref=e72]:
+        - listitem [ref=e73]:
+          - generic [ref=e74]:
+            - strong [ref=e75]: "@auroraflow"
+            - generic [ref=e76]: 45m ago
+          - paragraph [ref=e77]: Hook sketch recorded on last night’s stream. The crowd lost it on the second drop.
+          - button "Fork" [ref=e78]
+        - listitem [ref=e79]:
+          - generic [ref=e80]:
+            - strong [ref=e81]: "@midnightloops"
+            - generic [ref=e82]: 1h ago
+          - paragraph [ref=e83]: Texture flip built from kitchen percussion + subway rumble. Ready for someone to add vocals.
+          - button "Fork" [ref=e84]
+  - button "Get Started - Pick a Lab" [ref=e87] [cursor=pointer]
+```
