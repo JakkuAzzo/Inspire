@@ -26,6 +26,7 @@ import type {
 import { RelevanceSlider } from './components/RelevanceSlider';
 import { CollapsibleSection } from './components/CollapsibleSection';
 import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
+import MouseParticles from './components/MouseParticles';
 
 const DEFAULT_FILTERS: RelevanceFilter = {
 	timeframe: 'fresh',
@@ -767,7 +768,6 @@ function App() {
 		if (stored === null) return true;
 		return stored === 'true';
 	});
-	const [heroPanelsExpanded] = useState(false);
 	const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
 	const [focusMode, setFocusMode] = useState(false);
 	const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
@@ -827,8 +827,8 @@ function App() {
 	const [newsLoading, setNewsLoading] = useState(false);
 	const [newsError, setNewsError] = useState<string | null>(null);
 
-	// Session hub expand state
-	const [sessionHubExpanded, setSessionHubExpanded] = useState(false);
+	// Session peak expand states
+	const [expandedPeak, setExpandedPeak] = useState<string | null>(null);
 
 	// Inspiration Image (keyless Picsum via backend)
 	const [inspirationImageUrl, setInspirationImageUrl] = useState<string | null>(null);
@@ -2482,18 +2482,9 @@ function App() {
 		</>
 	);
 
-	const communityFeedTrigger = (
-		<button
-			type="button"
-			className="btn micro tertiary community-feed-trigger"
-			onClick={() => setShowCommunityOverlay(true)}
-		>
-			Open community feed
-		</button>
-	);
-
 	return (
 		<div className={appClassName}>
+			{!mode && <MouseParticles particleCount={500} repelDistance={300} colors={['#ec4899', '#22d3ee', '#a855f7', '#8b5cf6', '#06b6d4', '#f472b6']} particleSize={2} />}
 			<button
 				type="button"
 				className="user-handle"
@@ -2645,77 +2636,92 @@ function App() {
 							{heroMetaContent}
 						</div>
 					</header>
-					<div className={`hero-panels ${heroPanelsExpanded ? 'expanded' : ''}`}>
-					</div>
 
-					{/* Session Hub Backdrop */}
-					{sessionHubExpanded && (
-						<div
-							className="session-hub-backdrop"
-							onClick={() => setSessionHubExpanded(false)}
-						/>
-					)}
-
-					{/* Session Hub Container */}
-					<section
-						className={`session-hub glass ${
-							sessionHubExpanded ? 'expanded' : 'peeking'
-						}`}
-						onClick={() => !sessionHubExpanded && setSessionHubExpanded(true)}
-					>
-						<button
-							type="button"
-							className="session-hub-toggle"
-							onClick={(e) => {
-								e.stopPropagation();
-								setSessionHubExpanded(!sessionHubExpanded);
-							}}
-							title={sessionHubExpanded ? 'Collapse' : 'Expand'}
+					{/* Three Separate Session Peaks */}
+					<div className="session-peaks">
+						{/* Spectate Live Peak */}
+						<section 
+							className={`session-peak glass ${expandedPeak === 'spectate' ? 'expanded' : ''}`}
+							onMouseEnter={() => setExpandedPeak('spectate')}
+							onMouseLeave={() => setExpandedPeak(null)}
 						>
-							{sessionHubExpanded ? '✕' : '⬈'}
-						</button>
+							<div className="session-peak-header">
+								<h3>Spectate live</h3>
+								<p>Jump into an active room.</p>
+							</div>
+							<ul className="session-peak-list">
+								{liveSessions.map((session) => (
+									<li key={session.id}>
+										<div className="session-meta">
+											<strong>{session.title}</strong>
+											<span>{session.owner} · {session.participants} viewers</span>
+										</div>
+										<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
+											Spectate
+										</button>
+									</li>
+								))}
+							</ul>
+						</section>
 
-						<div className="session-hub-content">
-							<div className="session-column">
-								<div className="session-heading">
-									<h3>Spectate live</h3>
-									<p>Jump into an active room.</p>
-								</div>
-								<ul>
-									{liveSessions.map((session) => (
-										<li key={session.id}>
-											<div className="session-meta">
-												<strong>{session.title}</strong>
-												<span>{session.owner} · {session.participants} viewers</span>
-											</div>
-											<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
-												Spectate
-											</button>
-										</li>
-									))}
-								</ul>
+						{/* Join Collab Peak */}
+						<section 
+							className={`session-peak glass ${expandedPeak === 'collab' ? 'expanded' : ''}`}
+							onMouseEnter={() => setExpandedPeak('collab')}
+							onMouseLeave={() => setExpandedPeak(null)}
+						>
+							<div className="session-peak-header">
+								<h3>Join a collab</h3>
+								<p>Build alongside other artists.</p>
 							</div>
-							<div className="session-column">
-								<div className="session-heading">
-									<h3>Join a collab</h3>
-									<p>Build alongside other artists.</p>
-								</div>
-								<ul>
-									{collaborativeSessions.map((session) => (
-										<li key={session.id}>
-											<div className="session-meta">
-												<strong>{session.title}</strong>
-												<span>{session.owner} · {session.participants} creators</span>
-											</div>
-											<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
-												Join
-											</button>
-										</li>
-									))}
-								</ul>
+							<ul className="session-peak-list">
+								{collaborativeSessions.map((session) => (
+									<li key={session.id}>
+										<div className="session-meta">
+											<strong>{session.title}</strong>
+											<span>{session.owner} · {session.participants} creators</span>
+										</div>
+										<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
+											Join
+										</button>
+									</li>
+								))}
+							</ul>
+						</section>
+
+						{/* Community Feed Peak */}
+						<section 
+							className={`session-peak glass ${expandedPeak === 'community' ? 'expanded' : ''}`}
+							onMouseEnter={() => setExpandedPeak('community')}
+							onMouseLeave={() => setExpandedPeak(null)}
+						>
+							<div className="session-peak-header">
+								<h3>Community feed</h3>
+								<p>Fresh remixes and drops.</p>
 							</div>
-						</div>
-					</section>
+							<ul className="session-peak-list">
+								{communityPosts.slice(0, 4).map((post) => (
+									<li key={post.id}>
+										<div className="session-meta">
+											<strong>{post.author}</strong>
+											<span>{formatRelativeTime(post.createdAt)}</span>
+										</div>
+										<p className="session-snippet">{post.content.length > 120 ? `${post.content.slice(0, 120)}…` : post.content}</p>
+										{post.featuredPack && (
+											<button
+												type="button"
+												className="btn micro green"
+												onClick={() => handleForkCommunityPost(post)}
+												title="Fork this pack into your studio"
+											>
+												Fork
+											</button>
+										)}
+									</li>
+								))}
+							</ul>
+						</section>
+					</div>
 				</>
 			)}
 
@@ -2749,10 +2755,6 @@ function App() {
 								</button>
 							))}
 						</section>
-						<div className="mode-gate-row">
-							<span aria-hidden="true" />
-							{communityFeedTrigger}
-						</div>
 					</>
 				) : (
 					<div className="mode-gate-row">
@@ -2761,7 +2763,6 @@ function App() {
 								Get Started - Pick a Lab
 							</button>
 						</div>
-						{communityFeedTrigger}
 					</div>
 				)
 			)}
@@ -2791,11 +2792,11 @@ function App() {
 											</span>
 											<button
 												type="button"
-												className="btn micro"
+												className="btn micro green"
 												onClick={() => handleForkCommunityPost(post)}
 												title="Fork this pack into your studio"
 											>
-												Fork & Remix
+												Fork
 											</button>
 										</div>
 									)}

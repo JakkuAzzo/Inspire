@@ -11,6 +11,11 @@
   transition: background 0.6s ease, color 0.6s ease;
 }
 
+.app:not(.has-mode) {
+  height: 100vh;
+  overflow: hidden;
+}
+
 .app.has-mode {
   padding-top: clamp(1.5rem, 3vw, 2.5rem);
 }
@@ -436,58 +441,6 @@
   color: rgba(203, 213, 225, 0.85);
 }
 
-.hero-panels {
-  display: grid;
-  gap: 1.25rem;
-  margin-top: 1.25rem;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  align-items: stretch;
-  position: relative;
-  transition: transform 0.3s ease, gap 0.3s ease;
-  /* Leave space at the bottom for the peeking session hub */
-  padding-bottom: 5rem;
-}
-
-.hero-panels:hover {
-  transform: scale(1.02);
-}
-
-.hero-panels.expanded {
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 1.75rem;
-}
-
-.hero-panels-toggle {
-  position: absolute;
-  bottom: 1rem;
-  left: 1rem;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 50%;
-  border: 2px solid rgba(148, 163, 184, 0.3);
-  background: rgba(15, 23, 42, 0.5);
-  color: rgba(226, 232, 240, 0.9);
-  font-size: 1.1rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.3s ease;
-  backdrop-filter: blur(10px);
-  z-index: 10;
-}
-
-.hero-panels-toggle:hover {
-  border-color: rgba(148, 163, 184, 0.6);
-  background: rgba(15, 23, 42, 0.8);
-  color: rgba(226, 232, 240, 1);
-  transform: scale(1.1);
-}
-
-.hero-panels-toggle:active {
-  transform: scale(0.95);
-}
-
 .onboarding-options {
   display: flex;
   gap: 0.75rem;
@@ -594,8 +547,8 @@
 .mode-gate-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  justify-content: center;
+  gap: 1.25rem;
   margin: clamp(2rem, 6vw, 3rem) 0;
 }
 
@@ -612,23 +565,18 @@
 }
 
 .community-feed-trigger {
-  margin-left: auto;
-  min-width: 180px;
+  display: none;
 }
 
 @media (max-width: 860px) {
   .mode-gate-row {
     flex-direction: column;
-    align-items: flex-end;
+    align-items: center;
   }
 
   .mode-gate {
     width: 100%;
     justify-content: center;
-  }
-
-  .community-feed-trigger {
-    align-self: flex-end;
   }
 }
 
@@ -899,6 +847,15 @@
   border: 1px solid rgba(236, 72, 153, 0.38);
 }
 
+.btn.micro.green {
+  background: rgba(34, 197, 94, 0.16);
+  color: rgba(240, 253, 244, 0.9);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  padding: 0.55rem 1.3rem;
+  min-width: 4.5rem;
+  white-space: nowrap;
+}
+
 .btn.micro.ghost {
   background: transparent;
   border-color: rgba(148, 163, 184, 0.4);
@@ -981,221 +938,83 @@
   display: none;
 }
 
-.session-hub {
+/* Three Separate Session Peaks */
+.session-peaks {
   position: fixed;
   bottom: 0;
   left: 50%;
+  transform: translateX(-50%);
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 1.6rem 1.8rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  align-items: flex-start;
-  justify-content: flex-end;
-  z-index: 50;
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  border-radius: 22px 22px 0 0;
-  height: 4.5rem;
-  overflow: hidden;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-/* Hover to peek more */
-.session-hub.peeking:hover {
-  height: 22rem;
-}
-
-/* Expanded state: Full overlay */
-.session-hub.expanded {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 95%;
   max-width: 1400px;
-  height: 90vh;
-  padding: 2.4rem 2rem;
-  margin: 0 auto;
-  border-radius: 28px;
-  overflow-y: auto;
-  z-index: 10000;
-  box-shadow: 0 40px 100px rgba(8, 12, 28, 0.9);
-}
-
-/* Session hub backdrop for expanded state */
-.session-hub-backdrop {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  z-index: 9999;
-  animation: fadeIn 0.3s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Session hub content container */
-.session-hub-content {
   display: flex;
-  gap: 2rem;
-  width: 100%;
-  align-items: flex-start;
-  justify-content: center;
-  flex-wrap: wrap;
-  opacity: 1;
-}
-
-.session-hub.peeking .session-hub-content {
-  pointer-events: auto;
-}
-
-.session-hub.expanded .session-hub-content {
-  display: flex;
-  gap: 3rem;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* Toggle button positioning */
-.session-hub-toggle {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 50%;
-  border: 2px solid rgba(148, 163, 184, 0.3);
-  background: rgba(15, 23, 42, 0.6);
-  color: rgba(226, 232, 240, 0.9);
-  font-size: 1.1rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.3s ease;
-  backdrop-filter: blur(10px);
-  z-index: 10;
-  pointer-events: auto;
-}
-
-.session-hub-toggle:hover {
-  border-color: rgba(148, 163, 184, 0.6);
-  background: rgba(15, 23, 42, 0.8);
-  color: rgba(226, 232, 240, 1);
-  transform: scale(1.1);
-}
-
-.session-hub-toggle:active {
-  transform: scale(0.95);
-}
-
-.session-hub.peeking .session-hub-toggle {
-  opacity: 0;
+  align-items: flex-end;
+  gap: 1.25rem;
+  padding: 0 2rem 1.5rem;
+  z-index: 50;
   pointer-events: none;
 }
 
-.session-hub.expanded .session-hub-toggle {
-  opacity: 1;
+.session-peak {
+  flex: 1;
+  min-width: 280px;
+  max-width: 420px;
+  padding: 1.2rem 1.4rem;
+  border-radius: 18px 18px 0 0;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  height: 3.8rem;
+  overflow: hidden;
+  cursor: pointer;
   pointer-events: auto;
 }
 
-/* Peek state: Only show headings */
-.session-hub.peeking .session-heading h3 {
-  display: block;
+.session-peak.glass.expanded {
+  height: 28rem;
+  transform: translateY(-0.5rem);
 }
 
-.session-hub.peeking .session-heading p {
+.session-peak-header h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.session-peak-header p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(203, 213, 225, 0.75);
+  transition: opacity 0.3s ease;
+}
+
+.session-peak:not(.expanded) .session-peak-header p {
   opacity: 0;
   height: 0;
-  margin: 0;
-  padding: 0;
   overflow: hidden;
 }
 
-.session-hub.peeking .session-column ul {
-  display: none;
-}
-
-/* Reveal lists and subtext when hovering the peek state */
-.session-hub.peeking:hover .session-heading p {
-  opacity: 1;
-  height: auto;
+.session-peak-list {
+  list-style: none;
   padding: 0;
-  margin: 0 0 0.2rem;
-  overflow: visible;
+  margin: 1rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
-.session-hub.peeking:hover .session-column ul {
-  display: grid;
-}
-
-.session-column {
-  display: grid;
-  gap: 0.65rem;
-  flex: 1 1 0;
-  min-width: 300px;
-}
-
-.session-hub.peeking .session-column {
-  flex: 1 1 0;
-  min-width: 280px;
-}
-
-.session-hub.peeking .session-column .session-heading {
-  cursor: pointer;
-  min-width: fit-content;
-}
-
-.session-hub {
-  cursor: pointer;
-}
-
-.session-hub.expanded {
-  cursor: auto;
+.session-peak.expanded .session-peak-list {
+  opacity: 1;
   pointer-events: auto;
 }
 
-.session-heading h3 {
-  margin: 0 0 0.35rem;
-  font-size: 1.05rem;
-}
-
-.session-heading p {
-  margin: 0;
-  color: rgba(203, 213, 225, 0.75);
-  font-size: 0.9rem;
-}
-
-.session-column ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.7rem;
-}
-
-.session-column li {
+.session-peak-list li {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
   padding: 0.9rem 1rem;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid rgba(148, 163, 184, 0.12);
   background: rgba(15, 23, 42, 0.45);
 }
@@ -1204,10 +1023,28 @@
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  flex: 1;
 }
 
 .session-meta strong {
   font-size: 0.95rem;
+}
+
+.session-meta span {
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.session-snippet {
+  margin: 0.1rem 0 0;
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.session-peak .btn.micro.green {
+  margin-top: 0.25rem;
+  align-self: flex-start;
 }
 
 .session-meta span {
