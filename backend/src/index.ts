@@ -38,6 +38,7 @@ import {
   listMockWords
 } from './modePackGenerator';
 import { createAllServices } from './services';
+import { searchYoutubeKeyless, buildYoutubeQuery } from './services/youtubeSearchService';
 import fs from 'fs';
 import path from 'path';
 import { createId } from './utils/id';
@@ -493,6 +494,21 @@ function buildApiRouter() {
       res.json({ items });
     } catch (err) {
       console.error('news/search failed', err);
+      res.status(500).json({ items: [] });
+    }
+  });
+
+  // YouTube search without API key
+  router.get('/youtube/search', async (req: Request, res: Response) => {
+    try {
+      const q = String(req.query.q || '').trim();
+      const limitRaw = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+      const limit = Math.min(20, Math.max(1, Number.parseInt(String(limitRaw || '5'), 10) || 5));
+      if (!q) return res.status(400).json({ error: 'q is required' });
+      const items = await searchYoutubeKeyless(q, limit);
+      res.json({ items });
+    } catch (err) {
+      console.error('youtube/search failed', err);
       res.status(500).json({ items: [] });
     }
   });

@@ -25,6 +25,7 @@ import type {
 } from './types';
 import { RelevanceSlider } from './components/RelevanceSlider';
 import { CollapsibleSection } from './components/CollapsibleSection';
+import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
 
 const DEFAULT_FILTERS: RelevanceFilter = {
 	timeframe: 'fresh',
@@ -389,14 +390,38 @@ function formatChallengeCountdown(deadlineIso: string): string {
 	return `${seconds}s`;
 }
 
-async function searchInstrumentalPreview(query: string, signal?: AbortSignal): Promise<YouTubeVideoPreview | null> {
-	const params = new URLSearchParams({ q: query, limit: '1' });
-	const res = await fetch(`/api/instrumentals/search?${params.toString()}`, { signal });
-	if (!res.ok) return null;
-	const data = (await res.json()) as { items?: Array<{ id: string; title: string; uploader: string; thumbnail?: string }> };
-	const first = Array.isArray(data.items) && data.items[0] ? data.items[0] : null;
-	if (!first) return null;
-	return { videoId: first.id, title: first.title, channelTitle: first.uploader || 'Instrumental', thumbnailUrl: first.thumbnail };
+
+// Fetch multiple previews to build a lightweight playlist for embedding
+async function searchInstrumentalPreviews(query: string, limit = 5, signal?: AbortSignal): Promise<YouTubeVideoPreview[]> {
+  const params = new URLSearchParams({ q: query, limit: String(Math.max(2, Math.min(10, limit))) });
+  const res = await fetch(`/api/instrumentals/search?${params.toString()}`, { signal });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { items?: Array<{ id: string; title: string; uploader: string; thumbnail?: string }> };
+  const items = Array.isArray(data.items) ? data.items : [];
+  return items.map((it) => ({ videoId: it.id, title: it.title, channelTitle: it.uploader || 'Instrumental', thumbnailUrl: it.thumbnail }));
+}
+
+// Build a search query that respects workspace filters and genre
+// Fetch YouTube videos using keyless search (no API key needed) via backend
+async function searchYoutubePlaylist(query: string, limit = 5): Promise<YouTubeVideoPreview[]> {
+	try {
+		const params = new URLSearchParams({ q: query, limit: String(Math.max(2, Math.min(20, limit))) });
+		const res = await fetch(`/api/youtube/search?${params.toString()}`);
+		if (!res.ok) return [];
+		const data = (await res.json()) as { items?: Array<{ videoId?: string; id?: string; title?: string; channelTitle?: string; thumbnail?: string }> };
+		const items = Array.isArray(data.items) ? data.items : [];
+		return items
+			.map((result: any) => ({
+				videoId: result.videoId || result.id || '',
+				title: result.title || 'Untitled',
+				channelTitle: result.channelTitle || 'Unknown Creator',
+				thumbnailUrl: result.thumbnail || ''
+			}))
+			.filter(v => v.videoId);
+	} catch (err) {
+		console.warn('YouTube search failed:', err);
+		return [];
+	}
 }
 
 function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
@@ -742,7 +767,7 @@ function App() {
 		if (stored === null) return true;
 		return stored === 'true';
 	});
-	const [heroPanelsExpanded, setHeroPanelsExpanded] = useState(false);
+	const [heroPanelsExpanded] = useState(false);
 	const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
 	const [focusMode, setFocusMode] = useState(false);
 	const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
@@ -767,6 +792,10 @@ function App() {
 	const [queueCollapsed, setQueueCollapsed] = useState(false);
 	const [youtubeVideos, setYoutubeVideos] = useState<Record<string, YouTubeVideoPreview>>({});
 	const youtubeVideosRef = useRef<Record<string, YouTubeVideoPreview>>({});
+
+	// New: store playlists (arrays) keyed by queue item id
+	const [youtubePlaylists, setYoutubePlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
+	const youtubePlaylistsRef = useRef<Record<string, YouTubeVideoPreview[]>>({});
 	const [youtubeError, setYoutubeError] = useState<string | null>(null);
 	const initialDailyChallenge = useMemo(() => initializeDailyChallenge(), []);
 	const [, setDailyChallengeStored] = useState<StoredDailyChallenge>(initialDailyChallenge.stored);
@@ -798,6 +827,9 @@ function App() {
 	const [newsLoading, setNewsLoading] = useState(false);
 	const [newsError, setNewsError] = useState<string | null>(null);
 
+	// Session hub expand state
+	const [sessionHubExpanded, setSessionHubExpanded] = useState(false);
+
 	// Inspiration Image (keyless Picsum via backend)
 	const [inspirationImageUrl, setInspirationImageUrl] = useState<string | null>(null);
 	const [inspirationImageLoading, setInspirationImageLoading] = useState(false);
@@ -815,6 +847,7 @@ function App() {
 
 	useEffect(() => {
 		youtubeVideosRef.current = youtubeVideos;
+		youtubePlaylistsRef.current = youtubePlaylists;
 	}, [youtubeVideos]);
 
 	useEffect(() => {
@@ -929,7 +962,7 @@ function App() {
 	setYoutubeError(null);
 	const controller = new AbortController();
 	let cancelled = false;
-	const missingItems = youtubeItems.filter((item) => !youtubeVideosRef.current[item.id]);
+	const missingItems = youtubeItems.filter((item) => !youtubeVideosRef.current[item.id] || !youtubePlaylistsRef.current[item.id]?.length);
 	if (!missingItems.length) {
 		return () => {
 			controller.abort();
@@ -938,11 +971,15 @@ function App() {
 
 	const loadVideos = async () => {
 		try {
+			// Derive a reasonable playlist size; can adapt based on filters later
 			const results = await Promise.all(
 				missingItems.map(async (item) => {
 					const query = item.searchQuery ?? item.matchesPack ?? item.title;
-					const video = await searchInstrumentalPreview(query, controller.signal);
-					return { id: item.id, video };
+					// Use keyless YouTube search first, fallback to backend instrumental service
+					const youtubePlaylist = await searchYoutubePlaylist(query, 5);
+					const playlist = youtubePlaylist.length > 0 ? youtubePlaylist : await searchInstrumentalPreviews(query, 5, controller.signal);
+					const video = playlist[0] ?? null;
+					return { id: item.id, video, playlist };
 				})
 			);
 			if (cancelled) return;
@@ -951,6 +988,15 @@ function App() {
 				for (const entry of results) {
 					if (entry.video) {
 						next[entry.id] = entry.video;
+					}
+				}
+				return next;
+			});
+			setYoutubePlaylists((prev) => {
+				const next = { ...prev };
+				for (const entry of results) {
+					if (entry.playlist?.length) {
+						next[entry.id] = entry.playlist;
 					}
 				}
 				return next;
@@ -2600,7 +2646,36 @@ function App() {
 						</div>
 					</header>
 					<div className={`hero-panels ${heroPanelsExpanded ? 'expanded' : ''}`}>
-						<section className="session-hub glass">
+					</div>
+
+					{/* Session Hub Backdrop */}
+					{sessionHubExpanded && (
+						<div
+							className="session-hub-backdrop"
+							onClick={() => setSessionHubExpanded(false)}
+						/>
+					)}
+
+					{/* Session Hub Container */}
+					<section
+						className={`session-hub glass ${
+							sessionHubExpanded ? 'expanded' : 'peeking'
+						}`}
+						onClick={() => !sessionHubExpanded && setSessionHubExpanded(true)}
+					>
+						<button
+							type="button"
+							className="session-hub-toggle"
+							onClick={(e) => {
+								e.stopPropagation();
+								setSessionHubExpanded(!sessionHubExpanded);
+							}}
+							title={sessionHubExpanded ? 'Collapse' : 'Expand'}
+						>
+							{sessionHubExpanded ? '✕' : '⬈'}
+						</button>
+
+						<div className="session-hub-content">
 							<div className="session-column">
 								<div className="session-heading">
 									<h3>Spectate live</h3>
@@ -2639,16 +2714,8 @@ function App() {
 									))}
 								</ul>
 							</div>
-							<button
-								type="button"
-								className="hero-panels-toggle"
-								onClick={() => setHeroPanelsExpanded(!heroPanelsExpanded)}
-								title={heroPanelsExpanded ? 'Collapse' : 'Expand'}
-							>
-								{heroPanelsExpanded ? '✕' : '⬈'}
-							</button>
-						</section>
-					</div>
+						</div>
+					</section>
 				</>
 			)}
 
@@ -2990,16 +3057,24 @@ function App() {
 											{item.type === 'youtube' && youtubeVideos[item.id] && (
 												<div className="queue-embed">
 													<div className="queue-embed-frame">
-														<iframe
-															title={`YouTube preview for ${youtubeVideos[item.id].title}`}
-															src={`https://www.youtube.com/embed/${youtubeVideos[item.id].videoId}?rel=0&autoplay=0&playsinline=1&enablejsapi=1&modestbranding=1`}
-															loading="lazy"
-															allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-															allowFullScreen
-														/>
+														{(function renderPlayer() {
+															const mainId = youtubeVideos[item.id].videoId;
+															const extras = (youtubePlaylists[item.id] || []).map(v => v.videoId).filter(v => v && v !== mainId);
+															// Use resilient component with runtime pruning on errors
+															return (
+																<YouTubePlaylistEmbed
+																	videoId={mainId}
+																	playlist={extras}
+																	title={`YouTube preview for ${youtubeVideos[item.id].title}`}
+																	height={220}
+																	noteSelector={`span.queue-embed-pruned-note[data-note-for='${item.id}']`}
+																/>
+															);
+														})()}
 													</div>
 													<div className="queue-embed-meta">
 														<strong>{youtubeVideos[item.id].title}</strong>
+														<span className="queue-embed-pruned-note" data-note-for={item.id}></span>
 														<span>via {youtubeVideos[item.id].channelTitle}</span>
 													</div>
 												</div>
