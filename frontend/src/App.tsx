@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import './App.css';
 import inspireLogo from './assets/Inspire_transparent_white.png';
+import lyricistCardImage from './assets/images/Lyracist_Studio.jpeg';
+import lyricistRapperImage from './assets/images/rapper.jpeg';
+import lyricistSingerImage from './assets/images/singer.jpg';
+import producerCardImage from './assets/images/Producer_Lab.jpeg';
+import editorCardImage from './assets/images/Editor_Suite.jpeg';
 
 import type {
 	ChallengeActivity,
@@ -34,12 +39,25 @@ const DEFAULT_FILTERS: RelevanceFilter = {
 	semantic: 'tight'
 };
 
+// Fallback map for mode background images
+const MODE_BG_BY_ID: Record<string, string> = {
+	lyricist: lyricistCardImage,
+	producer: producerCardImage,
+	editor: editorCardImage,
+};
+
+const LYRICIST_SUBMODE_BG_BY_ID: Record<string, string> = {
+	rapper: lyricistRapperImage,
+	singer: lyricistSingerImage,
+};
+
 const FALLBACK_MODE_DEFINITIONS: ModeDefinition[] = [
 	{
 		id: 'lyricist',
 		label: 'Lyricist Studio',
 		description: 'Storytelling, hooks, rhyme families, and emotions.',
-		icon: '📝',
+		icon: '',
+		backgroundImage: lyricistCardImage,
 		accent: '#ec4899',
 		submodes: [
 			{ id: 'rapper', label: 'Rapper', description: 'Punchlines + flow prompts.' },
@@ -50,7 +68,8 @@ const FALLBACK_MODE_DEFINITIONS: ModeDefinition[] = [
 		id: 'producer',
 		label: 'Producer Lab',
 		description: 'Samples, FX, constraints, and sonic experiments.',
-		icon: '🎚',
+		icon: '',
+		backgroundImage: producerCardImage,
 		accent: '#22d3ee',
 		submodes: [
 			{ id: 'musician', label: 'Musician', description: 'Chord progressions + live textures.' },
@@ -62,7 +81,8 @@ const FALLBACK_MODE_DEFINITIONS: ModeDefinition[] = [
 		id: 'editor',
 		label: 'Editor Suite',
 		description: 'Visual storytelling, pacing, and timeline beats.',
-		icon: '🎬',
+		icon: '',
+		backgroundImage: editorCardImage,
 		accent: '#a855f7',
 		submodes: [
 			{ id: 'image-editor', label: 'Image', description: 'Graphic + meme templates with palette nudges.' },
@@ -2747,9 +2767,11 @@ function App() {
 									onClick={() => handleModeSelect(entry.id)}
 									onPointerMove={handleModeCardParallax}
 									onPointerLeave={handleModeCardLeave}
+									style={{
+										backgroundImage: `url(${entry.backgroundImage || MODE_BG_BY_ID[entry.id] || ''})`
+									}}
 								>
 									<span className="mode-card-glow" aria-hidden="true" />
-									<span className="icon" aria-hidden="true">{entry.icon}</span>
 									<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
 									<p>{entry.description}</p>
 								</button>
@@ -2819,7 +2841,17 @@ function App() {
 					<p>Select how you want to play inside this studio.</p>
 					<div className="submode-grid">
 						{activeModeDefinition.submodes.map((option) => (
-							<button key={option.id} className="submode-card" type="button" onClick={() => handleSubmodeSelect(option.id)}>
+							<button
+								key={option.id}
+								className={`submode-card mode-${activeModeDefinition.id} submode-${option.id}`}
+								type="button"
+								onClick={() => handleSubmodeSelect(option.id)}
+								style={
+									activeModeDefinition.id === 'lyricist'
+										? { backgroundImage: `url(${LYRICIST_SUBMODE_BG_BY_ID[option.id] ?? ''})` }
+										: undefined
+								}
+							>
 								<strong>{option.label}</strong>
 								<span>{option.description}</span>
 							</button>
@@ -2837,39 +2869,47 @@ function App() {
 									<h3>Workspace Controls</h3>
 									<button type="button" className="btn ghost micro" onClick={toggleWorkspaceControls}>Close</button>
 								</div>
-								<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
-									<RelevanceSlider value={filters} onChange={setFilters} />
-								</CollapsibleSection>
-
-								{mode === 'lyricist' && (
-									<CollapsibleSection title="Genre Priority" icon="🎶" description="Tune the dataset toward a sonic lane." defaultOpen>
-										<div className="option-group">
-											{LYRICIST_GENRES.map((option) => (
-												<button
-													key={option.value}
-													type="button"
-													className={option.value === genre ? 'chip active' : 'chip'}
-													onClick={() => setGenre(option.value)}
-												>
-													{option.label}
-												</button>
-											))}
-										</div>
-									</CollapsibleSection>
-								)}
-
-								<CollapsibleSection title="Archive" icon="🗄️" description="Load any pack by id." defaultOpen={false}>
-									<div className="lookup-inline">
-										<input
-											placeholder="Enter pack id to load"
-											value={lookupId}
-											onChange={(event) => setLookupId(event.target.value)}
-										/>
-										<button className="btn tertiary" type="button" onClick={handleLoadById} disabled={!lookupId.trim() || loading === 'load'}>
-											{loading === 'load' ? 'Loading…' : 'Load by ID'}
-										</button>
+								<div className="controls-columns">
+									{/* Left Column: Relevance Blend */}
+									<div className="controls-column left">
+										<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
+											<RelevanceSlider value={filters} onChange={setFilters} />
+										</CollapsibleSection>
 									</div>
-								</CollapsibleSection>
+
+									{/* Right Column: Genre Priority & Archive */}
+									<div className="controls-column right">
+										{mode === 'lyricist' && (
+											<CollapsibleSection title="Genre Priority" icon="🎶" description="Tune the dataset toward a sonic lane." defaultOpen>
+												<div className="option-group">
+													{LYRICIST_GENRES.map((option) => (
+														<button
+															key={option.value}
+															type="button"
+															className={option.value === genre ? 'chip active' : 'chip'}
+															onClick={() => setGenre(option.value)}
+														>
+															{option.label}
+														</button>
+													))}
+												</div>
+											</CollapsibleSection>
+										)}
+
+										<CollapsibleSection title="Archive" icon="🗄️" description="Load any pack by id." defaultOpen={false}>
+											<div className="lookup-inline">
+												<input
+													placeholder="Enter pack id to load"
+													value={lookupId}
+													onChange={(event) => setLookupId(event.target.value)}
+												/>
+												<button className="btn tertiary" type="button" onClick={handleLoadById} disabled={!lookupId.trim() || loading === 'load'}>
+													{loading === 'load' ? 'Loading…' : 'Load by ID'}
+												</button>
+											</div>
+										</CollapsibleSection>
+									</div>
+								</div>
 							</div>
 						</div>
 					)}

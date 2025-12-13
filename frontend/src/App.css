@@ -888,13 +888,56 @@
   padding: 1.8rem;
   border-radius: 20px;
   border: 1px solid rgba(148, 163, 184, 0.15);
-  background: rgba(15, 23, 42, 0.55);
   color: inherit;
   text-align: left;
   cursor: pointer;
   transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
-  transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
+  transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease, background 0.28s ease;
   overflow: hidden;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background-size: auto 150%;
+  background-position: right bottom;
+  background-repeat: no-repeat;
+  background-color: rgba(20, 30, 60, 0.95) !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Lyricist Studio - Pink accent with subtle background image */
+.mode-card:nth-child(1) {
+  background: linear-gradient(135deg, rgba(20, 30, 70, 0.95) 0%, rgba(40, 20, 60, 0.95) 100%);
+  background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><defs><linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:rgb(236,72,153);stop-opacity:0.1" /><stop offset="100%" style="stop-color:rgb(236,72,153);stop-opacity:0.03" /></linearGradient></defs><rect width="400" height="300" fill="url(%23g1)"/></svg>');
+  background-size: cover;
+  background-position: center;
+}
+
+/* Producer Lab - Cyan accent with subtle background image */
+.mode-card:nth-child(2) {
+  background: linear-gradient(135deg, rgba(20, 50, 70, 0.95) 0%, rgba(30, 30, 60, 0.95) 100%);
+  background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><defs><linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:rgb(34,211,238);stop-opacity:0.1" /><stop offset="100%" style="stop-color:rgb(34,211,238);stop-opacity:0.03" /></linearGradient></defs><rect width="400" height="300" fill="url(%23g2)"/></svg>');
+  background-size: cover;
+  background-position: center;
+}
+
+/* Editor Suite - Purple accent with subtle background image */
+.mode-card:nth-child(3) {
+  background: linear-gradient(135deg, rgba(40, 20, 70, 0.95) 0%, rgba(50, 20, 60, 0.95) 100%);
+  background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><defs><linearGradient id="g3" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:rgb(168,85,247);stop-opacity:0.1" /><stop offset="100%" style="stop-color:rgb(168,85,247);stop-opacity:0.03" /></linearGradient></defs><rect width="400" height="300" fill="url(%23g3)"/></svg>');
+  background-size: cover;
+  background-position: center;
+}
+
+.mode-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(5, 8, 17, 0.5), rgba(5, 8, 17, 0.2));
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 20px;
 }
 
 .mode-card-glow {
@@ -908,6 +951,7 @@
   opacity: 0;
   transition: opacity 0.35s ease;
   pointer-events: none;
+  z-index: 2;
 }
 
 .mode-card.hovering .mode-card-glow {
@@ -919,19 +963,18 @@
   box-shadow: 0 25px 55px rgba(14, 116, 244, 0.25);
 }
 
-.mode-card .icon {
-  font-size: 1.6rem;
-  margin-bottom: 0.9rem;
-}
-
 .mode-card h2 {
   margin: 0 0 0.5rem;
   font-size: 1.35rem;
+  position: relative;
+  z-index: 3;
 }
 
 .mode-card p {
   margin: 0;
   color: rgba(203, 213, 225, 0.8);
+  position: relative;
+  z-index: 3;
 }
 
 .discover-row {
@@ -1177,6 +1220,25 @@
   text-align: left;
   cursor: pointer;
   transition: transform 0.2s ease, border-color 0.2s ease;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+  overflow: hidden;
+}
+
+.submode-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(2, 6, 23, 0.68), rgba(2, 6, 23, 0.38));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.submode-card.mode-lyricist::before {
+  opacity: 1;
 }
 
 .submode-card:hover {
@@ -1184,13 +1246,21 @@
   border-color: rgba(96, 165, 250, 0.45);
 }
 
+.submode-card:hover::before {
+  opacity: 1;
+}
+
 .submode-card strong {
   display: block;
   margin-bottom: 0.4rem;
+  position: relative;
+  z-index: 1;
 }
 
 .submode-card span {
   color: rgba(203, 213, 225, 0.8);
+  position: relative;
+  z-index: 1;
 }
 
 .back-button {
@@ -1781,19 +1851,70 @@
   justify-content: center;
   z-index: 80;
   padding: 1.5rem;
-  background: radial-gradient(circle at 30% 20%, rgba(59, 130, 246, 0.18), transparent 32%), rgba(5, 8, 17, 0.6);
+  background: radial-gradient(circle at 30% 20%, rgba(59, 130, 246, 0.12), transparent 32%), 
+              radial-gradient(circle at 70% 80%, rgba(236, 72, 153, 0.08), transparent 36%), 
+              rgba(3, 6, 18, 0.78);
+  backdrop-filter: blur(12px) saturate(1.05);
+  animation: backdropEnter 0.35s ease;
 }
+
 .workspace-controls-overlay .workspace-controls {
-  width: min(720px, 100%);
+  width: min(1080px, 90vw);
   max-height: calc(100vh - 3rem);
   overflow: auto;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
+
 .controls-overlay-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.controls-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  padding: 0 0.5rem;
+}
+
+.controls-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.controls-column.left {
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+  padding-right: 2rem;
+}
+
+.controls-column.right {
+  padding-left: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .controls-columns {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .controls-column.left {
+    border-right: none;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    padding-right: 0;
+    padding-bottom: 1.5rem;
+  }
+
+  .controls-column.right {
+    padding-left: 0;
+  }
 }
 .focus-controls-panel {
   width: min(540px, 92vw);

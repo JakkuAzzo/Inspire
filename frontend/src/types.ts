@@ -48,6 +48,7 @@ export interface ModeDefinition {
   label: string;
   description: string;
   icon: string;
+  backgroundImage?: string;
   accent: string;
   submodes: ModeSubmode[];
 }
