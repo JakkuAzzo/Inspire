@@ -28,6 +28,7 @@ test('pack detail layout flow', async ({ page }) => {
 	await page.screenshot({ path: `${SCREENSHOT_DIR}/layout-detail.png`, fullPage: true });
 
 	await page.getByRole('button', { name: '← Back to list' }).click();
+	await expect(page.locator('.pack-card-detail')).toHaveCount(0, { timeout: 20000 });
 
 	await expect(page.locator('.pack-deck')).toBeVisible({ timeout: 20000 });
 	const packCardsAfterBack = page.locator('.pack-deck .pack-card');

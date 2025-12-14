@@ -1,26 +1,105 @@
 {
-  "devuser": [
-    "fuel-1"
-  ],
-  "testuser-1761848241149": [
-    "fuel-1761848241148-pmac0jx5x"
-  ],
-  "testuser-1761848250280": [
-    "fuel-1761848250279-5tb49ypm7"
-  ],
-  "testuser-1761848254665": [
-    "fuel-1761848254665-e5p4izmdi"
-  ],
-  "testuser-1761848272953": [
-    "fuel-1761848272952-9xn2lp5uv"
-  ],
-  "testuser-1761848983572": [
-    "fuel-1761848983572-q6zlc73tf"
-  ],
-  "testuser-1761849344028": [
-    "fuel-1761849344028-ur2tgq69x"
-  ],
-  "testuser-1761849539194": [
-    "fuel-1761849539193-37q2f2y5j"
-  ]
+  "users": {
+    "devuser": [
+      "fuel-1"
+    ],
+    "testuser-1761848241149": [
+      "fuel-1761848241148-pmac0jx5x"
+    ],
+    "testuser-1761848250280": [
+      "fuel-1761848250279-5tb49ypm7"
+    ],
+    "testuser-1761848254665": [
+      "fuel-1761848254665-e5p4izmdi"
+    ],
+    "testuser-1761848272953": [
+      "fuel-1761848272952-9xn2lp5uv"
+    ],
+    "testuser-1761848983572": [
+      "fuel-1761848983572-q6zlc73tf"
+    ],
+    "testuser-1761849344028": [
+      "fuel-1761849344028-ur2tgq69x"
+    ],
+    "testuser-1761849539194": [
+      "fuel-1761849539193-37q2f2y5j"
+    ],
+    "creator-rkh1dl": [
+      "lyricist-1765692696961-exmdj47"
+    ]
+  },
+  "snapshots": {
+    "lyricist-1765692696961-exmdj47": {
+      "id": "lyricist-1765692696961-exmdj47",
+      "timestamp": 1765692696961,
+      "mode": "lyricist",
+      "submode": "rapper",
+      "title": "R&B spark session",
+      "headline": "Flip a headline into punchlines.",
+      "summary": "Curated power words, flows, chords, and a live headline to riff on.",
+      "filters": {
+        "timeframe": "fresh",
+        "tone": "funny",
+        "semantic": "tight"
+      },
+      "genre": "r&b",
+      "powerWords": [
+        "afterglow cadence",
+        "opal skyline",
+        "neon confession"
+      ],
+      "rhymeFamilies": [
+        "-ight (light, fight, byte)",
+        "-one (tone, drone, clone)",
+        "-ash (flash, dash, cache)",
+        "-ing (bling, swing, ping)"
+      ],
+      "flowPrompts": [
+        "Hit four internal rhymes per bar.",
+        "Keep syllable count locked at eight.",
+        "Stack multisyllabic echoes every third word."
+      ],
+      "memeSound": {
+        "name": "Anime Wow",
+        "description": "Hype the punchline with sparkle.",
+        "tone": "funny",
+        "sampleUrl": "https://example.com/anime-wow.mp3"
+      },
+      "topicChallenge": "Turn the news into a punchline and a plot twist.",
+      "newsPrompt": {
+        "headline": "Breakthrough battery tech promises 5-minute charging",
+        "context": "Frame it as liberation, anxiety, or hype culture.",
+        "timeframe": "fresh",
+        "source": "TechCurrent"
+      },
+      "storyArc": {
+        "start": "hushed",
+        "middle": "surging",
+        "end": "haunted"
+      },
+      "chordMood": "Suspended chords with vinyl crackle",
+      "lyricFragments": [
+        "\"City lights blink Morse in the puddles\"",
+        "\"Wi-Fi ghosts keep receipts on the low\"",
+        "\"Laughing in emojis, trauma in draft folders\""
+      ],
+      "wordLab": [
+        {
+          "word": "afterglow cadence",
+          "score": 95,
+          "numSyllables": 2
+        },
+        {
+          "word": "opal skyline",
+          "score": 90,
+          "numSyllables": 2
+        },
+        {
+          "word": "neon confession",
+          "score": 85,
+          "numSyllables": 2
+        }
+      ]
+    }
+  }
 }
