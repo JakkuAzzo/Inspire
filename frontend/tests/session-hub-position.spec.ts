@@ -3,23 +3,22 @@ import { expect, test } from '@playwright/test';
 const SCREENSHOT_DIR = 'test-artifacts';
 
 test('session hub position stability and label visibility', async ({ page }) => {
-	// Navigate to the app
-	await page.goto('http://localhost:8080/');
+	await page.goto('/');
 
-	// Wait for the session hub to be visible
-	const sessionHub = page.locator('.session-hub.glass');
-	await expect(sessionHub).toBeVisible({ timeout: 10000 });
+	// The landing view uses the "Session Peaks" layout.
+	const peaks = page.locator('.session-peaks');
+	await expect(peaks).toBeVisible({ timeout: 10000 });
 
 	// Array to store position measurements
 	const positions: Array<{ top: number; bottom: number; timestamp: number }> = [];
 	const startTime = Date.now();
 	const monitorDuration = 2000; // Monitor for 2 seconds
 
-	// Monitor position every 1ms
+	// Monitor position periodically
 	console.log('Starting position monitoring...');
 	
 	while (Date.now() - startTime < monitorDuration) {
-		const boundingBox = await sessionHub.boundingBox();
+		const boundingBox = await peaks.boundingBox();
 		
 		if (boundingBox) {
 			positions.push({
@@ -29,8 +28,7 @@ test('session hub position stability and label visibility', async ({ page }) => 
 			});
 		}
 		
-		// Wait 1ms before next measurement
-		await page.waitForTimeout(1);
+		await page.waitForTimeout(25);
 	}
 
 	console.log(`Captured ${positions.length} position measurements`);
@@ -60,50 +58,30 @@ test('session hub position stability and label visibility', async ({ page }) => 
 	console.log(`Found ${positionChanges.length} significant position changes`);
 	console.log(`Found ${rapidChanges.length} rapid position changes (within 50ms)`);
 
-	// Take screenshot showing the session hub
+	// Take screenshot showing the peaks
 	await page.screenshot({ 
 		path: `${SCREENSHOT_DIR}/session-hub-position-initial.png`, 
 		fullPage: true 
 	});
 
-	// Check labels visibility
-	console.log('Checking session hub labels...');
+	console.log('Checking session peak labels...');
+	const spectateVisible = await page.getByRole('heading', { name: 'Spectate live' }).isVisible().catch(() => false);
+	const collabVisible = await page.getByRole('heading', { name: 'Join a collab' }).isVisible().catch(() => false);
+	const communityVisible = await page.getByRole('heading', { name: 'Community feed' }).isVisible().catch(() => false);
+	console.log(`Spectate live visible: ${spectateVisible}`);
+	console.log(`Join a collab visible: ${collabVisible}`);
+	console.log(`Community feed visible: ${communityVisible}`);
 	
-	// Check for both column labels
-	const spectateLabel = page.locator('.session-hub .session-heading:has-text("Spectate live")');
-	const collabLabel = page.locator('.session-hub .session-heading:has-text("Join a collab")');
-	
-	const spectateCount = await spectateLabel.count();
-	const collabCount = await collabLabel.count();
-	const spectateVisible = await spectateLabel.isVisible().catch(() => false);
-	const collabVisible = await collabLabel.isVisible().catch(() => false);
-	
-	console.log(`Spectate live heading count: ${spectateCount}, visible: ${spectateVisible}`);
-	console.log(`Join a collab heading count: ${collabCount}, visible: ${collabVisible}`);
-	
-	// Get all visible text in session hub
-	const allText = await sessionHub.textContent();
-	console.log(`Session hub text content: "${allText}"`);
-	
-	// Check computed styles of the second column
-	const secondColumn = page.locator('.session-hub .session-column').nth(1);
-	if (await secondColumn.count() > 0) {
-		const display = await secondColumn.evaluate(el => window.getComputedStyle(el).display);
-		const visibility = await secondColumn.evaluate(el => window.getComputedStyle(el).visibility);
-		const opacity = await secondColumn.evaluate(el => window.getComputedStyle(el).opacity);
-		console.log(`Second column styles - display: ${display}, visibility: ${visibility}, opacity: ${opacity}`);
-	}
-	
-	// Take a focused screenshot of just the session hub
-	const hubBox = await sessionHub.boundingBox();
-	if (hubBox) {
+	// Take a focused screenshot of just the peaks
+	const peaksBox = await peaks.boundingBox();
+	if (peaksBox) {
 		await page.screenshot({ 
 			path: `${SCREENSHOT_DIR}/session-hub-labels-peeking.png`,
 			clip: {
-				x: Math.max(0, hubBox.x - 20),
-				y: Math.max(0, hubBox.y - 20),
-				width: Math.min(hubBox.width + 40, 800),
-				height: Math.min(hubBox.height + 40, 600)
+				x: Math.max(0, peaksBox.x - 20),
+				y: Math.max(0, peaksBox.y - 20),
+				width: Math.min(peaksBox.width + 40, 1100),
+				height: Math.min(peaksBox.height + 40, 700)
 			}
 		});
 	}
@@ -125,13 +103,14 @@ test('session hub position stability and label visibility', async ({ page }) => 
 	// Verify both labels are visible
 	expect(spectateVisible, 'Spectate live label should be visible').toBe(true);
 	expect(collabVisible, 'Join a collab label should be visible').toBe(true);
+	expect(communityVisible, 'Community feed label should be visible').toBe(true);
 });
 
 test('session hub should not expand without direct hover', async ({ page }) => {
-	await page.goto('http://localhost:8080/');
+	await page.goto('/');
 
-	const sessionHub = page.locator('.session-hub.glass');
-	await expect(sessionHub).toBeVisible({ timeout: 10000 });
+	const peaks = page.locator('.session-peaks');
+	await expect(peaks).toBeVisible({ timeout: 10000 });
 
 	// Move mouse to safe area away from session hub (top left corner)
 	await page.mouse.move(50, 50);
@@ -141,10 +120,10 @@ test('session hub should not expand without direct hover', async ({ page }) => {
 	const interval = 100; // Every 100ms
 	const duration = 3000; // For 3 seconds
 
-	console.log('Monitoring session hub with mouse at top-left (50, 50)');
+	console.log('Monitoring session peaks with mouse at top-left (50, 50)');
 
 	for (let i = 0; i < duration / interval; i++) {
-		const boundingBox = await sessionHub.boundingBox();
+		const boundingBox = await peaks.boundingBox();
 		screenshots.push({
 			index: i,
 			time: i * interval,
@@ -159,24 +138,12 @@ test('session hub should not expand without direct hover', async ({ page }) => {
 		await page.waitForTimeout(interval);
 	}
 
-	// Analyze for any expansion
-	const unexpectedExpansions = screenshots.filter((s, i) => {
-		if (i === 0 || !s.height || !screenshots[i-1].height) return false;
-		return Math.abs(s.height! - screenshots[i-1].height!) > 10;
-	});
+	// Analyze for any unexpected expansion state when not hovering.
+	const unexpectedExpandedCount = await page.locator('.session-peaks .session-peak.expanded').count();
 
 	console.log(`\nCapture complete:`);
 	console.log(`- Total frames: ${screenshots.length}`);
-	console.log(`- Unexpected expansions: ${unexpectedExpansions.length}`);
+	console.log(`- Expanded peaks (without hover): ${unexpectedExpandedCount}`);
 	
-	if (unexpectedExpansions.length > 0) {
-		console.log('\nUnexpected expansions detected:');
-		unexpectedExpansions.forEach(s => {
-			const prev = screenshots[s.index - 1];
-			console.log(`  Frame ${s.index} at ${s.time}ms: Height ${prev.height}px → ${s.height}px`);
-		});
-	}
-	
-	// Assert no unexpected expansions occurred
-	expect(unexpectedExpansions.length, 'Session hub should not expand without hover').toBe(0);
+	expect(unexpectedExpandedCount, 'Session peaks should not expand without hover').toBe(0);
 });

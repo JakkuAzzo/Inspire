@@ -27,7 +27,8 @@ export default function MouseParticles({
 }: MouseParticlesProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
-  const mouseRef = useRef({ x: 0, y: 0, targetX: 0, targetY: 0 });
+  const mouseRef = useRef({ x: -9999, y: -9999 });
+  const pointerInsideRef = useRef(false);
   const rafRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -75,21 +76,36 @@ export default function MouseParticles({
       }
     };
 
-    // Initialize mouse position to center
-    mouseRef.current.x = canvas.width / 2;
-    mouseRef.current.y = canvas.height / 2;
-    mouseRef.current.targetX = canvas.width / 2;
-    mouseRef.current.targetY = canvas.height / 2;
+    // Only react while pointer is inside the window.
+    pointerInsideRef.current = false;
+    mouseRef.current.x = -9999;
+    mouseRef.current.y = -9999;
 
     // Mouse move handler
     const handleMouseMove = (e: MouseEvent | TouchEvent) => {
+      pointerInsideRef.current = true;
       if (e instanceof MouseEvent) {
-        mouseRef.current.targetX = e.clientX;
-        mouseRef.current.targetY = e.clientY;
+        mouseRef.current.x = e.clientX;
+        mouseRef.current.y = e.clientY;
       } else {
-        mouseRef.current.targetX = e.touches[0].clientX;
-        mouseRef.current.targetY = e.touches[0].clientY;
+        mouseRef.current.x = e.touches[0].clientX;
+        mouseRef.current.y = e.touches[0].clientY;
       }
+    };
+
+    const handleWindowMouseOut = (e: MouseEvent) => {
+      // When leaving the window, relatedTarget is null.
+      if (e.relatedTarget === null) {
+        pointerInsideRef.current = false;
+        mouseRef.current.x = -9999;
+        mouseRef.current.y = -9999;
+      }
+    };
+
+    const handleWindowBlur = () => {
+      pointerInsideRef.current = false;
+      mouseRef.current.x = -9999;
+      mouseRef.current.y = -9999;
     };
 
     // Animation loop
@@ -99,28 +115,21 @@ export default function MouseParticles({
       // Clear canvas completely
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Continuous smooth movement - always interpolate toward target
-      mouseRef.current.x += (mouseRef.current.targetX - mouseRef.current.x) * 0.05;
-      mouseRef.current.y += (mouseRef.current.targetY - mouseRef.current.y) * 0.05;
-      
-      // Add gentle autonomous drift to target position
-      const t = performance.now() / 1000;
-      mouseRef.current.targetX += Math.cos(t * 0.3) * 0.8;
-      mouseRef.current.targetY += Math.sin(t * 0.4) * 0.8;
-
       // Update and draw particles
       particlesRef.current.forEach((particle, i) => {
-        // Calculate repulsion from current mouse position
-        const dx = mouseRef.current.x - particle.x;
-        const dy = mouseRef.current.y - particle.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const angle = Math.atan2(dy, dx);
+        if (pointerInsideRef.current) {
+          // Calculate repulsion from current pointer position
+          const dx = mouseRef.current.x - particle.x;
+          const dy = mouseRef.current.y - particle.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const angle = Math.atan2(dy, dx);
 
-        // Apply repulsion force when mouse is near
-        if (dist < repelDistance) {
-          const force = (1 - dist / repelDistance) * 3;
-          particle.vx -= Math.cos(angle) * force;
-          particle.vy -= Math.sin(angle) * force;
+          // Apply repulsion force when pointer is near
+          if (dist < repelDistance) {
+            const force = (1 - dist / repelDistance) * 3;
+            particle.vx -= Math.cos(angle) * force;
+            particle.vy -= Math.sin(angle) * force;
+          }
         }
 
         // Apply gentle return force to initial position
@@ -172,6 +181,8 @@ export default function MouseParticles({
     window.addEventListener('resize', resize);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('touchmove', handleMouseMove);
+    window.addEventListener('mouseout', handleWindowMouseOut);
+    window.addEventListener('blur', handleWindowBlur);
 
     animate();
 
@@ -179,6 +190,8 @@ export default function MouseParticles({
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('touchmove', handleMouseMove);
+      window.removeEventListener('mouseout', handleWindowMouseOut);
+      window.removeEventListener('blur', handleWindowBlur);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, [particleCount, repelDistance, colors, particleSize]);
@@ -193,7 +206,7 @@ export default function MouseParticles({
         width: '100%',
         height: '100%',
         pointerEvents: 'none',
-        zIndex: 0,
+        zIndex: 1,
         opacity: 0.6
       }}
     />

@@ -102,6 +102,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 0;
   mix-blend-mode: screen;
   opacity: 0.26;
   transition: opacity 0.6s ease;
@@ -125,6 +126,7 @@
 .noise-overlay {
   position: fixed;
   inset: 0;
+  z-index: 1;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
   opacity: 0.35;
   pointer-events: none;
@@ -137,8 +139,14 @@
   border-radius: 50%;
   filter: blur(120px);
   opacity: 0.38;
+  z-index: 1;
   pointer-events: none;
   animation: float 16s ease-in-out infinite;
+}
+
+.app-foreground {
+  position: relative;
+  z-index: 2;
 }
 
 .orb-left {
@@ -401,6 +409,28 @@
 
 /* Hero */
 
+.home-background-logo {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.12;
+}
+
+.home-background-logo img {
+  width: min(680px, 70vw);
+  height: auto;
+  display: block;
+}
+
+.home-content {
+  position: relative;
+  z-index: 2;
+}
+
 .hero {
   display: grid;
   gap: 2.5rem;
@@ -549,7 +579,10 @@
   align-items: center;
   justify-content: center;
   gap: 1.25rem;
-  margin: clamp(2rem, 6vw, 3rem) 0;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100svh;
+  margin: 0;
 }
 
 .mode-gate {
@@ -1257,6 +1290,47 @@
   z-index: 1;
 }
 
+/* Falling word focus animation (used by Focus Mode + Word Explorer focus) */
+.falling-word-stream {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.falling-word-stream.anchored {
+  position: absolute;
+}
+
+.falling-word {
+  position: absolute;
+  top: -12%;
+  transform: translateY(0);
+  white-space: nowrap;
+  opacity: 0.92;
+  animation-name: falling-word-drop;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+.falling-word-stream.compact .falling-word {
+  font-size: 0.9rem;
+}
+
+@keyframes falling-word-drop {
+  0% {
+    transform: translateY(-10vh);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.92;
+  }
+  100% {
+    transform: translateY(115vh);
+    opacity: 0;
+  }
+}
+
 .submode-card span {
   color: rgba(203, 213, 225, 0.8);
   position: relative;
@@ -1459,7 +1533,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
+  min-width: 3.1rem;
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -1519,7 +1593,9 @@
   font-size: 1rem;
 }
 .queue-author,
+.queue-source,
 .queue-match,
+.queue-query,
 .queue-duration {
   font-size: 0.8rem;
   color: rgba(148, 163, 184, 0.75);

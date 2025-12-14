@@ -78,20 +78,24 @@ export function Home({
 
 	return (
 		<>
-			<MouseParticles particleCount={500} repelDistance={300} colors={['#ec4899', '#22d3ee', '#a855f7', '#8b5cf6', '#06b6d4', '#f472b6']} particleSize={2} />
+			<div className="home-background-logo" aria-hidden="true">
+				<img src={inspireLogo} alt="" />
+			</div>
+			<MouseParticles particleCount={500} repelDistance={80} colors={['#ec4899', '#22d3ee', '#a855f7', '#8b5cf6', '#06b6d4', '#f472b6']} particleSize={2} />
 
-			<header className="hero">
-				<div className="hero-copy">
-					<div className="hero-heading">
-						<img src={inspireLogo} alt="Inspire" className="hero-logo" />
-						<h1>Make Something</h1>
+			<div className="home-content">
+				<header className="hero">
+					<div className="hero-copy">
+						<div className="hero-heading">
+							<img src={inspireLogo} alt="Inspire" className="hero-logo" />
+							<h1>Make Something</h1>
+						</div>
+						<p className="hero-tagline">Choose your creative studio and spin a fresh challenge.</p>
 					</div>
-					<p className="hero-tagline">Choose your creative studio and spin a fresh challenge.</p>
-				</div>
-				<div className="hero-meta glass">
-					{heroMetaContent}
-				</div>
-			</header>
+					<div className="hero-meta glass">
+						{heroMetaContent}
+					</div>
+				</header>
 
 			{/* Three Separate Session Peaks */}
 			<div className="session-peaks">
@@ -177,7 +181,7 @@ export function Home({
 				</section>
 			</div>
 
-			{showModePicker ? (
+				{showModePicker ? (
 				<>
 					<section className="mode-selector">
 						{modeCards.map((entry) => (
@@ -205,6 +209,7 @@ export function Home({
 					</div>
 				</div>
 			)}
+			</div>
 		</>
 	);
 }
