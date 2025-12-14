@@ -2031,6 +2031,22 @@
   flex-wrap: wrap;
 }
 
+.focus-controls-inline {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.focus-controls-inline .control-field {
+  min-width: 220px;
+  flex: 1 1 240px;
+}
+
+.focus-controls-inline .control-preview {
+  flex: 2 1 320px;
+}
+
 .combined-focus {
   padding: clamp(1.5rem, 3vw, 2rem);
   border-radius: 20px;
