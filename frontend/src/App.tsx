@@ -32,6 +32,7 @@ import { RelevanceSlider } from './components/RelevanceSlider';
 import { CollapsibleSection } from './components/CollapsibleSection';
 import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
 import MouseParticles from './components/MouseParticles';
+import { FallingWordStream } from './components/FallingWordStream';
 
 const DEFAULT_FILTERS: RelevanceFilter = {
 	timeframe: 'fresh',
@@ -446,23 +447,52 @@ async function searchYoutubePlaylist(query: string, limit = 5): Promise<YouTubeV
 }
 
 function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
-	const baseQueue: WorkspaceQueueItem[] = [
-		{
-			id: `${pack.id}-yt`,
+	const baseQueue: WorkspaceQueueItem[] = [];
+	const titleSeed = pack.title;
+	baseQueue.push({
+		id: `${pack.id}-yt`,
+		type: 'youtube',
+		title: `${titleSeed} inspiration mix`,
+		url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${titleSeed} ${pack.mode} inspiration`)}`,
+		matchesPack: titleSeed,
+		searchQuery: `${titleSeed} ${pack.mode} inspiration`
+	});
+
+	if (pack.mode === 'lyricist') {
+		const seedWord = pack.powerWords?.[0] || pack.newsPrompt?.headline?.split(' ')?.[0] || 'rhyme';
+		baseQueue.push({
+			id: `${pack.id}-yt-type-beat`,
 			type: 'youtube',
-			title: `${pack.title} inspiration mix`,
-			url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${pack.title} ${pack.mode} inspiration`)}`,
-			matchesPack: pack.title,
-			searchQuery: `${pack.title} ${pack.mode} inspiration`
-		},
-		{
+			title: `${pack.genre} type beat`,
+			url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${pack.genre} type beat instrumental`)}`,
+			matchesPack: pack.genre,
+			searchQuery: `${pack.genre} type beat instrumental`
+		});
+		baseQueue.push({
+			id: `${pack.id}-rhymezone`,
+			type: 'reference',
+			title: `Rhyme map for “${seedWord}”`,
+			url: `https://www.rhymezone.com/r/rhyme.cgi?Word=${encodeURIComponent(seedWord)}&typeofrhyme=perfect`,
+			duration: 'Browse',
+			matchesPack: seedWord
+		});
+		baseQueue.push({
+			id: `${pack.id}-genius`,
+			type: 'reference',
+			title: 'Lyric reference search',
+			url: `https://genius.com/search?q=${encodeURIComponent(pack.topicChallenge || titleSeed)}`,
+			duration: 'Browse',
+			matchesPack: pack.topicChallenge || titleSeed
+		});
+	} else {
+		baseQueue.push({
 			id: `${pack.id}-instrumental`,
 			type: 'instrumental',
 			title: `${pack.mode === 'producer' ? 'Reference groove' : 'Instrumental backdrop'}`,
-			url: `https://open.spotify.com/search/${encodeURIComponent(`${pack.title} instrumental`)}`,
-			matchesPack: pack.headline
-		}
-	];
+			url: `https://open.spotify.com/search/${encodeURIComponent(`${titleSeed} instrumental`)}`,
+			matchesPack: titleSeed
+		});
+	}
 	const relatedSession = LIVE_SESSION_PRESETS.find((session) => session.mode === pack.mode);
 	if (relatedSession) {
 		baseQueue.push({
@@ -495,6 +525,15 @@ function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
 		});
 	}
 	return baseQueue;
+}
+
+function formatQueueSource(url: string): string {
+	try {
+		const parsed = new URL(url);
+		return parsed.hostname.replace(/^www\./, '');
+	} catch {
+		return '';
+	}
 }
 
 function formatQueueType(type: WorkspaceQueueItem['type']): string {
@@ -791,7 +830,6 @@ function App() {
 	const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
 	const [focusMode, setFocusMode] = useState(false);
 	const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
-	const [focusStyle, setFocusStyle] = useState<'scroll' | 'rain' | 'flash'>('scroll');
 	const [focusDensity, setFocusDensity] = useState<number>(8);
 	const [focusSpeed, setFocusSpeed] = useState<number>(1);
 	const [focusControlsOpen, setFocusControlsOpen] = useState(false);
@@ -843,6 +881,7 @@ function App() {
 	const [wordResults, setWordResults] = useState<Array<{ word: string; score?: number; numSyllables?: number }>>([]);
 	const [wordLoading, setWordLoading] = useState(false);
 	const [wordError, setWordError] = useState<string | null>(null);
+	const [wordFocusMode, setWordFocusMode] = useState(false);
 	const [newsHeadlines, setNewsHeadlines] = useState<NewsHeadline[]>([]);
 	const [newsLoading, setNewsLoading] = useState(false);
 	const [newsError, setNewsError] = useState<string | null>(null);
@@ -1748,6 +1787,43 @@ function App() {
 					)
 				} as DeckCard,
 				{
+					id: 'word-lab',
+					label: 'Word Lab',
+					preview: fuelPack.wordLab?.slice(0, 3).map((entry) => entry.word).join(' · ') || 'Scored word ideas',
+					detail: (
+						<div className="word-explorer-panel">
+							<div className="word-grid">
+								{(fuelPack.wordLab ?? []).slice(0, 18).map((entry) => (
+									<button
+										key={entry.word}
+										type="button"
+										className="word-chip interactive"
+										title={`${entry.numSyllables ?? '?'} syllables${typeof entry.score === 'number' ? ` · score ${entry.score}` : ''}`}
+										onClick={() => handleAddWordToPack(entry.word)}
+									>
+										{entry.word}
+									</button>
+								))}
+							</div>
+							<p className="hint">Tap a word to add it to your power words.</p>
+						</div>
+					)
+				} as DeckCard,
+				{
+					id: 'rhyme-families',
+					label: 'Rhyme Families',
+					preview: fuelPack.rhymeFamilies?.slice(0, 2).join(' · ') || 'Rhyme patterns',
+					detail: (
+						<ul className="tags">
+							{(fuelPack.rhymeFamilies ?? []).map((family) => (
+								<li key={family}>
+									<span className="tag">{family}</span>
+								</li>
+							))}
+						</ul>
+					)
+				} as DeckCard,
+				{
 					id: 'story-arc',
 					label: 'Story Arc',
 					preview: `${fuelPack.storyArc.start} → ${fuelPack.storyArc.end}`,
@@ -1796,6 +1872,22 @@ function App() {
 						<div className="card-detail-copy">
 							<p>{fuelPack.topicChallenge}</p>
 							<p className="chord">Chord mood: {fuelPack.chordMood}</p>
+						</div>
+					)
+				} as DeckCard,
+				{
+					id: 'meme-sound',
+					label: 'Meme Sound',
+					preview: fuelPack.memeSound?.name ?? 'Sound cue',
+					detail: (
+						<div className="card-detail-copy">
+							<p><strong>{fuelPack.memeSound?.name}</strong></p>
+							<p>{fuelPack.memeSound?.description}</p>
+							{fuelPack.memeSound?.sampleUrl && (
+								<a className="btn micro" href={fuelPack.memeSound.sampleUrl} target="_blank" rel="noreferrer">
+									Open sample
+								</a>
+							)}
 						</div>
 					)
 				} as DeckCard,
@@ -2248,72 +2340,111 @@ function App() {
 	const challengeText = useMemo(() => resolveChallengeText(fuelPack), [fuelPack]);
 	const lyricistPack = isLyricistPack(fuelPack) ? fuelPack : null;
 	const producerPack = isProducerPack(fuelPack) ? fuelPack : null;
-	const editorPack = isEditorPack(fuelPack) ? fuelPack : null;
-	const focusItems = useMemo(() => {
-		const items: string[] = [];
-		if (lyricistPack) {
-			items.push(lyricistPack.newsPrompt.headline, ...lyricistPack.powerWords, ...lyricistPack.flowPrompts, ...lyricistPack.lyricFragments, lyricistPack.topicChallenge, lyricistPack.chordMood);
-		}
-		if (producerPack) {
-			items.push(
-				producerPack.sample?.title ?? producerPack.title,
-				...(producerPack.instrumentPalette ?? []),
-				...(producerPack.fxIdeas ?? []),
-				...(producerPack.constraints ?? []),
-				producerPack.challenge ?? ''
-			);
-		}
-		if (editorPack) {
-			items.push(
-				...editorPack.moodboard.map((clip) => clip.title),
-				...editorPack.audioPrompts.map((prompt) => prompt.name),
-				...editorPack.timelineBeats,
-				...editorPack.visualConstraints,
-				editorPack.challenge
-			);
-		}
-		if (memeStimuli.length) {
-			items.push(...memeStimuli.map((meme) => meme.name));
-		}
-		if (combinedFocusCardIds.length && orderedPackDeck.length) {
-			combinedFocusCardIds.forEach((id) => {
-				const card = orderedPackDeck.find((entry) => entry.id === id);
-				if (!card) return;
-				items.unshift(card.label, card.preview);
-			});
-		}
-		return Array.from(new Set(items.filter(Boolean)));
-	}, [combinedFocusCardIds, editorPack, lyricistPack, memeStimuli, orderedPackDeck, producerPack]);
-	const visibleFocusItems = useMemo(() => focusItems.slice(0, Math.max(focusDensity, 6)), [focusDensity, focusItems]);
-	const focusSpeedMs = useMemo(() => Math.max(4, 24 / Math.max(0.35, focusSpeed)), [focusSpeed]);
+	const focusFallDurationMs = useMemo(() => Math.round(Math.max(2500, Math.min(20000, 12000 / Math.max(0.35, focusSpeed)))), [focusSpeed]);
+	const focusSpawnIntervalMs = useMemo(() => Math.round(Math.max(90, Math.min(1800, 700 / Math.max(0.35, focusSpeed)))), [focusSpeed]);
 
-	const HeadlineStream = ({ anchored = false, compact = false, forceActive = false }: { anchored?: boolean; compact?: boolean; forceActive?: boolean }) => {
-		if (!visibleFocusItems.length) return null;
-		const baseClass = `headline-stream ${(focusMode || forceActive) ? 'focus-active' : 'idle'} mode-${focusStyle}${anchored ? ' anchored' : ''}${compact ? ' compact' : ''}`;
-		return (
-			<div
-				className={baseClass}
-				style={{ '--stream-speed': `${focusSpeedMs}s` } as CSSProperties}
-				aria-hidden="true"
-			>
-				{visibleFocusItems.map((text, index) => {
-					const stagger = (index % 5) * 0.65;
-					const delay = focusStyle === 'scroll' ? `${stagger * -1}s` : `${stagger}s`;
-					const duration = focusStyle === 'rain' ? `${Math.max(4, focusSpeedMs * 0.6)}s` : `${focusSpeedMs}s`;
-					const drift = (index % 4) * 8 - 12;
-					return (
-						<span
-							key={`stream-${index}-${text}`}
-							className="stream-chip"
-							style={{ animationDelay: delay, animationDuration: duration, '--drift': `${drift}px` } as CSSProperties}
-						>
-							{text}
-						</span>
-					);
-				})}
-			</div>
-		);
-	};
+	const focusItems = useMemo(() => {
+		if (!isModePack(fuelPack)) return [] as string[];
+		const pack = fuelPack as ModePack;
+
+		const itemsForCard = (cardId: string): string[] => {
+			if (isLyricistPack(pack)) {
+				switch (cardId) {
+					case 'word-explorer':
+						return [...pack.powerWords];
+					case 'word-lab':
+						return (pack.wordLab ?? []).map((w) => w.word);
+					case 'rhyme-families':
+						return [...(pack.rhymeFamilies ?? [])];
+					case 'story-arc':
+						return [pack.storyArc.start, pack.storyArc.middle, pack.storyArc.end];
+					case 'headline':
+						return [pack.newsPrompt.headline, pack.newsPrompt.context, pack.newsPrompt.source];
+					case 'flow-prompts':
+						return [...(pack.flowPrompts ?? [])];
+					case 'challenge':
+						return [pack.topicChallenge, pack.chordMood];
+					case 'meme-sound':
+						return [pack.memeSound?.name, pack.memeSound?.description].filter(Boolean) as string[];
+					case 'fragments':
+						return [...(pack.lyricFragments ?? [])];
+					case 'meme-stimuli':
+						return memeStimuli.map((m) => m.name);
+					default:
+						return [];
+				}
+			}
+
+		if (isProducerPack(pack)) {
+			switch (cardId) {
+				case 'main-sample':
+					return [pack.sample?.title ?? '', pack.sample?.source ?? ''].filter(Boolean);
+				case 'constraints':
+					return [...(pack.constraints ?? [])];
+				case 'fx-ideas':
+					return [...(pack.fxIdeas ?? [])];
+				case 'palette':
+					return [...(pack.instrumentPalette ?? [])];
+				case 'video-cue':
+					return [pack.videoSnippet?.title ?? '', pack.videoSnippet?.description ?? ''].filter(Boolean);
+				case 'challenge':
+					return [pack.challenge ?? ''].filter(Boolean);
+				case 'meme-stimuli':
+					return memeStimuli.map((m) => m.name);
+				default:
+					return [];
+			}
+		}
+
+		if (isEditorPack(pack)) {
+			switch (cardId) {
+				case 'moodboard':
+					return (pack.moodboard ?? []).map((c) => c.title);
+				case 'audio-prompts':
+					return (pack.audioPrompts ?? []).map((p) => p.name);
+				case 'timeline':
+					return [...(pack.timelineBeats ?? [])];
+				case 'constraints':
+					return [...(pack.visualConstraints ?? [])];
+				case 'challenge':
+					return [pack.challenge ?? '', pack.titlePrompt ?? ''].filter(Boolean);
+				case 'meme-stimuli':
+					return memeStimuli.map((m) => m.name);
+				default:
+					return [];
+			}
+		}
+		return [];
+		};
+
+		const pick = (values: string[]) => Array.from(new Set(values.map((v) => v.trim()).filter(Boolean)));
+
+		if (focusModeType === 'combined') {
+			const combined = combinedFocusCardIds.flatMap(itemsForCard);
+			return pick(combined);
+		}
+
+		if (focusModeType === 'single' && selectedCard) {
+			return pick(itemsForCard(selectedCard.id));
+		}
+
+		return [];
+	}, [combinedFocusCardIds, focusModeType, fuelPack, memeStimuli, selectedCard]);
+
+	const visibleFocusItems = useMemo(() => focusItems.slice(0, Math.max(focusDensity, 6)), [focusDensity, focusItems]);
+
+	const FocusStream = ({ anchored = false, compact = false, forceActive = false }: { anchored?: boolean; compact?: boolean; forceActive?: boolean }) => (
+		<FallingWordStream
+			items={visibleFocusItems}
+			active={focusMode}
+			forceActive={forceActive}
+			anchored={anchored}
+			compact={compact}
+			maxVisible={Math.max(focusDensity, 6)}
+			spawnIntervalMs={focusSpawnIntervalMs}
+			fallDurationMs={focusFallDurationMs}
+		/>
+	);
 
 	const renderPackDetail = (inFocusOverlay: boolean) => {
 		if (!selectedCard) return null;
@@ -2360,7 +2491,7 @@ function App() {
 				</div>
 				{fuelPack && (
 					<>
-						<HeadlineStream anchored forceActive={inFocusOverlay} />
+						<FocusStream anchored forceActive={inFocusOverlay} />
 						<div className="detail-challenge">
 							<span className="label">Prompt Challenge</span>
 							<p>{challengeText}</p>
@@ -2505,33 +2636,36 @@ function App() {
 	return (
 		<div className={appClassName}>
 			{!mode && <MouseParticles particleCount={500} repelDistance={300} colors={['#ec4899', '#22d3ee', '#a855f7', '#8b5cf6', '#06b6d4', '#f472b6']} particleSize={2} />}
-			<button
-				type="button"
-				className="user-handle"
-				onClick={handleUserHandleClick}
-				aria-label={handleTriggerLabel}
-			>
-				<span>{formattedHandle}</span>
-				<span className="handle-indicator" aria-hidden="true">↗</span>
-			</button>
 			<div className="ambient orb-left" aria-hidden="true" />
 			<div className="ambient orb-right" aria-hidden="true" />
 			<div className="noise-overlay" aria-hidden="true" />
 
-			{fatalError && (
-				<div className="fatal-fallback glass" role="alert">
-					<h2>Something went wrong</h2>
-					<p>{error}</p>
-					<div className="fatal-actions">
-						<button type="button" className="btn" onClick={() => { setError(null); setFuelPack(null); setMode(null); setSubmode(null); setWorkspaceQueue([]); }}>
-							Back to studios
-						</button>
-					</div>
-				</div>
-			)}
+			<div className="app-foreground">
+				<button
+					type="button"
+					className="user-handle"
+					onClick={handleUserHandleClick}
+					aria-label={handleTriggerLabel}
+				>
+					<span>{formattedHandle}</span>
+					<span className="handle-indicator" aria-hidden="true">↗</span>
+				</button>
 
-			{mode ? (
-				<header className="top-nav glass">
+
+				{fatalError && (
+					<div className="fatal-fallback glass" role="alert">
+						<h2>Something went wrong</h2>
+						<p>{error}</p>
+						<div className="fatal-actions">
+							<button type="button" className="btn" onClick={() => { setError(null); setFuelPack(null); setMode(null); setSubmode(null); setWorkspaceQueue([]); }}>
+								Back to studios
+							</button>
+						</div>
+					</div>
+				)}
+
+				{mode ? (
+					<header className="top-nav glass">
 					<div className="nav-left">
 						<button className="back-button" type="button" onClick={handleBackToModes}>
 							← Studios
@@ -3085,8 +3219,10 @@ function App() {
 												<span className="queue-pill">{formatQueueType(item.type)}</span>
 												<div className="queue-text">
 													<strong>{item.title}</strong>
+													{formatQueueSource(item.url) && <span className="queue-source">Source: {formatQueueSource(item.url)}</span>}
 													{item.author && <span className="queue-author">{item.author}</span>}
 													{item.matchesPack && <span className="queue-match">Matches: {item.matchesPack}</span>}
+													{item.searchQuery && <span className="queue-query">Query: {item.searchQuery}</span>}
 													{item.duration && <span className="queue-duration">{item.duration}</span>}
 												</div>
 											</div>
@@ -3157,6 +3293,7 @@ function App() {
 								onDragLeave={handleMixerDragLeave}
 								onDrop={handleMixerDrop}
 							>
+								<FocusStream anchored forceActive />
 								<div className="combined-focus-header">
 									<div>
 										<p className="label">Combined focus</p>
@@ -3186,18 +3323,7 @@ function App() {
 						<div className="focus-controls-grid">
 							<div>
 								<span className="label">Animation</span>
-								<div className="nav-toggle-group">
-									{[['scroll', 'Scroll'], ['rain', 'Rain'], ['flash', 'Flash']].map(([value, label]) => (
-										<button
-											key={value}
-											type="button"
-											className={`nav-pill${focusStyle === value ? ' active' : ''}`}
-											onClick={() => setFocusStyle(value as 'scroll' | 'rain' | 'flash')}
-										>
-											{label}
-										</button>
-									))}
-								</div>
+								<p className="hint">Falling words</p>
 							</div>
 							<div className="control-field">
 								<label htmlFor="focusDensity">Visible items</label>
@@ -3225,7 +3351,7 @@ function App() {
 								<span className="range-value">{focusSpeed.toFixed(1)}x</span>
 							</div>
 							<div className="control-preview">
-								<HeadlineStream anchored compact forceActive />
+								<FocusStream anchored compact forceActive />
 							</div>
 						</div>
 					</div>
@@ -3451,6 +3577,16 @@ function App() {
 							<button type="button" className="icon-button" aria-label="Close word explorer" onClick={() => setShowWordExplorer(false)}>✕</button>
 						</div>
 						<div className="settings-section">
+							<div className="detail-toolbox" style={{ marginBottom: 12 }}>
+								<button
+									type="button"
+									className={`btn secondary focus-toggle${wordFocusMode ? ' active' : ''}`}
+									onClick={() => setWordFocusMode((prev) => !prev)}
+									disabled={wordLoading || wordResults.length === 0}
+								>
+									{wordFocusMode ? 'Exit Focus Mode' : 'Focus Mode'}
+								</button>
+							</div>
 							<div className="word-form">
 								<input placeholder="Starts with" value={wordStartsWith} onChange={(e) => setWordStartsWith(e.target.value)} />
 								<input placeholder="Rhyme with" value={wordRhymeWith} onChange={(e) => setWordRhymeWith(e.target.value)} />
@@ -3461,7 +3597,7 @@ function App() {
 							</div>
 							{wordLoading && <p>Searching…</p>}
 							{!wordLoading && wordError && <p className="error">{wordError}</p>}
-							{!wordLoading && !wordError && (
+							{!wordLoading && !wordError && !wordFocusMode && (
 								<div className="word-grid">
 									{wordResults.map((w) => (
 										<button
@@ -3474,6 +3610,17 @@ function App() {
 											{w.word}
 										</button>
 									))}
+								</div>
+							)}
+							{!wordLoading && !wordError && wordFocusMode && wordResults.length > 0 && (
+								<div style={{ position: 'relative', height: 360 }}>
+									<FallingWordStream
+										items={wordResults.map((w) => w.word)}
+										active
+										maxVisible={Math.max(18, focusDensity)}
+										spawnIntervalMs={Math.max(120, focusSpawnIntervalMs)}
+										fallDurationMs={Math.max(2500, focusFallDurationMs)}
+									/>
 								</div>
 							)}
 						</div>
@@ -3503,6 +3650,7 @@ function App() {
 					</div>
 				</div>
 			)}
+			</div>
 		</div>
 	);
 }

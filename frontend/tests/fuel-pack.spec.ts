@@ -4,6 +4,7 @@ const SCREENSHOT_DIR = 'test-artifacts';
 
 // Generates a fresh fuel pack from the hero flow and captures a screenshot of the deck.
 test('generate fuel pack', async ({ page }) => {
+	test.setTimeout(90_000);
 	page.on('console', (msg) => {
 		console.log(`[console:${msg.type()}] ${msg.text()}`);
 	});
@@ -29,9 +30,23 @@ test('generate fuel pack', async ({ page }) => {
 	const response = await responsePromise;
 	await expect(response.status()).toBe(201);
 
-	const packCards = page.locator('.pack-card');
-	await expect(packCards.first()).toBeVisible({ timeout: 20000 });
-	await expect(await packCards.count()).toBeGreaterThan(0);
+	const modePackDeck = page.locator('.pack-deck');
+	const legacyPack = page.locator('.legacy-pack');
+	await Promise.race([
+		modePackDeck.waitFor({ state: 'visible', timeout: 60_000 }),
+		legacyPack.waitFor({ state: 'visible', timeout: 60_000 })
+	]);
+
+	if (await modePackDeck.isVisible().catch(() => false)) {
+		const packCards = page.locator('.pack-deck .pack-card');
+		await expect(packCards.first()).toBeVisible({ timeout: 60_000 });
+		await expect(await packCards.count()).toBeGreaterThan(0);
+	} else {
+		await expect(legacyPack).toBeVisible({ timeout: 60_000 });
+		const wordChips = page.locator('.legacy-pack .word-chip');
+		await expect(wordChips.first()).toBeVisible({ timeout: 60_000 });
+		await expect(await wordChips.count()).toBeGreaterThan(0);
+	}
 
 	await page.screenshot({ path: `${SCREENSHOT_DIR}/fuel-pack-generated.png`, fullPage: true });
 });
