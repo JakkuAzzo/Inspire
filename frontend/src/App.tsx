@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, DragEvent as ReactDragEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import './App.css';
 import inspireLogo from './assets/Inspire_transparent_white.png';
 import lyricistCardImage from './assets/images/Lyracist_Studio.jpeg';
@@ -28,16 +28,11 @@ import type {
 	RelevanceTone,
 	WorkspaceQueueItem
 } from './types';
+import { RelevanceSlider } from './components/RelevanceSlider';
+import { CollapsibleSection } from './components/CollapsibleSection';
+import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
 import MouseParticles from './components/MouseParticles';
 import { FallingWordStream } from './components/FallingWordStream';
-
-import { TopNavBar } from './components/workspace/TopNavBar';
-import { WorkspaceControlsOverlay } from './components/workspace/WorkspaceControlsOverlay';
-import { InspirationQueue } from './components/workspace/InspirationQueue';
-import { CombinedFocusMode } from './components/workspace/CombinedFocusMode';
-import { FocusModeControls } from './components/workspace/FocusModeControls';
-import { LyricistWorkspaceBase } from './components/workspace/LyricistWorkspaceBase';
-import { SparkSessionPanel } from './components/workspace/SparkSessionPanel';
 
 const DEFAULT_FILTERS: RelevanceFilter = {
 	timeframe: 'fresh',
@@ -49,12 +44,12 @@ const DEFAULT_FILTERS: RelevanceFilter = {
 const MODE_BG_BY_ID: Record<string, string> = {
 	lyricist: lyricistCardImage,
 	producer: producerCardImage,
-	editor: editorCardImage
+	editor: editorCardImage,
 };
 
 const LYRICIST_SUBMODE_BG_BY_ID: Record<string, string> = {
 	rapper: lyricistRapperImage,
-	singer: lyricistSingerImage
+	singer: lyricistSingerImage,
 };
 
 const FALLBACK_MODE_DEFINITIONS: ModeDefinition[] = [
@@ -129,7 +124,7 @@ const CONTROLS_COLLAPSED_KEY = 'inspire:workspaceControlsCollapsed';
 // Replaced direct YouTube Data API with backend Piped proxy.
 // Inline previews now come from `/api/instrumentals/search`.
 
-type LoadingState = null | 'generate' | 'load';
+type LoadingState = null | 'generate' | 'load' | 'remix';
 
 interface CreatorStats {
 	totalGenerated: number;
@@ -452,52 +447,23 @@ async function searchYoutubePlaylist(query: string, limit = 5): Promise<YouTubeV
 }
 
 function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
-	const baseQueue: WorkspaceQueueItem[] = [];
-	const titleSeed = pack.title;
-	baseQueue.push({
-		id: `${pack.id}-yt`,
-		type: 'youtube',
-		title: `${titleSeed} inspiration mix`,
-		url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${titleSeed} ${pack.mode} inspiration`)}`,
-		matchesPack: titleSeed,
-		searchQuery: `${titleSeed} ${pack.mode} inspiration`
-	});
-
-	if (pack.mode === 'lyricist') {
-		const seedWord = pack.powerWords?.[0] || pack.newsPrompt?.headline?.split(' ')?.[0] || 'rhyme';
-		baseQueue.push({
-			id: `${pack.id}-yt-type-beat`,
+	const baseQueue: WorkspaceQueueItem[] = [
+		{
+			id: `${pack.id}-yt`,
 			type: 'youtube',
-			title: `${pack.genre} type beat`,
-			url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${pack.genre} type beat instrumental`)}`,
-			matchesPack: pack.genre,
-			searchQuery: `${pack.genre} type beat instrumental`
-		});
-		baseQueue.push({
-			id: `${pack.id}-rhymezone`,
-			type: 'reference',
-			title: `Rhyme map for “${seedWord}”`,
-			url: `https://www.rhymezone.com/r/rhyme.cgi?Word=${encodeURIComponent(seedWord)}&typeofrhyme=perfect`,
-			duration: 'Browse',
-			matchesPack: seedWord
-		});
-		baseQueue.push({
-			id: `${pack.id}-genius`,
-			type: 'reference',
-			title: 'Lyric reference search',
-			url: `https://genius.com/search?q=${encodeURIComponent(pack.topicChallenge || titleSeed)}`,
-			duration: 'Browse',
-			matchesPack: pack.topicChallenge || titleSeed
-		});
-	} else {
-		baseQueue.push({
+			title: `${pack.title} inspiration mix`,
+			url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${pack.title} ${pack.mode} inspiration`)}`,
+			matchesPack: pack.title,
+			searchQuery: `${pack.title} ${pack.mode} inspiration`
+		},
+		{
 			id: `${pack.id}-instrumental`,
 			type: 'instrumental',
 			title: `${pack.mode === 'producer' ? 'Reference groove' : 'Instrumental backdrop'}`,
-			url: `https://open.spotify.com/search/${encodeURIComponent(`${titleSeed} instrumental`)}`,
-			matchesPack: titleSeed
-		});
-	}
+			url: `https://open.spotify.com/search/${encodeURIComponent(`${pack.title} instrumental`)}`,
+			matchesPack: pack.headline
+		}
+	];
 	const relatedSession = LIVE_SESSION_PRESETS.find((session) => session.mode === pack.mode);
 	if (relatedSession) {
 		baseQueue.push({
@@ -532,6 +498,20 @@ function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
 	return baseQueue;
 }
 
+function formatQueueType(type: WorkspaceQueueItem['type']): string {
+	switch (type) {
+		case 'youtube':
+			return 'YouTube';
+		case 'stream':
+			return 'Live stream';
+		case 'instrumental':
+			return 'Track';
+		case 'reference':
+		default:
+			return 'Reference';
+	}
+}
+
 const EMPTY_STATS: CreatorStats = {
 	totalGenerated: 0,
 	wildCount: 0,
@@ -546,6 +526,24 @@ const EMPTY_STATS: CreatorStats = {
 	achievements: [],
 	favoriteTone: null
 };
+
+function mergeUniqueStrings(items: string[], limit?: number): string[] {
+	const unique = Array.from(new Set(items.filter(Boolean)));
+	return typeof limit === 'number' ? unique.slice(0, limit) : unique;
+}
+
+function mergeUniqueBy<T>(items: T[], key: (item: T) => string, limit?: number): T[] {
+	const seen = new Set<string>();
+	const result: T[] = [];
+	for (const item of items) {
+		const id = key(item);
+		if (seen.has(id)) continue;
+		seen.add(id);
+		result.push(item);
+		if (typeof limit === 'number' && result.length >= limit) break;
+	}
+	return result;
+}
 
 function base64Encode(text: string): string {
 	if (typeof window === 'undefined') return '';
@@ -673,6 +671,63 @@ function formatShareText(pack: InspireAnyPack, userId: string) {
 	].join('\n');
 }
 
+function createRemixPack(original: ModePack, fresh: ModePack): ModePack {
+	if (original.mode !== fresh.mode) return fresh;
+	if (fresh.mode === 'lyricist' && original.mode === 'lyricist') {
+		const baseFresh = fresh as LyricistModePack;
+		const baseOriginal = original as LyricistModePack;
+		const mergedWords = mergeUniqueStrings([...baseOriginal.powerWords.slice(0, 3), ...baseFresh.powerWords], 6);
+		const mergedFlow = mergeUniqueStrings([...baseFresh.flowPrompts.slice(0, 3), ...baseOriginal.flowPrompts.slice(0, 2)], 5);
+		const mergedFragments = mergeUniqueStrings([...baseFresh.lyricFragments.slice(0, 3), ...baseOriginal.lyricFragments.slice(0, 2)], 6);
+		return {
+			...baseFresh,
+			powerWords: mergedWords,
+			flowPrompts: mergedFlow,
+			lyricFragments: mergedFragments,
+			storyArc: {
+				start: baseOriginal.storyArc.start,
+				middle: baseFresh.storyArc.middle,
+				end: baseFresh.storyArc.end
+			},
+			memeSound: Math.random() > 0.5 ? baseOriginal.memeSound : baseFresh.memeSound,
+			topicChallenge: Math.random() > 0.5 ? baseOriginal.topicChallenge : baseFresh.topicChallenge,
+			summary: `${baseOriginal.summary.split('.').at(0) ?? baseOriginal.summary}. ${baseFresh.summary}`.trim()
+		};
+	}
+
+	if (fresh.mode === 'producer' && original.mode === 'producer') {
+		const baseFresh = fresh as ProducerModePack;
+		const baseOriginal = original as ProducerModePack;
+		const mergedConstraints = mergeUniqueStrings([...baseFresh.constraints, ...baseOriginal.constraints.slice(0, 2)], 6);
+		const mergedFx = mergeUniqueStrings([...baseFresh.fxIdeas, ...baseOriginal.fxIdeas.slice(0, 2)], 6);
+		const mergedPalette = mergeUniqueStrings([...baseFresh.instrumentPalette, ...baseOriginal.instrumentPalette.slice(0, 3)], 6);
+		return {
+			...baseFresh,
+			sample: Math.random() > 0.5 ? baseOriginal.sample : baseFresh.sample,
+			secondarySample: Math.random() > 0.5 ? baseOriginal.secondarySample : baseFresh.secondarySample,
+			constraints: mergedConstraints,
+			fxIdeas: mergedFx,
+			instrumentPalette: mergedPalette,
+			challenge: `${baseOriginal.challenge.split('.')[0] ?? baseOriginal.challenge}. Remix: ${baseFresh.challenge}`.trim()
+		};
+	}
+
+	const baseFresh = fresh as EditorModePack;
+	const baseOriginal = original as EditorModePack;
+	const mergedMoodboard = mergeUniqueBy([...baseFresh.moodboard, ...baseOriginal.moodboard], (clip) => clip.title, 6);
+	const mergedAudio = mergeUniqueBy([...baseFresh.audioPrompts, ...baseOriginal.audioPrompts], (prompt) => prompt.name, 6);
+	const mergedTimeline = mergeUniqueStrings([...baseFresh.timelineBeats, ...baseOriginal.timelineBeats], 7);
+	const mergedConstraints = mergeUniqueStrings([...baseFresh.visualConstraints, ...baseOriginal.visualConstraints], 6);
+	return {
+		...baseFresh,
+		moodboard: mergedMoodboard,
+		audioPrompts: mergedAudio,
+		timelineBeats: mergedTimeline,
+		visualConstraints: mergedConstraints,
+		challenge: `${baseOriginal.challenge} | Remix: ${baseFresh.challenge}`.slice(0, 240)
+	};
+}
+
 function isModePack(pack: InspireAnyPack | null): pack is ModePack {
 	return Boolean(pack && (pack as ModePack).mode);
 }
@@ -739,6 +794,7 @@ function App() {
 	const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
 	const [focusDensity, setFocusDensity] = useState<number>(8);
 	const [focusSpeed, setFocusSpeed] = useState<number>(1);
+	const [focusControlsOpen, setFocusControlsOpen] = useState(false);
 	const [collaborationMode, setCollaborationMode] = useState<'solo' | 'live' | 'collaborative'>('solo');
 	const [activeSessions] = useState<LiveSession[]>(LIVE_SESSION_PRESETS);
 	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -1145,7 +1201,6 @@ function App() {
 	const handleBackToPackList = useCallback(() => {
 		setExpandedCard(null);
 		setFocusMode(false);
-		setFocusModeType('single');
 	}, []);
 
 	const handleCollaborationModeToggle = useCallback(
@@ -1371,6 +1426,30 @@ function App() {
 			setLoading(null);
 		}
 	}, [mode, submode, filters, requestModePack, setPack, registerPackGenerated]);
+
+	const handleRemixPack = useCallback(async () => {
+		if (!mode || !submode) {
+			await handleGeneratePack();
+			return;
+		}
+		if (!isModePack(fuelPack)) {
+			await handleGeneratePack();
+			return;
+		}
+		setLoading('remix');
+		setError(null);
+		try {
+			const fresh = await requestModePack();
+			const remixed = createRemixPack(fuelPack as ModePack, fresh);
+			setPack(remixed, 'Remix spark ready 🔁');
+			registerPackGenerated(remixed, filters);
+		} catch (err) {
+			console.error(err);
+			setError(err instanceof Error ? err.message : 'Remix attempt failed');
+		} finally {
+			setLoading(null);
+		}
+	}, [mode, submode, fuelPack, requestModePack, setPack, registerPackGenerated, filters, handleGeneratePack]);
 
 	const handleAddWordToPack = useCallback((word: string) => {
 		const trimmed = word.trim();
@@ -2548,24 +2627,118 @@ function App() {
 				)}
 
 				{mode ? (
-					<TopNavBar
-						mode={mode}
-						activeModeDefinition={activeModeDefinition}
-						activeSubmodeDefinition={activeSubmodeDefinition}
-						controlsToggleLabel={controlsToggleLabel}
-						controlsCollapsed={controlsCollapsed}
-						loadingGenerate={loading === 'generate'}
-						fuelPack={fuelPack}
-						onBackToModes={handleBackToModes}
-						onGeneratePack={handleGeneratePack}
-						onSharePack={() => handleSharePack(fuelPack)}
-						onSavePack={handleSaveCurrentPack}
-						onOpenSaved={openSavedOverlay}
-						onOpenWordExplorer={() => setShowWordExplorer(true)}
-						onToggleWorkspaceControls={toggleWorkspaceControls}
-						onOpenSettings={() => setShowSettingsOverlay(true)}
-					/>
-				) : (
+					<header className="top-nav glass">
+					<div className="nav-left">
+						<button className="back-button" type="button" onClick={handleBackToModes}>
+							← Studios
+						</button>
+						<div className="nav-title-block">
+							<h2>{activeModeDefinition ? `${activeModeDefinition.icon} ${activeModeDefinition.label}` : 'Creative Studio'}</h2>
+							{(activeSubmodeDefinition || activeModeDefinition) && (
+								<p>{activeSubmodeDefinition?.description ?? activeModeDefinition?.description}</p>
+							)}
+						</div>
+					</div>
+					<div className="nav-actions">
+						<div className="actions-group" role="group" aria-label="Workspace actions">
+							<button
+								type="button"
+								className="icon-button"
+								title="Generate fuel pack"
+								aria-label="Generate fuel pack"
+								onClick={handleGeneratePack}
+								disabled={loading === 'generate'}
+							>
+								⚡
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Remix current pack"
+								aria-label="Remix current pack"
+								onClick={handleRemixPack}
+								disabled={loading === 'remix' || !fuelPack}
+							>
+								♻️
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Share pack link"
+								aria-label="Share pack link"
+								onClick={() => handleSharePack(fuelPack)}
+								disabled={!fuelPack}
+							>
+								🔗
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Save to archive"
+								aria-label="Save to archive"
+								onClick={handleSaveCurrentPack}
+								disabled={!fuelPack}
+							>
+								💾
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Open saved packs"
+								aria-label="Open saved packs"
+								onClick={openSavedOverlay}
+							>
+								📁
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Word Explorer"
+								aria-label="Open Word Explorer"
+								onClick={() => setShowWordExplorer(true)}
+							>
+								🔤
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title={controlsToggleLabel}
+								aria-label={controlsToggleLabel}
+								aria-pressed={!controlsCollapsed}
+								aria-controls="workspaceControls"
+								onClick={toggleWorkspaceControls}
+							>
+								🎛️
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Focus animation mode"
+								aria-label="Focus animation mode"
+								onClick={() => setFocusControlsOpen(true)}
+							>
+								🌐
+							</button>
+						</div>
+						<button
+							type="button"
+							className="nav-handle"
+							onClick={handleUserHandleClick}
+							aria-label={handleTriggerLabel}
+						>
+							{formattedHandle}
+						</button>
+						<button
+							type="button"
+							className="nav-settings"
+							aria-label="Open creator settings"
+							onClick={() => setShowSettingsOverlay(true)}
+						>
+							⚙️
+						</button>
+					</div>
+				</header>
+			) : (
 				<>
 					<header className="hero">
 						<div className="hero-copy">
@@ -2579,6 +2752,16 @@ function App() {
 							{heroMetaContent}
 						</div>
 					</header>
+
+					{!showModePicker && (
+						<div className="mode-gate-row">
+							<div className="mode-gate">
+								<button type="button" className="btn primary" onClick={() => setShowModePicker(true)}>
+									Get Started - Pick a Lab
+								</button>
+							</div>
+						</div>
+					)}
 
 					{/* Three Separate Session Peaks */}
 					<div className="session-peaks">
@@ -2672,6 +2855,7 @@ function App() {
 				<div className="feedback-area" aria-live="polite">
 					{loading === 'generate' && <div className="feedback loading">Assembling your spark…</div>}
 					{loading === 'load' && <div className="feedback loading">Pulling from the archive…</div>}
+					{loading === 'remix' && <div className="feedback loading">Remixing your pack…</div>}
 					{status && <div className="feedback success">{status}</div>}
 					{error && <div className="feedback error">⚠️ {error}</div>}
 				</div>
@@ -2679,36 +2863,26 @@ function App() {
 
 			{!mode && (
 				showModePicker ? (
-					<>
-						<section className="mode-selector">
-							{modeDefinitions.map((entry) => (
-								<button
-									key={entry.id}
-									type="button"
-									className="mode-card"
-									onClick={() => handleModeSelect(entry.id)}
-									onPointerMove={handleModeCardParallax}
-									onPointerLeave={handleModeCardLeave}
-									style={{
-										backgroundImage: `url(${entry.backgroundImage || MODE_BG_BY_ID[entry.id] || ''})`
-									}}
-								>
-									<span className="mode-card-glow" aria-hidden="true" />
-									<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
-									<p>{entry.description}</p>
-								</button>
-							))}
-						</section>
-					</>
-				) : (
-					<div className="mode-gate-row">
-						<div className="mode-gate">
-							<button type="button" className="btn primary" onClick={() => setShowModePicker(true)}>
-								Get Started - Pick a Lab
+					<section className="mode-selector">
+						{modeDefinitions.map((entry) => (
+							<button
+								key={entry.id}
+								type="button"
+								className="mode-card"
+								onClick={() => handleModeSelect(entry.id)}
+								onPointerMove={handleModeCardParallax}
+								onPointerLeave={handleModeCardLeave}
+								style={{
+									backgroundImage: `url(${entry.backgroundImage || MODE_BG_BY_ID[entry.id] || ''})`
+								}}
+							>
+								<span className="mode-card-glow" aria-hidden="true" />
+								<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
+								<p>{entry.description}</p>
 							</button>
-						</div>
-					</div>
-				)
+						))}
+					</section>
+				) : null
 			)}
 
 			{!mode && !showOnboarding && null}
@@ -2785,77 +2959,268 @@ function App() {
 			{mode && submode && (
 				<main className={workspaceClassName}>
 					{!controlsCollapsed && !focusMode && !showingDetail && (
-						<WorkspaceControlsOverlay
-							mode={mode}
-							filters={filters}
-							setFilters={setFilters}
-							genre={genre}
-							genres={LYRICIST_GENRES}
-							setGenre={setGenre}
-							lookupId={lookupId}
-							setLookupId={setLookupId}
-							loadingLoad={loading === 'load'}
-							onLoadById={handleLoadById}
-							onClose={toggleWorkspaceControls}
-						/>
+						<div className="workspace-controls-overlay" role="dialog" aria-modal="true" aria-label="Workspace controls" onClick={toggleWorkspaceControls}>
+							<div className="workspace-controls" id="workspaceControls" onClick={(event) => event.stopPropagation()}>
+								<div className="controls-overlay-header">
+									<h3>Workspace Controls</h3>
+									<button type="button" className="btn ghost micro" onClick={toggleWorkspaceControls}>Close</button>
+								</div>
+								<div className="controls-columns">
+									{/* Left Column: Relevance Blend */}
+									<div className="controls-column left">
+										<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
+											<RelevanceSlider value={filters} onChange={setFilters} />
+										</CollapsibleSection>
+									</div>
+
+									{/* Right Column: Genre Priority & Archive */}
+									<div className="controls-column right">
+										{mode === 'lyricist' && (
+											<CollapsibleSection title="Genre Priority" icon="🎶" description="Tune the dataset toward a sonic lane." defaultOpen>
+												<div className="option-group">
+													{LYRICIST_GENRES.map((option) => (
+														<button
+															key={option.value}
+															type="button"
+															className={option.value === genre ? 'chip active' : 'chip'}
+															onClick={() => setGenre(option.value)}
+														>
+															{option.label}
+														</button>
+													))}
+												</div>
+											</CollapsibleSection>
+										)}
+
+										<CollapsibleSection title="Archive" icon="🗄️" description="Load any pack by id." defaultOpen={false}>
+											<div className="lookup-inline">
+												<input
+													placeholder="Enter pack id to load"
+													value={lookupId}
+													onChange={(event) => setLookupId(event.target.value)}
+												/>
+												<button className="btn tertiary" type="button" onClick={handleLoadById} disabled={!lookupId.trim() || loading === 'load'}>
+													{loading === 'load' ? 'Loading…' : 'Load by ID'}
+												</button>
+											</div>
+										</CollapsibleSection>
+									</div>
+								</div>
+							</div>
+						</div>
 					)}
 
 					<div className={workspaceMainClassName}>
-						<SparkSessionPanel
-							packAnimationKey={packAnimationKey}
-							packStageClassName={packStageClassName}
-							fuelPack={fuelPack}
-							isModePack={isModePack}
-							getPackId={getPackId}
-							showingDetail={showingDetail}
-							selectedCard={selectedCard}
-							headerChips={headerChips}
-							onBackToPackList={handleBackToPackList}
-							onOpenChipPicker={(chip) => setChipPicker(chip)}
-							expandedCard={expandedCard}
-							setExpandedCard={setExpandedCard}
-							orderedPackDeck={orderedPackDeck}
-							draggedCardId={draggedCardId}
-							onCardDragStart={handleCardDragStart}
-							onCardDragEnter={handleCardDragEnter}
-							onCardDragOver={handleCardDragOver}
-							onCardDragEnd={handleCardDragEnd}
-							showFocusMixer={Boolean(fuelPack && isModePack(fuelPack) && !focusMode && !showingDetail)}
-							mixerHover={mixerHover}
-							combinedFocusCount={combinedFocusCardIds.length}
-							onMixerDragOver={handleMixerDragOver}
-							onMixerDragLeave={handleMixerDragLeave}
-							onMixerDrop={handleMixerDrop}
-							onClearCombined={() => setCombinedFocusCardIds([])}
-							onOpenCombinedFocus={() => {
-								setFocusModeType('combined');
-								setFocusMode(true);
-								if (!expandedCard && orderedPackDeck.length) setExpandedCard(orderedPackDeck[0].id);
-							}}
-							renderPackDetail={renderPackDetail}
-							focusMode={focusMode}
-							emptyState={
-								mode === 'lyricist' && (submode === 'rapper' || submode === 'singer')
-									? <LyricistWorkspaceBase submode={submode} />
-									: (
-										<div className="empty-state">
-											<h3>No pack yet</h3>
-											<p>Use the generator to craft a pack tuned to your filters.</p>
+						<section key={packAnimationKey} className={packStageClassName}>
+							{fuelPack ? (
+							<>
+								{isModePack(fuelPack) && (
+									<header className={`pack-header${showingDetail ? ' detail-open' : ''}`}>
+										<div className="pack-header-main">
+											{showingDetail && (
+												<button type="button" className="btn ghost micro back-to-list" onClick={handleBackToPackList}>
+													← Back to list
+												</button>
+											)}
+											<p className="pack-id">#{getPackId(fuelPack)}</p>
+											<h3>{showingDetail && selectedCard ? selectedCard.label : fuelPack.title}</h3>
+											<p className="summary">{showingDetail && selectedCard ? `Pack: ${fuelPack.title}` : fuelPack.summary}</p>
 										</div>
-									)
-							}
-						/>
+										<div className="chips">
+											{headerChips.length
+												? headerChips.map((chip, index) => (
+													<button
+														key={`${chip.type}-${index}-${chip.label}`}
+														type="button"
+														className="chip interactive"
+														onClick={() => setChipPicker({ type: chip.type as 'powerWord' | 'instrument' | 'headline' | 'meme' | 'sample', index: chip.index })}
+													>
+														{chip.label}
+													</button>
+												))
+												: (
+													<>
+														<span className="chip">{fuelPack.filters.timeframe}</span>
+														<span className="chip">{fuelPack.filters.tone}</span>
+														<span className="chip">{fuelPack.filters.semantic}</span>
+													</>
+												)}
+										</div>
+									</header>
+								)}
+
+								{!isModePack(fuelPack) && (
+									<div className="legacy-pack">
+										<h3>Legacy Fuel Pack</h3>
+										<p className="summary">This pack was created with an earlier Inspire generator.</p>
+										<div className="legacy-columns">
+											<div>
+												<h4>Words</h4>
+												<div className="word-grid">
+													{(fuelPack as FuelPack).words.map((word) => (
+														<span key={word} className="word-chip">{word}</span>
+													))}
+												</div>
+											</div>
+											<div>
+												<h4>Memes</h4>
+												<div className="word-grid">
+													{(fuelPack as FuelPack).memes.map((meme) => (
+														<span key={meme} className="word-chip">{meme}</span>
+													))}
+												</div>
+											</div>
+										</div>
+									</div>
+								)}
+
+								{isModePack(fuelPack) && (
+									<>
+										{!showingDetail && (
+											<div className="pack-deck" role="list">
+												{orderedPackDeck.map((card, index) => (
+													<button
+														key={card.id}
+														type="button"
+														role="listitem"
+														data-card-id={card.id}
+														className={`pack-card${expandedCard === card.id ? ' active' : ''}`}
+														draggable
+														onDragStart={handleCardDragStart(card.id)}
+														onDragEnter={handleCardDragEnter(card.id)}
+														onDragOver={handleCardDragOver}
+														onDragEnd={handleCardDragEnd}
+														onClick={() => setExpandedCard(card.id)}
+														style={{ '--card-index': index } as CSSProperties}
+														aria-expanded={expandedCard === card.id}
+													>
+														<span className="card-label">
+															{card.label}
+															{draggedCardId === card.id && <span className="snap-indicator" aria-hidden="true">⇕</span>}
+														</span>
+														<span className="card-preview">{card.preview}</span>
+													</button>
+												))}
+											</div>
+										)}
+										{isModePack(fuelPack) && !focusMode && !showingDetail && (
+											<section
+												className={`focus-mixer glass${mixerHover ? ' hover' : ''}`}
+												onDragOver={handleMixerDragOver}
+												onDragLeave={handleMixerDragLeave}
+												onDrop={handleMixerDrop}
+											>
+												<div className="focus-mixer-header">
+													<div>
+														<p className="label">Combined focus</p>
+														<h4>Drop pack cards to mix</h4>
+													</div>
+													<div className="mixer-actions">
+														<button type="button" className="btn tertiary micro" onClick={() => setCombinedFocusCardIds([])}>Clear</button>
+														<button
+															type="button"
+															className="btn secondary micro"
+															onClick={() => {
+																setFocusModeType('combined');
+																setFocusMode(true);
+																if (!expandedCard && orderedPackDeck.length) setExpandedCard(orderedPackDeck[0].id);
+															}}
+														>
+															Open focus mode
+														</button>
+													</div>
+												</div>
+												<div className={`combined-drop${mixerHover ? ' hover' : ''}`} aria-label="Combined focus drop area">
+													<span className="drop-instruction">Drop pack cards here</span>
+													<span className="drop-sub">{combinedFocusCardIds.length ? `${combinedFocusCardIds.length} added` : 'Drag from the pack deck to build this mix.'}</span>
+												</div>
+											</section>
+										)}
+										{selectedCard && !focusMode && renderPackDetail(false)}
+									</>
+								)}
+							</>
+						) : (
+							<div className="empty-state">
+								<h3>No pack yet</h3>
+								<p>Use the generator to craft a pack tuned to your filters.</p>
+							</div>
+						)}
+						</section>
 
 						{isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail && (
-							<InspirationQueue
-								packTitle={fuelPack.title}
-								queueCollapsed={queueCollapsed}
-								workspaceQueue={workspaceQueue}
-								youtubeError={youtubeError}
-								youtubeVideos={youtubeVideos}
-								youtubePlaylists={youtubePlaylists}
-								onToggleCollapsed={toggleQueueCollapsed}
-							/>
+							<aside className={`workspace-queue glass${queueCollapsed ? ' collapsed' : ''}`} aria-label="Suggested inspiration queue">
+								<div className="queue-header">
+									<div className="queue-heading">
+										<h3>
+											Inspiration Queue
+											<span className="queue-count" aria-label={`${workspaceQueue.length} recommendations`}>
+												{workspaceQueue.length}
+											</span>
+										</h3>
+										<p>
+											Clips and references tuned to <strong>{fuelPack.title}</strong>.
+										</p>
+									</div>
+									<button
+										type="button"
+										className="btn ghost micro queue-toggle"
+										onClick={toggleQueueCollapsed}
+										aria-expanded={!queueCollapsed}
+										aria-controls="workspaceQueueList"
+									>
+										{queueCollapsed ? 'Expand queue' : 'Collapse queue'}
+									</button>
+								</div>
+								{!queueCollapsed && youtubeError && <p className="queue-hint" role="status">{youtubeError}</p>}
+								{!queueCollapsed && (
+									<ul id="workspaceQueueList" className="queue-list">
+									{workspaceQueue.map((item) => (
+										<li key={item.id} className="queue-item">
+											<div className="queue-meta">
+												<span className="queue-pill">{formatQueueType(item.type)}</span>
+												<div className="queue-text">
+													<strong>{item.title}</strong>
+													{item.author && <span className="queue-author">{item.author}</span>}
+													{item.matchesPack && <span className="queue-match">Matches: {item.matchesPack}</span>}
+													{item.duration && <span className="queue-duration">{item.duration}</span>}
+												</div>
+											</div>
+											<div className="queue-actions">
+												<a className="btn micro" href={item.url} target="_blank" rel="noopener noreferrer">
+													Open
+												</a>
+											</div>
+											{item.type === 'youtube' && youtubeVideos[item.id] && (
+												<div className="queue-embed">
+													<div className="queue-embed-frame">
+														{(function renderPlayer() {
+															const mainId = youtubeVideos[item.id].videoId;
+															const extras = (youtubePlaylists[item.id] || []).map(v => v.videoId).filter(v => v && v !== mainId);
+															// Use resilient component with runtime pruning on errors
+															return (
+																<YouTubePlaylistEmbed
+																	videoId={mainId}
+																	playlist={extras}
+																	title={`YouTube preview for ${youtubeVideos[item.id].title}`}
+																	height={220}
+																	noteSelector={`span.queue-embed-pruned-note[data-note-for='${item.id}']`}
+																/>
+															);
+														})()}
+													</div>
+													<div className="queue-embed-meta">
+														<strong>{youtubeVideos[item.id].title}</strong>
+														<span className="queue-embed-pruned-note" data-note-for={item.id}></span>
+														<span>via {youtubeVideos[item.id].channelTitle}</span>
+													</div>
+												</div>
+											)}
+										</li>
+									))}
+									</ul>
+								)}
+							</aside>
 						)}
 
 					</div>
@@ -2880,38 +3245,75 @@ function App() {
 								<button type="button" className="btn tertiary micro" onClick={() => setCombinedFocusCardIds([])}>Clear combined</button>
 							)}
 						</div>
-						{focusModeType === 'single' && selectedCard && (
-							<>
-								{renderPackDetail(true)}
-								<FocusModeControls
-									focusDensity={focusDensity}
-									setFocusDensity={setFocusDensity}
-									focusSpeed={focusSpeed}
-									setFocusSpeed={setFocusSpeed}
-									preview={<FocusStream anchored compact forceActive />}
-								/>
-							</>
-						)}
+						{focusModeType === 'single' && selectedCard && renderPackDetail(true)}
 						{focusModeType === 'combined' && (
-							<>
-								<CombinedFocusMode
-									mixerHover={mixerHover}
-									combinedCount={combinedFocusCardIds.length}
-									onDragOver={handleMixerDragOver}
-									onDragLeave={handleMixerDragLeave}
-									onDrop={handleMixerDrop}
-									onClear={() => setCombinedFocusCardIds([])}
-									stream={<FocusStream anchored forceActive />}
-								/>
-								<FocusModeControls
-									focusDensity={focusDensity}
-									setFocusDensity={setFocusDensity}
-									focusSpeed={focusSpeed}
-									setFocusSpeed={setFocusSpeed}
-									preview={<FocusStream anchored compact forceActive />}
-								/>
-							</>
+							<div
+								className={`combined-focus glass${mixerHover ? ' hover' : ''}`}
+								onDragOver={handleMixerDragOver}
+								onDragLeave={handleMixerDragLeave}
+								onDrop={handleMixerDrop}
+							>
+								<FocusStream anchored forceActive />
+								<div className="combined-focus-header">
+									<div>
+										<p className="label">Combined focus</p>
+										<h3>Drop pack cards to mix</h3>
+									</div>
+									<div className="mixer-actions">
+										<button type="button" className="btn ghost micro" onClick={() => setCombinedFocusCardIds([])}>Clear</button>
+									</div>
+								</div>
+								<div className={`combined-drop${mixerHover ? ' hover' : ''}`} aria-label="Combined focus drop area">
+									<span className="drop-instruction">Drop pack cards here</span>
+									<span className="drop-sub">{combinedFocusCardIds.length ? `${combinedFocusCardIds.length} added` : 'Drag from the pack deck to build this mix.'}</span>
+								</div>
+							</div>
 						)}
+					</div>
+				</div>
+			)}
+
+			{focusControlsOpen && (
+				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Focus mode controls">
+					<div className="focus-controls-panel glass">
+						<div className="overlay-header">
+							<h3>Focus word mode</h3>
+							<button type="button" className="icon-button" aria-label="Close focus controls" onClick={() => setFocusControlsOpen(false)}>✕</button>
+						</div>
+						<div className="focus-controls-grid">
+							<div>
+								<span className="label">Animation</span>
+								<p className="hint">Falling words</p>
+							</div>
+							<div className="control-field">
+								<label htmlFor="focusDensity">Visible items</label>
+								<input
+									id="focusDensity"
+									type="range"
+									min={4}
+									max={24}
+									value={focusDensity}
+									onChange={(event) => setFocusDensity(Number(event.target.value))}
+								/>
+								<span className="range-value">{focusDensity}</span>
+							</div>
+							<div className="control-field">
+								<label htmlFor="focusSpeed">Speed</label>
+								<input
+									id="focusSpeed"
+									type="range"
+									min={0.5}
+									max={3}
+									step={0.1}
+									value={focusSpeed}
+									onChange={(event) => setFocusSpeed(Number(event.target.value))}
+								/>
+								<span className="range-value">{focusSpeed.toFixed(1)}x</span>
+							</div>
+							<div className="control-preview">
+								<FocusStream anchored compact forceActive />
+							</div>
+						</div>
 					</div>
 				</div>
 			)}
