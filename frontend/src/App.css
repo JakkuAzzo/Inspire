@@ -579,16 +579,21 @@
   align-items: center;
   justify-content: center;
   gap: 1.25rem;
+  position: fixed;
+  inset: 0;
   width: 100%;
   min-height: 100vh;
   min-height: 100svh;
   margin: 0;
+  z-index: 60;
+  pointer-events: none;
 }
 
 .mode-gate {
   display: flex;
   justify-content: center;
   margin: 0;
+  pointer-events: auto;
 }
 
 .mode-gate .btn {
@@ -1533,7 +1538,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 3.1rem;
+  width: 2.5rem;
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -1593,9 +1598,7 @@
   font-size: 1rem;
 }
 .queue-author,
-.queue-source,
 .queue-match,
-.queue-query,
 .queue-duration {
   font-size: 0.8rem;
   color: rgba(148, 163, 184, 0.75);
@@ -2029,22 +2032,6 @@
   justify-content: flex-end;
   gap: 0.6rem;
   flex-wrap: wrap;
-}
-
-.focus-controls-inline {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-  align-items: flex-start;
-}
-
-.focus-controls-inline .control-field {
-  min-width: 220px;
-  flex: 1 1 240px;
-}
-
-.focus-controls-inline .control-preview {
-  flex: 2 1 320px;
 }
 
 .combined-focus {
@@ -2757,6 +2744,21 @@
 
   .hero-meta {
     order: -1;
+    justify-self: end;
+    align-self: start;
+    width: min(360px, 100%);
+    aspect-ratio: 1 / 1;
+    max-height: none;
+    overflow: auto;
+    cursor: default;
+  }
+
+  .hero-meta::after {
+    display: none;
+  }
+
+  .hero-meta:hover {
+    max-height: none;
   }
 
   .workspace-head {
@@ -3140,10 +3142,6 @@
 }
 
 @media (max-width: 1024px) {
-  .hero {
-    grid-template-columns: 1fr;
-  }
-
   .experience-grid {
     grid-template-columns: 1fr;
   }
@@ -3157,7 +3155,17 @@
   }
 }
 
+@media (max-height: 650px) {
+  .hero-meta {
+    width: min(300px, 100%);
+  }
+}
+
 @media (max-width: 640px) {
+  .hero-meta {
+    width: min(260px, 100%);
+  }
+
   .action-row {
     flex-direction: column;
   }
