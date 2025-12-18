@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, useEffect, type CSSProperties, type ReactNode } from 'react';
 import { CollapsibleSection } from '../components/CollapsibleSection';
 import { RelevanceSlider } from '../components/RelevanceSlider';
 import YouTubePlaylistEmbed from '../components/YouTubePlaylistEmbed';
@@ -22,6 +22,7 @@ interface YouTubeVideoPreview {
 	title: string;
 	channelTitle: string;
 	thumbnailUrl?: string;
+	description?: string;
 }
 
 interface WorkspaceProps {
@@ -118,6 +119,96 @@ export function Workspace({
 	onOpenWordExplorer,
 	onOpenSavedPacks
 }: WorkspaceProps) {
+	// Local interactive state for playlist operations in Workspace context
+	const [selectedMainByItem, setSelectedMainByItem] = useState<Record<string, string>>({});
+	const [customPlaylistsByItem, setCustomPlaylistsByItem] = useState<Record<string, YouTubeVideoPreview[]>>({});
+	const [trackAddInputByItem, setTrackAddInputByItem] = useState<Record<string, string>>({});
+
+	// Resize state for pack stage and queue
+	const [packStageWidth, setPackStageWidth] = useState(60); // percentage
+	const [isResizing, setIsResizing] = useState(false);
+
+	const parseVideoId = (input: string): string | null => {
+		const trimmed = (input || '').trim();
+		if (!trimmed) return null;
+		if (/^[A-Za-z0-9_-]{11}$/.test(trimmed)) return trimmed;
+		const short = trimmed.match(/youtu\.be\/([A-Za-z0-9_-]{11})/);
+		if (short) return short[1];
+		const watch = trimmed.match(/[?&]v=([A-Za-z0-9_-]{11})/);
+		if (watch) return watch[1];
+		return null;
+	};
+
+	const onSelectTrack = (itemId: string, videoId: string) => {
+		setSelectedMainByItem((prev) => ({ ...prev, [itemId]: videoId }));
+	};
+	const onRemoveTrack = (itemId: string, videoId: string) => {
+		setCustomPlaylistsByItem((prev) => {
+			const baseList = prev[itemId] ?? youtubePlaylists[itemId] ?? [];
+			const nextList = baseList.filter((v) => v.videoId !== videoId);
+			const next = { ...prev, [itemId]: nextList };
+			setSelectedMainByItem((mPrev) => {
+				if (mPrev[itemId] === videoId) {
+					const newMain = nextList[0]?.videoId;
+					const copy = { ...mPrev };
+					if (newMain) copy[itemId] = newMain; else delete copy[itemId];
+					return copy;
+				}
+				return mPrev;
+			});
+			return next;
+		});
+	};
+	const onAddTrack = (itemId: string, input: string) => {
+		const id = parseVideoId(input);
+		if (!id) return;
+		const video: YouTubeVideoPreview = {
+			videoId: id,
+			title: 'Added track',
+			channelTitle: 'Custom',
+			thumbnailUrl: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+		};
+		setCustomPlaylistsByItem((prev) => {
+			const baseList = prev[itemId] ?? youtubePlaylists[itemId] ?? [];
+			return { ...prev, [itemId]: [...baseList, video] };
+		});
+		setTrackAddInputByItem((prev) => ({ ...prev, [itemId]: '' }));
+	};
+
+	// Resize handlers
+	const handleMouseDown = () => {
+		setIsResizing(true);
+	};
+
+	const handleMouseUp = () => {
+		setIsResizing(false);
+	};
+
+	const handleMouseMove = useCallback(
+		(e: MouseEvent) => {
+			if (!isResizing) return;
+			const container = document.querySelector('.workspace-main');
+			if (!container) return;
+			const rect = container.getBoundingClientRect();
+			const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
+			// Constrain width between 40% and 80%
+			setPackStageWidth(Math.max(40, Math.min(80, newWidth)));
+		},
+		[isResizing]
+	);
+
+	// Add event listeners for resize
+	useEffect(() => {
+		if (isResizing) {
+			document.addEventListener('mousemove', handleMouseMove);
+			document.addEventListener('mouseup', handleMouseUp);
+			return () => {
+				document.removeEventListener('mousemove', handleMouseMove);
+				document.removeEventListener('mouseup', handleMouseUp);
+			};
+		}
+	}, [isResizing, handleMouseMove]);
+
 	const showingDetail = Boolean(selectedCard);
 
 	const headlineStream = useMemo(() => (
@@ -323,7 +414,10 @@ export function Workspace({
 			)}
 
 			<main className={`mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`}>
-				<div className={`workspace-main${workspaceQueue.length > 0 && !focusMode && !showingDetail ? ' with-queue' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`}>
+				<div
+					className={`workspace-main${workspaceQueue.length > 0 && !focusMode && !showingDetail ? ' with-queue' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`}
+					style={workspaceQueue.length > 0 && !focusMode && !showingDetail ? { gridTemplateColumns: `minmax(0, ${packStageWidth}%) minmax(280px, ${100 - packStageWidth}%)` } : undefined}
+				>
 					<section className="pack-stage glass">
 						{fuelPack ? (
 							<>
@@ -388,6 +482,19 @@ export function Workspace({
 					</section>
 
 					{workspaceQueue.length > 0 && !focusMode && !showingDetail && (
+						<div
+							className="workspace-resize-divider"
+							onMouseDown={handleMouseDown}
+							role="separator"
+							aria-label="Resize divider"
+							aria-orientation="vertical"
+							aria-valuemin={40}
+							aria-valuemax={80}
+							aria-valuenow={Math.round(packStageWidth)}
+						/>
+					)}
+
+					{workspaceQueue.length > 0 && !focusMode && !showingDetail && (
 						<aside className={`workspace-queue glass${queueCollapsed ? ' collapsed' : ''}`} aria-label="Suggested inspiration queue">
 							<div className="queue-header">
 								<div className="queue-heading">
@@ -411,17 +518,89 @@ export function Workspace({
 										<li key={item.id} className="queue-item">
 											<div className="queue-meta">
 												<strong>{item.title}</strong>
-												{item.author && <span>{item.author}</span>}
+												{item.description && <span className="queue-description">{item.description}</span>}
+												{item.author && <span className="queue-author">{item.author}</span>}
 											</div>
-											{item.type === 'youtube' && youtubeVideos[item.id] && (
-												<YouTubePlaylistEmbed
-													videoId={youtubeVideos[item.id].videoId}
-													playlist={(youtubePlaylists[item.id] || []).map(v => v.videoId)}
-													title={item.title}
-													width="100%"
-													height={120}
-													noteSelector=".queue-item"
-												/>
+											{item.type === 'youtube' && (
+												<div className="queue-embed">
+													{(() => {
+														const baseList = (customPlaylistsByItem[item.id] && customPlaylistsByItem[item.id].length)
+															? customPlaylistsByItem[item.id]
+															: (youtubePlaylists[item.id] || []);
+														const selectedId = selectedMainByItem[item.id];
+														const fallbackMain = youtubeVideos[item.id] || baseList[0];
+														const mainVideo = selectedId ? baseList.find(v => v.videoId === selectedId) || fallbackMain : fallbackMain;
+														const mainId = mainVideo?.videoId;
+														const extras = baseList
+															.map((v) => v.videoId)
+															.filter((id) => id && id !== mainId);
+
+														if (!mainId) {
+															return (
+																<div className="queue-embed-placeholder" role="status">
+																	<span>Loading playlist preview...</span>
+																</div>
+															);
+														}
+
+														return (
+															<>
+																<div className="queue-embed-frame">
+																	<YouTubePlaylistEmbed
+																		videoId={mainId}
+																		playlist={extras}
+																		title={item.title}
+																		width="100%"
+																		height={160}
+																		noteSelector={`span.queue-embed-pruned-note[data-note-for='${item.id}']`}
+																	/>
+																</div>
+																<div className="queue-embed-meta">
+																	<strong>{mainVideo.title}</strong>
+																	<span className="queue-embed-pruned-note" data-note-for={item.id}></span>
+																	<span>via {mainVideo.channelTitle}</span>
+																</div>
+																{baseList.length ? (
+																	<div className="queue-tracklist" aria-label="Playlist tracklist">
+																		{baseList.map((video: YouTubeVideoPreview, index: number) => (
+																			<div
+																				key={`${item.id}-${video.videoId || index}`}
+																				className={`queue-track${video.videoId === mainId ? ' active' : ''}`}
+																				onClick={() => onSelectTrack(item.id, video.videoId)}
+																				role="button"
+																				aria-pressed={video.videoId === mainId}
+																			>
+																				<div className="queue-track-thumb" aria-hidden="true">
+																					{video.thumbnailUrl ? (
+																						<img src={video.thumbnailUrl} alt="" />
+																					) : (
+																						<span className="queue-track-fallback">{index + 1}</span>
+																					)}
+																				</div>
+																				<div className="queue-track-body">
+																					<span className="queue-track-title">{video.title}</span>
+																					<span className="queue-track-desc">{video.description || video.channelTitle}</span>
+																				</div>
+																				<div className="queue-track-controls">
+																					<span className="queue-track-index">{index + 1}</span>
+																					<button type="button" className="icon-button" title="Remove" onClick={(e) => { e.stopPropagation(); onRemoveTrack(item.id, video.videoId); }}>✕</button>
+																				</div>
+																			</div>
+																		))}
+																		<div className="queue-tracklist-actions">
+																			<input
+																				placeholder="Add track URL or ID"
+																				value={trackAddInputByItem[item.id] || ''}
+																				onChange={(e) => setTrackAddInputByItem((prev) => ({ ...prev, [item.id]: e.target.value }))}
+																			/>
+																			<button type="button" className="btn micro" onClick={() => onAddTrack(item.id, trackAddInputByItem[item.id] || '')}>Add</button>
+																		</div>
+																	</div>
+																) : null}
+															</>
+														);
+																									})()}
+												</div>
 											)}
 										</li>
 									))}

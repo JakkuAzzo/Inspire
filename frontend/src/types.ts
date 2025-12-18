@@ -212,6 +212,7 @@ export interface WorkspaceQueueItem {
   type: WorkspaceQueueItemType;
   title: string;
   url: string;
+  description?: string;
   duration?: string;
   author?: string;
   thumbnail?: string;

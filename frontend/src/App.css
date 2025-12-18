@@ -385,6 +385,7 @@
 
 .settings-overlay,
 .account-overlay {
+  /* These are now handled by .focus-mode-overlay - kept for backward compatibility */
   width: min(100%, 520px);
   display: grid;
   gap: 1.5rem;
@@ -1488,6 +1489,24 @@
   grid-column: 2;
   align-self: start;
 }
+
+.workspace-resize-divider {
+  width: 8px;
+  cursor: col-resize;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.3), transparent);
+  transition: background 0.2s ease;
+  user-select: none;
+  touch-action: none;
+}
+
+.workspace-resize-divider:hover {
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.6), transparent);
+}
+
+.workspace-resize-divider:active {
+  background: linear-gradient(90deg, transparent, rgba(88, 121, 255, 0.8), transparent);
+}
+
 .workspace-queue {
   display: flex;
   flex-direction: column;
@@ -1588,6 +1607,94 @@
 .queue-embed-meta span {
   font-size: 0.75rem;
   color: rgba(148, 163, 184, 0.75);
+}
+.queue-embed-placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 140px;
+  border-radius: 14px;
+  border: 1px dashed rgba(148, 163, 184, 0.26);
+  background: rgba(15, 23, 42, 0.55);
+  color: rgba(203, 213, 225, 0.8);
+}
+.queue-description {
+  font-size: 0.85rem;
+  color: rgba(203, 213, 225, 0.8);
+}
+.queue-tracklist {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+.queue-track {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(12, 19, 38, 0.8);
+}
+.queue-track.active {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(37, 99, 235, 0.12);
+  box-shadow: 0 10px 24px rgba(5, 12, 30, 0.45);
+}
+.queue-track-thumb {
+  width: 64px;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  display: grid;
+  place-items: center;
+}
+.queue-track-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.queue-track-fallback {
+  font-size: 0.85rem;
+  color: rgba(148, 163, 184, 0.82);
+}
+.queue-track-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.queue-track-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.queue-tracklist-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.queue-tracklist-actions input {
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: rgba(15, 23, 42, 0.6);
+  color: rgba(226, 232, 240, 0.95);
+  padding: 0.5rem 0.75rem;
+}
+.queue-track-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.queue-track-desc {
+  font-size: 0.8rem;
+  color: rgba(148, 163, 184, 0.82);
+}
+.queue-track-index {
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.7);
 }
 .queue-hint {
   margin: 0.35rem 0 0;
@@ -2025,6 +2132,95 @@
   display: grid;
   gap: 1rem;
   overflow: auto;
+}
+
+/* Unified Focus Mode Overlay */
+
+.overlay-backdrop.focus-mode-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 20, 0.72);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  z-index: 40;
+  backdrop-filter: blur(12px);
+  overflow: auto;
+  animation: backdropEnter 0.35s ease;
+}
+
+.focus-mode-overlay {
+  position: relative;
+  width: min(100%, 520px);
+  display: grid;
+  gap: 1.5rem;
+  padding: clamp(1.8rem, 3vw, 2.4rem);
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(10, 16, 37, 0.62);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 45px rgba(8, 12, 28, 0.55);
+  animation: focusModeEnter 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+  margin: auto;
+}
+
+.focus-mode-overlay .overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin: 0 0 0.5rem 0;
+}
+
+.focus-mode-overlay .overlay-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.focus-mode-overlay .overlay-header .icon-button {
+  flex-shrink: 0;
+}
+
+.focus-mode-content {
+  position: relative;
+  display: grid;
+  gap: 1rem;
+}
+
+/* Extended focus mode for larger content (pack detail, combined focus) */
+.focus-mode-overlay.extended {
+  width: min(1180px, 94vw);
+  padding: clamp(2rem, 4vw, 3rem);
+  border-radius: 24px;
+  border: 2px solid rgba(96, 165, 250, 0.4);
+  background: rgba(8, 12, 24, 0.985);
+  color: rgba(255, 255, 255, 0.99);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 80px rgba(88, 121, 255, 0.5), 0 40px 120px rgba(5, 9, 20, 0.88);
+  backdrop-filter: blur(3px) saturate(1.08);
+  outline: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.focus-mode-overlay.extended h2,
+.focus-mode-overlay.extended h3,
+.focus-mode-overlay.extended h4,
+.focus-mode-overlay.extended p,
+.focus-mode-overlay.extended .detail-content,
+.focus-mode-overlay.extended .detail-body,
+.focus-mode-overlay.extended .detail-tools,
+.focus-mode-overlay.extended .detail-toolbox {
+  color: rgba(255, 255, 255, 0.99);
+}
+
+.focus-mode-overlay.extended .tag,
+.focus-mode-overlay.extended .pill,
+.focus-mode-overlay.extended .chip {
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(148, 163, 184, 0.5);
+  background: rgba(36, 47, 70, 0.78);
 }
 
 .focus-overlay-actions {

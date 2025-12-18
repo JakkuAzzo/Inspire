@@ -7,51 +7,51 @@ import lyricistRapperImage from './assets/images/rapper.jpeg';
 import lyricistSingerImage from './assets/images/singer.jpg';
 import producerCardImage from './assets/images/Producer_Lab.jpeg';
 import editorCardImage from './assets/images/Editor_Suite.jpeg';
-
-import type {
-	ChallengeActivity,
-	CommunityPost,
-	CreativeMode,
-	DailyChallenge,
-	EditorModePack,
-	FuelPack,
-	InspireAnyPack,
-	LyricistModePack,
-	ModeDefinition,
-	ModePackBase,
-	ModePack,
-	ModePackRequest,
-	MemeTemplate,
-	ProducerModePack,
-	RemixMeta,
-	RelevanceFilter,
-	RelevanceTone,
-	WorkspaceQueueItem
-} from './types';
-import { RelevanceSlider } from './components/RelevanceSlider';
 import { CollapsibleSection } from './components/CollapsibleSection';
-import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
+import { RelevanceSlider } from './components/RelevanceSlider';
 import MouseParticles from './components/MouseParticles';
 import { FallingWordStream } from './components/FallingWordStream';
+import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
+import { FocusModeOverlay } from './components/FocusModeOverlay';
+import type {
+  CreativeMode,
+  ModeDefinition,
+  RelevanceFilter,
+  RelevanceTone,
+  ModePackRequest,
+  ModePack,
+  ModePackBase,
+  InspireAnyPack,
+  LyricistModePack,
+  ProducerModePack,
+  EditorModePack,
+  FuelPack,
+  CommunityPost,
+  DailyChallenge,
+  ChallengeActivity,
+  WorkspaceQueueItem,
+	MemeTemplate,
+	RemixMeta
+} from './types';
 
+// Background helpers for mode/submode cards
+const MODE_BG_BY_ID: Record<CreativeMode, string> = {
+  lyricist: lyricistCardImage,
+  producer: producerCardImage,
+  editor: editorCardImage
+};
+
+const LYRICIST_SUBMODE_BG_BY_ID: Record<string, string> = {
+  rapper: lyricistRapperImage,
+  singer: lyricistSingerImage
+};
+
+// Default relevance filter settings
 const DEFAULT_FILTERS: RelevanceFilter = {
 	timeframe: 'fresh',
 	tone: 'funny',
 	semantic: 'tight'
 };
-
-// Fallback map for mode background images
-const MODE_BG_BY_ID: Record<string, string> = {
-	lyricist: lyricistCardImage,
-	producer: producerCardImage,
-	editor: editorCardImage,
-};
-
-const LYRICIST_SUBMODE_BG_BY_ID: Record<string, string> = {
-	rapper: lyricistRapperImage,
-	singer: lyricistSingerImage,
-};
-
 const FALLBACK_MODE_DEFINITIONS: ModeDefinition[] = [
 	{
 		id: 'lyricist',
@@ -160,6 +160,7 @@ interface YouTubeVideoPreview {
 	title: string;
 	channelTitle: string;
 	thumbnailUrl?: string;
+	description?: string;
 }
 
 interface NewsHeadline {
@@ -437,7 +438,8 @@ async function searchYoutubePlaylist(query: string, limit = 5): Promise<YouTubeV
 				videoId: result.videoId || result.id || '',
 				title: result.title || 'Untitled',
 				channelTitle: result.channelTitle || 'Unknown Creator',
-				thumbnailUrl: result.thumbnail || ''
+				thumbnailUrl: result.thumbnail || '',
+				description: result.description || result.channelTitle || ''
 			}))
 			.filter(v => v.videoId);
 	} catch (err) {
@@ -446,24 +448,29 @@ async function searchYoutubePlaylist(query: string, limit = 5): Promise<YouTubeV
 	}
 }
 
-function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
-	const baseQueue: WorkspaceQueueItem[] = [
-		{
-			id: `${pack.id}-yt`,
-			type: 'youtube',
-			title: `${pack.title} inspiration mix`,
-			url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${pack.title} ${pack.mode} inspiration`)}`,
-			matchesPack: pack.title,
-			searchQuery: `${pack.title} ${pack.mode} inspiration`
-		},
-		{
-			id: `${pack.id}-instrumental`,
-			type: 'instrumental',
-			title: `${pack.mode === 'producer' ? 'Reference groove' : 'Instrumental backdrop'}`,
-			url: `https://open.spotify.com/search/${encodeURIComponent(`${pack.title} instrumental`)}`,
-			matchesPack: pack.headline
-		}
-	];
+function buildWorkspaceQueue(pack: ModePack): Promise<WorkspaceQueueItem[]> {
+	const searchQuery = `${pack.title} ${pack.mode} inspiration`;
+
+	const baseQueue: WorkspaceQueueItem[] = [];
+
+	baseQueue.push({
+		id: `${pack.id}-yt`,
+		type: 'youtube',
+		title: `${pack.title} inspiration mix`,
+		url: `https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`,
+		author: 'Auto playlist',
+		description: pack.headline,
+		matchesPack: pack.title,
+		searchQuery
+	});
+
+	baseQueue.push({
+		id: `${pack.id}-instrumental`,
+		type: 'instrumental',
+		title: `${pack.mode === 'producer' ? 'Reference groove' : 'Instrumental backdrop'}`,
+		url: `https://open.spotify.com/search/${encodeURIComponent(`${pack.title} instrumental`)}`,
+		matchesPack: pack.headline
+	});
 	const relatedSession = LIVE_SESSION_PRESETS.find((session) => session.mode === pack.mode);
 	if (relatedSession) {
 		baseQueue.push({
@@ -495,7 +502,7 @@ function buildWorkspaceQueue(pack: ModePack): WorkspaceQueueItem[] {
 			matchesPack: pack.format
 		});
 	}
-	return baseQueue;
+	return Promise.resolve(baseQueue);
 }
 
 function formatQueueType(type: WorkspaceQueueItem['type']): string {
@@ -816,6 +823,10 @@ function App() {
 	// New: store playlists (arrays) keyed by queue item id
 	const [youtubePlaylists, setYoutubePlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
 	const youtubePlaylistsRef = useRef<Record<string, YouTubeVideoPreview[]>>({});
+	// Interactive playlist state: per-item selected main and custom overrides
+	const [youtubeMainByItem, setYoutubeMainByItem] = useState<Record<string, string>>({});
+	const [youtubeCustomPlaylists, setYoutubeCustomPlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
+	const [trackAddInputByItem, setTrackAddInputByItem] = useState<Record<string, string>>({});
 	const [youtubeError, setYoutubeError] = useState<string | null>(null);
 	const initialDailyChallenge = useMemo(() => initializeDailyChallenge(), []);
 	const [, setDailyChallengeStored] = useState<StoredDailyChallenge>(initialDailyChallenge.stored);
@@ -870,6 +881,56 @@ function App() {
 		youtubeVideosRef.current = youtubeVideos;
 		youtubePlaylistsRef.current = youtubePlaylists;
 	}, [youtubeVideos]);
+
+	// Helpers for interactive tracklist operations
+	const parseVideoId = useCallback((input: string): string | null => {
+		const trimmed = input.trim();
+		if (!trimmed) return null;
+		if (/^[A-Za-z0-9_-]{11}$/.test(trimmed)) return trimmed; // direct ID
+		const short = trimmed.match(/youtu\.be\/([A-Za-z0-9_-]{11})/);
+		if (short) return short[1];
+		const watch = trimmed.match(/[?&]v=([A-Za-z0-9_-]{11})/);
+		if (watch) return watch[1];
+		return null;
+	}, []);
+
+	const handleTrackSelect = useCallback((itemId: string, videoId: string) => {
+		setYoutubeMainByItem((prev) => ({ ...prev, [itemId]: videoId }));
+	}, []);
+
+	const handleTrackRemove = useCallback((itemId: string, videoId: string) => {
+		setYoutubeCustomPlaylists((prev) => {
+			const baseList = prev[itemId] ?? youtubePlaylistsRef.current[itemId] ?? [];
+			const nextList = baseList.filter((v) => v.videoId !== videoId);
+			const next = { ...prev, [itemId]: nextList };
+			setYoutubeMainByItem((mPrev) => {
+				if (mPrev[itemId] === videoId) {
+					const newMain = nextList[0]?.videoId;
+					const copy = { ...mPrev };
+					if (newMain) copy[itemId] = newMain; else delete copy[itemId];
+					return copy;
+				}
+				return mPrev;
+			});
+			return next;
+		});
+	}, []);
+
+	const handleTrackAdd = useCallback((itemId: string, input: string) => {
+		const id = parseVideoId(input);
+		if (!id) return;
+		const video: YouTubeVideoPreview = {
+			videoId: id,
+			title: 'Added track',
+			channelTitle: 'Custom',
+			thumbnailUrl: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+		};
+		setYoutubeCustomPlaylists((prev) => {
+			const baseList = prev[itemId] ?? youtubePlaylistsRef.current[itemId] ?? [];
+			return { ...prev, [itemId]: [...baseList, video] };
+		});
+		setTrackAddInputByItem((prev) => ({ ...prev, [itemId]: '' }));
+	}, [parseVideoId]);
 
 	useEffect(() => {
 		if (!isModePack(fuelPack)) {
@@ -992,11 +1053,26 @@ function App() {
 
 	const loadVideos = async () => {
 		try {
-			// Derive a reasonable playlist size; can adapt based on filters later
+			// For items with direct video URLs (from buildWorkspaceQueue), extract video ID
 			const results = await Promise.all(
 				missingItems.map(async (item) => {
+					// Check if this is a direct YouTube watch link
+					const watchMatch = item.url.match(/[?&]v=([A-Za-z0-9_-]{11})/);
+					if (watchMatch) {
+						// Direct video link - extract ID and create video object
+						const videoId = watchMatch[1];
+						const video: YouTubeVideoPreview = {
+							videoId,
+							title: item.title,
+							channelTitle: item.author || 'Unknown Creator',
+								thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+								description: item.description || item.matchesPack || item.searchQuery
+						};
+						return { id: item.id, video, playlist: [video] };
+					}
+					
+					// Fallback: search for videos using the query
 					const query = item.searchQuery ?? item.matchesPack ?? item.title;
-					// Use keyless YouTube search first, fallback to backend instrumental service
 					const youtubePlaylist = await searchYoutubePlaylist(query, 5);
 					const playlist = youtubePlaylist.length > 0 ? youtubePlaylist : await searchInstrumentalPreviews(query, 5, controller.signal);
 					const video = playlist[0] ?? null;
@@ -1294,7 +1370,7 @@ function App() {
 			setDeckOrder([]);
 			setDraggedCardId(null);
 			if (isModePack(pack)) {
-				setWorkspaceQueue(buildWorkspaceQueue(pack));
+				buildWorkspaceQueue(pack).then(setWorkspaceQueue);
 				playCue('generate');
 			} else {
 				setWorkspaceQueue([]);
@@ -3181,6 +3257,7 @@ function App() {
 												<span className="queue-pill">{formatQueueType(item.type)}</span>
 												<div className="queue-text">
 													<strong>{item.title}</strong>
+													{item.description && <span className="queue-description">{item.description}</span>}
 													{item.author && <span className="queue-author">{item.author}</span>}
 													{item.matchesPack && <span className="queue-match">Matches: {item.matchesPack}</span>}
 													{item.duration && <span className="queue-duration">{item.duration}</span>}
@@ -3191,29 +3268,91 @@ function App() {
 													Open
 												</a>
 											</div>
-											{item.type === 'youtube' && youtubeVideos[item.id] && (
+											{item.type === 'youtube' && (
 												<div className="queue-embed">
-													<div className="queue-embed-frame">
-														{(function renderPlayer() {
-															const mainId = youtubeVideos[item.id].videoId;
-															const extras = (youtubePlaylists[item.id] || []).map(v => v.videoId).filter(v => v && v !== mainId);
-															// Use resilient component with runtime pruning on errors
+													{(() => {
+														const baseList = (youtubeCustomPlaylists[item.id] && youtubeCustomPlaylists[item.id].length)
+															? youtubeCustomPlaylists[item.id]
+															: (youtubePlaylists[item.id] || []);
+														const selectedId = youtubeMainByItem[item.id];
+														const fallbackMain = youtubeVideos[item.id] || baseList[0];
+														const mainVideo = selectedId ? baseList.find(v => v.videoId === selectedId) || fallbackMain : fallbackMain;
+														const mainId = mainVideo?.videoId;
+														const extras = baseList
+															.map((v) => v.videoId)
+															.filter((id) => id && id !== mainId);
+
+														if (!mainId) {
 															return (
-																<YouTubePlaylistEmbed
-																	videoId={mainId}
-																	playlist={extras}
-																	title={`YouTube preview for ${youtubeVideos[item.id].title}`}
-																	height={220}
-																	noteSelector={`span.queue-embed-pruned-note[data-note-for='${item.id}']`}
-																/>
+																<div className="queue-embed-placeholder" role="status">
+																	<span>Loading playlist preview...</span>
+																</div>
 															);
-														})()}
-													</div>
-													<div className="queue-embed-meta">
-														<strong>{youtubeVideos[item.id].title}</strong>
-														<span className="queue-embed-pruned-note" data-note-for={item.id}></span>
-														<span>via {youtubeVideos[item.id].channelTitle}</span>
-													</div>
+														}
+
+														return (
+															<>
+																<div className="queue-embed-frame">
+																	<YouTubePlaylistEmbed
+																		videoId={mainId}
+																		playlist={extras}
+																		title={`YouTube preview for ${mainVideo.title}`}
+																		height={220}
+																		noteSelector={`span.queue-embed-pruned-note[data-note-for='${item.id}']`}
+																	/>
+																</div>
+																<div className="queue-embed-meta">
+																	<strong>{mainVideo.title}</strong>
+																	<span className="queue-embed-pruned-note" data-note-for={item.id}></span>
+																	<span>via {mainVideo.channelTitle}</span>
+																</div>
+																{baseList.length ? (
+																	<div className="queue-tracklist" aria-label="Playlist tracklist">
+																		{baseList.map((video: YouTubeVideoPreview, index: number) => (
+																			<div
+																				key={`${item.id}-${video.videoId || index}`}
+																				className={`queue-track${video.videoId === mainId ? ' active' : ''}`}
+																				onClick={() => handleTrackSelect(item.id, video.videoId)}
+																				role="button"
+																				aria-pressed={video.videoId === mainId}
+																			>
+																				<div className="queue-track-thumb" aria-hidden="true">
+																					{video.thumbnailUrl ? (
+																						<img src={video.thumbnailUrl} alt="" />
+																					) : (
+																						<span className="queue-track-fallback">{index + 1}</span>
+																					)}
+																				</div>
+																				<div className="queue-track-body">
+																					<span className="queue-track-title">{video.title}</span>
+																					<span className="queue-track-desc">{video.description || video.channelTitle}</span>
+																				</div>
+																				<div className="queue-track-controls">
+																					<span className="queue-track-index">{index + 1}</span>
+																					<button
+																						type="button"
+																						className="icon-button"
+																						title="Remove"
+																						onClick={(e) => { e.stopPropagation(); handleTrackRemove(item.id, video.videoId); }}
+																					>
+																						✕
+																					</button>
+																				</div>
+																			</div>
+																		))}
+																		<div className="queue-tracklist-actions">
+																			<input
+																				placeholder="Add track URL or ID"
+																				value={trackAddInputByItem[item.id] || ''}
+																				onChange={(e) => setTrackAddInputByItem((prev) => ({ ...prev, [item.id]: e.target.value }))}
+																			/>
+																			<button type="button" className="btn micro" onClick={() => handleTrackAdd(item.id, trackAddInputByItem[item.id] || '')}>Add</button>
+																		</div>
+																	</div>
+																) : null}
+															</>
+														);
+													})()}
 												</div>
 											)}
 										</li>
@@ -3228,168 +3367,159 @@ function App() {
 			)}
 
 			{focusMode && (
-				<div
-					className="focus-overlay"
-					role="dialog"
-					aria-modal="true"
-					aria-label={focusModeType === 'combined' ? 'Combined focus mode' : 'Focus mode'}
-					onClick={() => {
-						setFocusMode(false);
-						setFocusModeType('single');
-					}}
+				<FocusModeOverlay
+					isOpen={focusMode}
+					onClose={() => { setFocusMode(false); setFocusModeType('single'); }}
+					ariaLabel={focusModeType === 'combined' ? 'Combined focus mode' : 'Focus mode'}
+					showCloseButton={false}
+					extended
 				>
-					<div className="focus-overlay-inner" onClick={(event) => event.stopPropagation()}>
-						<div className="focus-overlay-actions">
-							<button type="button" className="btn ghost micro" onClick={() => { setFocusMode(false); setFocusModeType('single'); }}>Exit focus</button>
-							{focusModeType === 'combined' && (
-								<button type="button" className="btn tertiary micro" onClick={() => setCombinedFocusCardIds([])}>Clear combined</button>
-							)}
-						</div>
-						{focusModeType === 'single' && selectedCard && renderPackDetail(true)}
+					<div className="focus-overlay-actions">
+						<button type="button" className="btn ghost micro" onClick={() => { setFocusMode(false); setFocusModeType('single'); }}>Exit focus</button>
 						{focusModeType === 'combined' && (
-							<div
-								className={`combined-focus glass${mixerHover ? ' hover' : ''}`}
-								onDragOver={handleMixerDragOver}
-								onDragLeave={handleMixerDragLeave}
-								onDrop={handleMixerDrop}
-							>
-								<FocusStream anchored forceActive />
-								<div className="combined-focus-header">
-									<div>
-										<p className="label">Combined focus</p>
-										<h3>Drop pack cards to mix</h3>
-									</div>
-									<div className="mixer-actions">
-										<button type="button" className="btn ghost micro" onClick={() => setCombinedFocusCardIds([])}>Clear</button>
-									</div>
-								</div>
-								<div className={`combined-drop${mixerHover ? ' hover' : ''}`} aria-label="Combined focus drop area">
-									<span className="drop-instruction">Drop pack cards here</span>
-									<span className="drop-sub">{combinedFocusCardIds.length ? `${combinedFocusCardIds.length} added` : 'Drag from the pack deck to build this mix.'}</span>
-								</div>
-							</div>
+							<button type="button" className="btn tertiary micro" onClick={() => setCombinedFocusCardIds([])}>Clear combined</button>
 						)}
 					</div>
-				</div>
+					{focusModeType === 'single' && selectedCard && renderPackDetail(true)}
+					{focusModeType === 'combined' && (
+						<div
+							className={`combined-focus glass${mixerHover ? ' hover' : ''}`}
+							onDragOver={handleMixerDragOver}
+							onDragLeave={handleMixerDragLeave}
+							onDrop={handleMixerDrop}
+						>
+							<FocusStream anchored forceActive />
+							<div className="combined-focus-header">
+								<div>
+									<p className="label">Combined focus</p>
+									<h3>Drop pack cards to mix</h3>
+								</div>
+								<div className="mixer-actions">
+									<button type="button" className="btn ghost micro" onClick={() => setCombinedFocusCardIds([])}>Clear</button>
+								</div>
+							</div>
+							<div className={`combined-drop${mixerHover ? ' hover' : ''}`} aria-label="Combined focus drop area">
+								<span className="drop-instruction">Drop pack cards here</span>
+								<span className="drop-sub">{combinedFocusCardIds.length ? `${combinedFocusCardIds.length} added` : 'Drag from the pack deck to build this mix.'}</span>
+							</div>
+						</div>
+					)}
+				</FocusModeOverlay>
 			)}
 
 			{focusControlsOpen && (
-				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Focus mode controls">
-					<div className="focus-controls-panel glass">
-						<div className="overlay-header">
-							<h3>Focus word mode</h3>
-							<button type="button" className="icon-button" aria-label="Close focus controls" onClick={() => setFocusControlsOpen(false)}>✕</button>
+				<FocusModeOverlay
+					isOpen={focusControlsOpen}
+					onClose={() => setFocusControlsOpen(false)}
+					title="Focus word mode"
+					ariaLabel="Focus mode controls"
+				>
+					<div className="focus-controls-grid">
+						<div>
+							<span className="label">Animation</span>
+							<p className="hint">Falling words</p>
 						</div>
-						<div className="focus-controls-grid">
-							<div>
-								<span className="label">Animation</span>
-								<p className="hint">Falling words</p>
-							</div>
-							<div className="control-field">
-								<label htmlFor="focusDensity">Visible items</label>
-								<input
-									id="focusDensity"
-									type="range"
-									min={4}
-									max={24}
-									value={focusDensity}
-									onChange={(event) => setFocusDensity(Number(event.target.value))}
-								/>
-								<span className="range-value">{focusDensity}</span>
-							</div>
-							<div className="control-field">
-								<label htmlFor="focusSpeed">Speed</label>
-								<input
-									id="focusSpeed"
-									type="range"
-									min={0.5}
-									max={3}
-									step={0.1}
-									value={focusSpeed}
-									onChange={(event) => setFocusSpeed(Number(event.target.value))}
-								/>
+						<div className="control-field">
+							<label htmlFor="focusDensity">Visible items</label>
+							<input
+								id="focusDensity"
+								type="range"
+								min={4}
+								max={24}
+								value={focusDensity}
+								onChange={(event) => setFocusDensity(Number(event.target.value))}
+							/>
+							<span className="range-value">{focusDensity}</span>
+						</div>
+						<div className="control-field">
+							<label htmlFor="focusSpeed">Speed</label>
+							<input
+								id="focusSpeed"
+								type="range"
+								min={0.5}
+								max={3}
+								step={0.1}
+								value={focusSpeed}
+								onChange={(event) => setFocusSpeed(Number(event.target.value))}
+							/>
 								<span className="range-value">{focusSpeed.toFixed(1)}x</span>
 							</div>
 							<div className="control-preview">
 								<FocusStream anchored compact forceActive />
 							</div>
 						</div>
-					</div>
-				</div>
+				</FocusModeOverlay>
 			)}
 
 			{chipPicker && (
-				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Choose a chip option">
-					<div className="chip-picker glass">
-						<div className="overlay-header">
-							<h3>Swap chip</h3>
-							<button type="button" className="icon-button" aria-label="Close chip chooser" onClick={closeChipPicker}>✕</button>
-						</div>
-						<div className="chip-picker-grid">
-							{chipOptions.length === 0 && <p className="hint">No alternatives found.</p>}
-							{chipOptions.map((option) => (
-								<button key={option} type="button" className="chip" onClick={() => handleChipChoice(option)}>
-									{option}
-								</button>
-							))}
-						</div>
+				<FocusModeOverlay
+					isOpen={!!chipPicker}
+					onClose={closeChipPicker}
+					title="Swap chip"
+					ariaLabel="Choose a chip option"
+				>
+					<div className="chip-picker-grid">
+						{chipOptions.length === 0 && <p className="hint">No alternatives found.</p>}
+						{chipOptions.map((option) => (
+							<button key={option} type="button" className="chip" onClick={() => handleChipChoice(option)}>
+								{option}
+							</button>
+						))}
 					</div>
-				</div>
+				</FocusModeOverlay>
 			)}
 
 			{showChallengeOverlay && (
-				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-labelledby="challengeOverlayTitle" aria-describedby="challengeOverlayDescription">
-					<div className="challenge-overlay glass">
-						<div className="overlay-header">
-							<h2 id="challengeOverlayTitle">Daily Challenge</h2>
-							<button type="button" className="icon-button" aria-label="Close challenge details" onClick={() => setShowChallengeOverlay(false)}>
-								✕
-							</button>
-						</div>
-						<div className="challenge-overlay-body">
-							<section className="challenge-summary" id="challengeOverlayDescription">
-								<div>
-									<strong>{dailyChallenge.title}</strong>
-									<p>{dailyChallenge.description}</p>
-									{dailyChallenge.reward && <p className="challenge-reward">Reward: {dailyChallenge.reward}</p>}
-								</div>
-								<div className="challenge-countdown">
-									<span className="countdown-label">Time remaining</span>
-									<span className="countdown-value">{challengeCountdown}</span>
-								</div>
-								<div className="challenge-status-row">
-									<span>{challengeCompletedToday ? 'Completed ✅' : 'In progress'}</span>
-									<span>Resets {challengeResetLabel}</span>
-								</div>
+				<FocusModeOverlay
+					isOpen={showChallengeOverlay}
+					onClose={() => setShowChallengeOverlay(false)}
+					title="Daily Challenge"
+					ariaLabel="Daily Challenge details"
+				>
+					<div className="challenge-overlay-body">
+						<section className="challenge-summary">
+							<div>
+								<strong>{dailyChallenge.title}</strong>
+								<p>{dailyChallenge.description}</p>
+								{dailyChallenge.reward && <p className="challenge-reward">Reward: {dailyChallenge.reward}</p>}
+							</div>
+							<div className="challenge-countdown">
+								<span className="countdown-label">Time remaining</span>
+								<span className="countdown-value">{challengeCountdown}</span>
+							</div>
+							<div className="challenge-status-row">
+								<span>{challengeCompletedToday ? 'Completed ✅' : 'In progress'}</span>
+								<span>Resets {challengeResetLabel}</span>
+							</div>
+						</section>
+						<div className="challenge-columns">
+							<section className="challenge-card">
+								<h3>Constraints</h3>
+								<ul className="challenge-list">
+									{dailyChallenge.constraints.map((constraint) => (
+										<li key={constraint}>{constraint}</li>
+									))}
+								</ul>
 							</section>
-							<div className="challenge-columns">
-								<section className="challenge-card">
-									<h3>Constraints</h3>
-									<ul className="challenge-list">
-										{dailyChallenge.constraints.map((constraint) => (
-											<li key={constraint}>{constraint}</li>
-										))}
-									</ul>
-								</section>
-								<section className="challenge-card">
-									<h3>Recent activity</h3>
-									<ul className="challenge-activity">
-										{challengeActivity.length > 0 ? (
-											challengeActivity.map((entry) => (
-												<li key={entry.id}>
-													<div className="activity-handle">{entry.handle}</div>
-													<div className="activity-status">{entry.status === 'submitted' ? 'Submitted' : 'Accepted'} · {formatRelativeTime(entry.timestamp)}</div>
-													{entry.activity && <div className="activity-detail">{entry.activity}</div>}
-												</li>
-											))
-										) : (
-											<li className="activity-empty">{challengeActivityError ?? 'Challenge activity is warming up.'}</li>
-										)}
-									</ul>
-								</section>
-								<section className="challenge-card">
-									<h3>How to complete</h3>
-									<ul className="challenge-steps">
+							<section className="challenge-card">
+								<h3>Recent activity</h3>
+								<ul className="challenge-activity">
+									{challengeActivity.length > 0 ? (
+										challengeActivity.map((entry) => (
+											<li key={entry.id}>
+												<div className="activity-handle">{entry.handle}</div>
+												<div className="activity-status">{entry.status === 'submitted' ? 'Submitted' : 'Accepted'} · {formatRelativeTime(entry.timestamp)}</div>
+												{entry.activity && <div className="activity-detail">{entry.activity}</div>}
+											</li>
+										))
+									) : (
+										<li className="activity-empty">{challengeActivityError ?? 'Challenge activity is warming up.'}</li>
+									)}
+								</ul>
+							</section>
+							<section className="challenge-card">
+								<h3>How to complete</h3>
+								<ul className="challenge-steps">
 										<li>Generate a fuel pack in your current mode.</li>
 										<li>Use at least one constraint above in your submission.</li>
 										<li>Submit your best take before the timer resets.</li>
@@ -3407,62 +3537,56 @@ function App() {
 								{challengeCompletedToday ? 'Marked Complete' : 'Mark Complete'}
 							</button>
 						</footer>
-					</div>
-				</div>
+				</FocusModeOverlay>
 			)}
 
 			{showSettingsOverlay && (
-				<div className="overlay-backdrop" role="dialog" aria-modal="true">
-					<div className="settings-overlay glass">
-						<div className="overlay-header">
-							<h2>Creator dashboard</h2>
-							<button type="button" className="icon-button" aria-label="Close settings" onClick={() => setShowSettingsOverlay(false)}>
-								✕
-							</button>
-						</div>
-						<section className="settings-section" aria-label="Live studio controls">
-							<h3>Live studio</h3>
-							<div className="settings-collab-row">
-								<div className="nav-status" aria-live="polite">
-									<span>{collaborationStatusLabel}</span>
-									{(viewerMode === 'spectating' || viewerMode === 'joining') && (
-										<button type="button" className="btn micro ghost" onClick={handleLeaveViewerMode}>
-											Leave
-										</button>
-									)}
-								</div>
-								<div className="nav-toggle-group" role="group" aria-label="Collaboration mode">
-									<button
-										type="button"
-										className={`nav-pill${collaborationMode === 'live' ? ' active' : ''}`}
-										onClick={() => handleCollaborationModeToggle('live')}
-									>
-										Go Live
+				<FocusModeOverlay
+					isOpen={showSettingsOverlay}
+					onClose={() => setShowSettingsOverlay(false)}
+					title="Creator dashboard"
+					ariaLabel="Creator dashboard settings"
+				>
+					<section className="settings-section" aria-label="Live studio controls">
+						<h3>Live studio</h3>
+						<div className="settings-collab-row">
+							<div className="nav-status" aria-live="polite">
+								<span>{collaborationStatusLabel}</span>
+								{(viewerMode === 'spectating' || viewerMode === 'joining') && (
+									<button type="button" className="btn micro ghost" onClick={handleLeaveViewerMode}>
+										Leave
 									</button>
-									<button
-										type="button"
-										className={`nav-pill${collaborationMode === 'collaborative' ? ' active' : ''}`}
-										onClick={() => handleCollaborationModeToggle('collaborative')}
-									>
-										Collaborate
-									</button>
-								</div>
+								)}
 							</div>
-						</section>
-						{heroMetaContent}
-					</div>
-				</div>
+							<div className="nav-toggle-group" role="group" aria-label="Collaboration mode">
+								<button
+									type="button"
+									className={`nav-pill${collaborationMode === 'live' ? ' active' : ''}`}
+									onClick={() => handleCollaborationModeToggle('live')}
+								>
+									Go Live
+								</button>
+								<button
+									type="button"
+									className={`nav-pill${collaborationMode === 'collaborative' ? ' active' : ''}`}
+									onClick={() => handleCollaborationModeToggle('collaborative')}
+								>
+									Collaborate
+								</button>
+							</div>
+						</div>
+					</section>
+				</FocusModeOverlay>
 			)}
 
 			{showAccountModal && (
-				<div className="overlay-backdrop" role="dialog" aria-modal="true">
-					<div className="account-overlay glass">
-						<div className="overlay-header">
-							<h2>Sign in to Inspire</h2>
-							<button type="button" className="icon-button" aria-label="Close sign-in" onClick={() => setShowAccountModal(false)}>
-								✕
-							</button>
-						</div>
+				<FocusModeOverlay
+					isOpen={showAccountModal}
+					onClose={() => setShowAccountModal(false)}
+					title="Sign in to Inspire"
+					ariaLabel="Creator handle sign in"
+				>
+					<div>
 						<p className="overlay-copy">Claim your creator handle to sync packs across sessions.</p>
 						<label className="handle-field" htmlFor="overlayUserId">
 							<span className="label">Creator handle</span>
@@ -3479,17 +3603,17 @@ function App() {
 							Save handle
 						</button>
 					</div>
-				</div>
+				</FocusModeOverlay>
 			)}
 
 			{showSavedOverlay && (
-				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-labelledby="savedOverlayTitle">
-					<div className="settings-overlay glass">
-						<div className="overlay-header">
-							<h2 id="savedOverlayTitle">Saved Packs</h2>
-							<button type="button" className="icon-button" aria-label="Close saved" onClick={() => setShowSavedOverlay(false)}>✕</button>
-						</div>
-						<div className="settings-section">
+				<FocusModeOverlay
+					isOpen={showSavedOverlay}
+					onClose={() => setShowSavedOverlay(false)}
+					title="Saved Packs"
+					ariaLabel="Saved packs"
+				>
+					<div className="settings-section">
 							{savedLoading && <p>Loading…</p>}
 							{!savedLoading && savedError && <p className="error">{savedError}</p>}
 							{!savedLoading && !savedError && (
@@ -3525,67 +3649,65 @@ function App() {
 								</ul>
 							)}
 						</div>
-					</div>
-				</div>
+				</FocusModeOverlay>
 			)}
 
 			{showWordExplorer && (
-				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-labelledby="wordsOverlayTitle">
-					<div className="settings-overlay glass">
-						<div className="overlay-header">
-							<h2 id="wordsOverlayTitle">Word Explorer</h2>
-							<button type="button" className="icon-button" aria-label="Close word explorer" onClick={() => setShowWordExplorer(false)}>✕</button>
+				<FocusModeOverlay
+					isOpen={showWordExplorer}
+					onClose={() => setShowWordExplorer(false)}
+					title="Word Explorer"
+					ariaLabel="Word Explorer overlay"
+				>
+					<div className="settings-section">
+						<div className="detail-toolbox" style={{ marginBottom: 12 }}>
+							<button
+								type="button"
+								className={`btn secondary focus-toggle${wordFocusMode ? ' active' : ''}`}
+								onClick={() => setWordFocusMode((prev) => !prev)}
+								disabled={wordLoading || wordResults.length === 0}
+							>
+								{wordFocusMode ? 'Exit Focus Mode' : 'Focus Mode'}
+							</button>
 						</div>
-						<div className="settings-section">
-							<div className="detail-toolbox" style={{ marginBottom: 12 }}>
-								<button
-									type="button"
-									className={`btn secondary focus-toggle${wordFocusMode ? ' active' : ''}`}
-									onClick={() => setWordFocusMode((prev) => !prev)}
-									disabled={wordLoading || wordResults.length === 0}
-								>
-									{wordFocusMode ? 'Exit Focus Mode' : 'Focus Mode'}
-								</button>
-							</div>
-							<div className="word-form">
-								<input placeholder="Starts with" value={wordStartsWith} onChange={(e) => setWordStartsWith(e.target.value)} />
-								<input placeholder="Rhyme with" value={wordRhymeWith} onChange={(e) => setWordRhymeWith(e.target.value)} />
-								<input placeholder="Syllables" value={wordSyllables} onChange={(e) => setWordSyllables(e.target.value)} />
-								<input placeholder="Max results" value={wordMaxResults} onChange={(e) => setWordMaxResults(e.target.value)} />
-								<input placeholder="Topic (eg: music)" value={wordTopic} onChange={(e) => setWordTopic(e.target.value)} />
-								<button className="btn micro" type="button" onClick={runWordSearch} disabled={wordLoading}>Search</button>
-							</div>
-							{wordLoading && <p>Searching…</p>}
-							{!wordLoading && wordError && <p className="error">{wordError}</p>}
-							{!wordLoading && !wordError && !wordFocusMode && (
-								<div className="word-grid">
-									{wordResults.map((w) => (
-										<button
-											key={w.word}
-											type="button"
-											className="word-chip interactive"
-											title={`${w.numSyllables ?? ''} syllables`}
-											onClick={() => handleAddWordToPack(w.word)}
-										>
-											{w.word}
-										</button>
-									))}
-								</div>
-							)}
-							{!wordLoading && !wordError && wordFocusMode && wordResults.length > 0 && (
-								<div style={{ position: 'relative', height: 360 }}>
-									<FallingWordStream
-										items={wordResults.map((w) => w.word)}
-										active
-										maxVisible={Math.max(18, focusDensity)}
-										spawnIntervalMs={Math.max(120, focusSpawnIntervalMs)}
-										fallDurationMs={Math.max(2500, focusFallDurationMs)}
-									/>
-								</div>
-							)}
+						<div className="word-form">
+							<input placeholder="Starts with" value={wordStartsWith} onChange={(e) => setWordStartsWith(e.target.value)} />
+							<input placeholder="Rhyme with" value={wordRhymeWith} onChange={(e) => setWordRhymeWith(e.target.value)} />
+							<input placeholder="Syllables" value={wordSyllables} onChange={(e) => setWordSyllables(e.target.value)} />
+							<input placeholder="Max results" value={wordMaxResults} onChange={(e) => setWordMaxResults(e.target.value)} />
+							<input placeholder="Topic (eg: music)" value={wordTopic} onChange={(e) => setWordTopic(e.target.value)} />
+							<button className="btn micro" type="button" onClick={runWordSearch} disabled={wordLoading}>Search</button>
 						</div>
+						{wordLoading && <p>Searching…</p>}
+						{!wordLoading && wordError && <p className="error">{wordError}</p>}
+						{!wordLoading && !wordError && !wordFocusMode && (
+							<div className="word-grid">
+								{wordResults.map((w) => (
+									<button
+										key={w.word}
+										type="button"
+										className="word-chip interactive"
+										title={`${w.numSyllables ?? ''} syllables`}
+										onClick={() => handleAddWordToPack(w.word)}
+									>
+										{w.word}
+									</button>
+								))}
+							</div>
+						)}
+						{!wordLoading && !wordError && wordFocusMode && wordResults.length > 0 && (
+							<div style={{ position: 'relative', height: 360 }}>
+								<FallingWordStream
+									items={wordResults.map((w) => w.word)}
+									active
+									maxVisible={Math.max(18, focusDensity)}
+									spawnIntervalMs={Math.max(120, focusSpawnIntervalMs)}
+									fallDurationMs={Math.max(2500, focusFallDurationMs)}
+								/>
+							</div>
+						)}
 					</div>
-				</div>
+				</FocusModeOverlay>
 			)}
 
 
