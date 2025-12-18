@@ -415,8 +415,8 @@ export function Workspace({
 
 			<main className={`mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`}>
 				<div
-					className={`workspace-main${workspaceQueue.length > 0 && !focusMode && !showingDetail ? ' with-queue' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`}
-					style={workspaceQueue.length > 0 && !focusMode && !showingDetail ? { gridTemplateColumns: `minmax(0, ${packStageWidth}%) minmax(280px, ${100 - packStageWidth}%)` } : undefined}
+					className={`workspace-main${workspaceQueue.length > 0 && !focusMode && !showingDetail ? ' with-queue has-divider' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`}
+					style={workspaceQueue.length > 0 && !focusMode && !showingDetail ? { gridTemplateColumns: `minmax(0, ${packStageWidth}%) 8px minmax(280px, ${Math.max(20, 100 - packStageWidth)}%)` } : undefined}
 				>
 					<section className="pack-stage glass">
 						{fuelPack ? (
