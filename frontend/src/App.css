@@ -1490,6 +1490,18 @@
   align-self: start;
 }
 
+/* When a resize divider is present, use a 3-column grid and place the queue in col 3 */
+.workspace-main.with-queue.has-divider {
+  grid-template-columns: minmax(0, 1fr) 8px minmax(280px, 1fr);
+}
+.workspace-main.with-queue.has-divider > .workspace-queue {
+  grid-column: 3;
+}
+.workspace-main.with-queue.has-divider > .workspace-resize-divider {
+  grid-column: 2;
+  align-self: stretch;
+}
+
 .workspace-resize-divider {
   width: 8px;
   cursor: col-resize;
@@ -1497,6 +1509,7 @@
   transition: background 0.2s ease;
   user-select: none;
   touch-action: none;
+  border-radius: 8px;
 }
 
 .workspace-resize-divider:hover {
@@ -1727,7 +1740,8 @@
   padding: clamp(1.75rem, 3vw, 2.5rem);
   animation: fade-slide 0.6s ease;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
-  overflow: visible;
+  overflow: auto;
+  max-height: calc(100vh - (var(--app-padding) * 2) - var(--nav-height) - 1rem);
   margin-bottom: 0.5rem;
 }
 .pack-stage.focus-mode {
@@ -2640,7 +2654,7 @@
 .workspace-main .pack-stage {
   flex: 1 1 60%;
   min-height: 0;
-  overflow: visible;
+  overflow: auto;
 }
 
 .workspace-main .saved-shelf {
