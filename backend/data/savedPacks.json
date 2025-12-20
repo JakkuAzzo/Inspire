@@ -44,6 +44,9 @@
     ],
     "testuser-1766249938174": [
       "fuel-1766249938173-3cjrg8orn"
+    ],
+    "testuser-1766250244092": [
+      "fuel-1766250244090-xwmh11cen"
     ]
   },
   "snapshots": {
@@ -340,6 +343,43 @@
         "author": "Maya Angelou"
       },
       "vibe": "For vocalists who freestyle in the shower."
+    },
+    "fuel-1766250244090-xwmh11cen": {
+      "id": "fuel-1766250244090-xwmh11cen",
+      "timestamp": 1766250244090,
+      "words": [
+        "thunder",
+        "reality",
+        "electric",
+        "phoenix"
+      ],
+      "memes": [
+        "Awkward look monkey puppet"
+      ],
+      "emotionalArc": {
+        "start": "nostalgic",
+        "middle": "confident",
+        "end": "excited"
+      },
+      "sampleChallenge": {
+        "type": "Style Fusion",
+        "description": "Mix drill with R&B",
+        "constraint": "Must have elements of both styles"
+      },
+      "mood": "electric",
+      "prompt": "Rap about a memory that only exists online.",
+      "colorPalette": [
+        "#FB7185",
+        "#F472B6",
+        "#9D174D"
+      ],
+      "tempo": "140 BPM · drill momentum",
+      "wildcard": "Steal a rhyme scheme from a nursery rhyme.",
+      "inspiration": {
+        "quote": "Art is chaos taking shape.",
+        "author": "Pablo Picasso"
+      },
+      "vibe": "For poets chasing blurry city lights."
     }
   }
 }
