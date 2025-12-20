@@ -185,6 +185,35 @@ You can run completely without API keys and still get a great experience.
 - Set `USE_MOCK_FALLBACK=true` (recommended for CI)
 - You get: Datamuse word explorer, Piped instrumentals, static news, Picsum images/templates, built‑in meme captioning, and curated audio/text fallbacks.
 
+## Functionality
+
+This section lists exactly what was inspected and tested in this repository (verified as of Dec 20, 2025).
+
+- **What works (verified by code inspection and runtime checks where possible):**
+   - Backend API routes implemented in `backend/src/index.ts`: `/api/health`, `/api/modes`, `/api/modes/:mode/fuel-pack` (mode pack generator with graceful fallbacks), `/api/mock/words`, `/api/mock/memes`, `/api/mock/samples`, `/api/mock/news`, `/api/fuel-pack` (legacy), `/api/packs/:id`, `/api/packs/:id/save`, `/api/packs/saved`, `/api/instrumentals/search`, `/api/news/search`, `/api/youtube/search`, `/api/words/search`, `/api/memes/templates`, `/api/images/random`, plus asset/auth/billing stubs.
+   - Mode pack assembly is implemented in `backend/src/modePackGenerator.ts` and returns mode-specific packs for `lyricist`, `producer`, and `editor` with fallbacks to mock data in `backend/src/mocks/` when external services are unavailable.
+   - Frontend (`frontend/src/App.tsx`) requests `GET /api/modes` and `POST /api/modes/:mode/fuel-pack` and includes UI components for sliders, collapsibles, and pack rendering in `frontend/src/components/`.
+   - Keyless operation is supported: when API keys are not provided the code paths fall back to mock data (Picsum, mock samples, mock news, etc.).
+
+- **What I ran and the results (verification steps):**
+   - `cd backend && npm test` — attempted to run backend Jest tests. Result: Jest failed to parse an ESM-only dependency (`youtube-search-without-api-key`) with "SyntaxError: Cannot use import statement outside a module". Tests need either a transform or a mock for that module.
+   - `cd backend && npm run dev` — started the backend with `nodemon --exec ts-node src/index.ts`. The process printed startup logs including the data directory and a line indicating the API was running on `http://localhost:3001`. In this environment an immediate `curl` to `/api/health` was attempted but returned intermittent connection failures; the server start log was observed but a stable runtime reachability check did not succeed consistently here.
+
+- **What doesn't work / immediate blockers:**
+   - Backend unit tests do not run as-is: Jest fails on an ESM dependency (`youtube-search-without-api-key`). Fixing tests requires updating Jest/ts-jest configuration, mocking that dependency, or replacing the module with a CommonJS-compatible adapter.
+   - End-to-end automation (Playwright) was not executed in this session — E2E requires building the frontend (`npm run build` inside `frontend`) and a stable backend instance.
+
+- **Recommended next steps (must / should):**
+- **Recommended next steps (must / should):**
+   - Implemented: Jest ESM issue mitigated by adding a CommonJS Jest mock for `youtube-search-without-api-key` and mapping it in `backend/jest.config.cjs` (`moduleNameMapper`). Mock implemented at `backend/src/services/__mocks__/youtube-search-without-api-key.js`.
+   - Implemented: Lightweight integration test added at `backend/__tests__/modepack.integration.test.ts` that POSTs to `/api/modes/lyricist/fuel-pack` and asserts expected pack fields.
+   - Implemented: CI Playwright smoke workflow added at `.github/workflows/playwright-smoke.yml` and a simple Playwright spec at `e2e/playwright-smoke.spec.ts` to build the frontend and exercise the backend dev console.
+   - Remaining: Consider standardizing CI to run tests against built `dist/` artifacts (optional), and remove or reduce debug logging added during investigation if desired.
+
+- **Nice-to-have / could be implemented later:**
+   - Convert the YouTube helper to a thin adapter (or dynamic import) so tests can stub it without transpiling node_modules.
+   - Add a CI job that builds backend + frontend, starts the backend on the built `dist/` artifact, runs Jest against compiled code, and then runs Playwright smoke tests.
+
 ## License
 
 MIT
