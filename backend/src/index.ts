@@ -383,6 +383,17 @@ function buildApiRouter() {
   });
 
   // Packs persistence
+  router.get('/packs/saved', (req: Request, res: Response) => {
+    const userId = (req.query.userId as string) || '';
+    if (!userId) return res.status(400).json({ error: 'userId query param required' });
+    const state = readSavedState();
+    const ids = state.users[userId] || [];
+    console.log('[packs/saved] state users keys:', Object.keys(state.users));
+    console.log('[packs/saved] requesting userId=', userId, 'found ids=', ids);
+    const packsList = ids.map((id) => state.snapshots[id]).filter((entry): entry is FuelPack | ModePack => Boolean(entry));
+    res.json({ userId, saved: ids, packs: packsList });
+  });
+
   router.get('/packs/:id', (req: Request, res: Response) => {
     const id = req.params.id;
     let pack = packs.get(id);
@@ -394,6 +405,7 @@ function buildApiRouter() {
     if (!pack) return res.status(404).json({ error: 'Pack not found' });
     res.json(pack);
   });
+
   router.post('/packs/:id/save', (req: Request, res: Response) => {
     const packId = req.params.id;
     const { userId } = req.body || {};
@@ -414,14 +426,6 @@ function buildApiRouter() {
     writeSavedState(state);
 
     res.json({ saved: true, userId, packId, snapshot: pack });
-  });
-  router.get('/packs/saved', (req: Request, res: Response) => {
-    const userId = (req.query.userId as string) || '';
-    if (!userId) return res.status(400).json({ error: 'userId query param required' });
-    const state = readSavedState();
-    const ids = state.users[userId] || [];
-    const packsList = ids.map((id) => state.snapshots[id]).filter((entry): entry is FuelPack | ModePack => Boolean(entry));
-    res.json({ userId, saved: ids, packs: packsList });
   });
 
   // Assets stubs

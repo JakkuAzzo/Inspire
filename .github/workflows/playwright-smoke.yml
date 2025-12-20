@@ -1,0 +1,42 @@
+name: Playwright Smoke
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install root deps
+        run: npm install
+
+      - name: Install backend deps
+        run: cd backend && npm ci
+
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+      - name: Start backend (dev) in background
+        run: |
+          cd backend
+          ENABLE_DEV_CONSOLE=true npm run dev &
+          npx wait-on http://localhost:3001/dev -t 15000
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright smoke test
+        run: npx playwright test e2e/playwright-smoke.spec.ts --reporter=list

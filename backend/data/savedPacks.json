@@ -26,6 +26,24 @@
     ],
     "creator-rkh1dl": [
       "lyricist-1765692696961-exmdj47"
+    ],
+    "testuser-1766249061803": [
+      "fuel-1766249061802-r2ppu434a"
+    ],
+    "testuser-1766249109941": [
+      "fuel-1766249109941-xo7evgrh0"
+    ],
+    "testuser-1766249149122": [
+      "fuel-1766249149121-l3zjyddj0"
+    ],
+    "testuser-1766249283242": [
+      "fuel-1766249283242-dlb25jdy2"
+    ],
+    "testuser-1766249476035": [
+      "fuel-1766249476034-r7qdpb81u"
+    ],
+    "testuser-1766249938174": [
+      "fuel-1766249938173-3cjrg8orn"
     ]
   },
   "snapshots": {
@@ -100,6 +118,228 @@
           "numSyllables": 2
         }
       ]
+    },
+    "fuel-1766249061802-r2ppu434a": {
+      "id": "fuel-1766249061802-r2ppu434a",
+      "timestamp": 1766249061802,
+      "words": [
+        "tame",
+        "midnight",
+        "pain",
+        "ocean"
+      ],
+      "memes": [
+        "This is fine (burning room)"
+      ],
+      "emotionalArc": {
+        "start": "introspective",
+        "middle": "contemplative",
+        "end": "energetic"
+      },
+      "sampleChallenge": {
+        "type": "Limited Tools",
+        "description": "Make a beat with 3 sounds max",
+        "constraint": "Creativity over complexity"
+      },
+      "mood": "neon night drive",
+      "prompt": "Compose a beat that sounds like midnight rain on chrome.",
+      "colorPalette": [
+        "#5B21B6",
+        "#7C3AED",
+        "#60A5FA"
+      ],
+      "tempo": "84 BPM · melancholy trap",
+      "wildcard": "Loop the sound of a subway brake as percussion.",
+      "inspiration": {
+        "quote": "Everything you can imagine is real.",
+        "author": "Pablo Picasso"
+      },
+      "vibe": "For writers who keep notebooks under the pillow."
+    },
+    "fuel-1766249109941-xo7evgrh0": {
+      "id": "fuel-1766249109941-xo7evgrh0",
+      "timestamp": 1766249109941,
+      "words": [
+        "eclipse",
+        "fantasy",
+        "diamond",
+        "build"
+      ],
+      "memes": [
+        "This is fine (burning room)"
+      ],
+      "emotionalArc": {
+        "start": "confident",
+        "middle": "peaceful",
+        "end": "chaotic"
+      },
+      "sampleChallenge": {
+        "type": "Sample Flip",
+        "description": "Sample a nature sound",
+        "constraint": "Make it unrecognizable"
+      },
+      "mood": "retro future",
+      "prompt": "Tell the story of the last voicemail you never sent.",
+      "colorPalette": [
+        "#22D3EE",
+        "#6366F1",
+        "#3B82F6"
+      ],
+      "tempo": "95 BPM · soulful swing",
+      "wildcard": "Sample the oldest voice memo on your phone.",
+      "inspiration": {
+        "quote": "Everything you can imagine is real.",
+        "author": "Pablo Picasso"
+      },
+      "vibe": "For late-night producers with headphones too loud."
+    },
+    "fuel-1766249149121-l3zjyddj0": {
+      "id": "fuel-1766249149121-l3zjyddj0",
+      "timestamp": 1766249149121,
+      "words": [
+        "war",
+        "lost",
+        "doubt",
+        "heavy"
+      ],
+      "memes": [
+        "Drake approving/disapproving"
+      ],
+      "emotionalArc": {
+        "start": "rebellious",
+        "middle": "anxious",
+        "end": "melancholic"
+      },
+      "sampleChallenge": {
+        "type": "Sample Flip",
+        "description": "Sample a nature sound",
+        "constraint": "Use at least 3 variations"
+      },
+      "mood": "electric",
+      "prompt": "Describe a neon skyline using only five colors.",
+      "colorPalette": [
+        "#5B21B6",
+        "#7C3AED",
+        "#60A5FA"
+      ],
+      "tempo": "110 BPM · shimmering house",
+      "wildcard": "Steal a rhyme scheme from a nursery rhyme.",
+      "inspiration": {
+        "quote": "You can’t use up creativity. The more you use, the more you have.",
+        "author": "Maya Angelou"
+      },
+      "vibe": "For writers who keep notebooks under the pillow."
+    },
+    "fuel-1766249283242-dlb25jdy2": {
+      "id": "fuel-1766249283242-dlb25jdy2",
+      "timestamp": 1766249283242,
+      "words": [
+        "eclipse",
+        "phoenix",
+        "wild",
+        "found"
+      ],
+      "memes": [
+        "Awkward look monkey puppet"
+      ],
+      "emotionalArc": {
+        "start": "hopeful",
+        "middle": "rebellious",
+        "end": "excited"
+      },
+      "sampleChallenge": {
+        "type": "Style Fusion",
+        "description": "Combine trap with jazz",
+        "constraint": "Keep it under 3 minutes"
+      },
+      "mood": "daydreamy",
+      "prompt": "Write about the moment the crowd goes quiet before the drop.",
+      "colorPalette": [
+        "#22D3EE",
+        "#6366F1",
+        "#3B82F6"
+      ],
+      "tempo": "110 BPM · shimmering house",
+      "wildcard": "Use only reversed sounds for your intro.",
+      "inspiration": {
+        "quote": "You can’t use up creativity. The more you use, the more you have.",
+        "author": "Maya Angelou"
+      },
+      "vibe": "For vocalists who freestyle in the shower."
+    },
+    "fuel-1766249476034-r7qdpb81u": {
+      "id": "fuel-1766249476034-r7qdpb81u",
+      "timestamp": 1766249476034,
+      "words": [
+        "midnight",
+        "thunder",
+        "lost",
+        "dream"
+      ],
+      "memes": [
+        "Drake approving/disapproving"
+      ],
+      "emotionalArc": {
+        "start": "melancholic",
+        "middle": "nostalgic",
+        "end": "defeated"
+      },
+      "sampleChallenge": {
+        "type": "Sample Flip",
+        "description": "Sample a classical piece",
+        "constraint": "Make it unrecognizable"
+      },
+      "mood": "daydreamy",
+      "prompt": "Write about the moment the crowd goes quiet before the drop.",
+      "colorPalette": [
+        "#5B21B6",
+        "#7C3AED",
+        "#60A5FA"
+      ],
+      "tempo": "84 BPM · melancholy trap",
+      "wildcard": "Steal a rhyme scheme from a nursery rhyme.",
+      "inspiration": {
+        "quote": "Art is chaos taking shape.",
+        "author": "Pablo Picasso"
+      },
+      "vibe": "For writers who keep notebooks under the pillow."
+    },
+    "fuel-1766249938173-3cjrg8orn": {
+      "id": "fuel-1766249938173-3cjrg8orn",
+      "timestamp": 1766249938173,
+      "words": [
+        "eclipse",
+        "midnight",
+        "rise",
+        "tame"
+      ],
+      "memes": [
+        "Big brain time"
+      ],
+      "emotionalArc": {
+        "start": "rebellious",
+        "middle": "peaceful",
+        "end": "chaotic"
+      },
+      "sampleChallenge": {
+        "type": "Style Fusion",
+        "description": "Combine trap with jazz",
+        "constraint": "Must have elements of both styles"
+      },
+      "mood": "glitchy hype",
+      "prompt": "Compose a beat that sounds like midnight rain on chrome.",
+      "colorPalette": [
+        "#22D3EE",
+        "#6366F1",
+        "#3B82F6"
+      ],
+      "tempo": "140 BPM · drill momentum",
+      "wildcard": "Loop the sound of a subway brake as percussion.",
+      "inspiration": {
+        "quote": "You can’t use up creativity. The more you use, the more you have.",
+        "author": "Maya Angelou"
+      },
+      "vibe": "For vocalists who freestyle in the shower."
     }
   }
 }
