@@ -38,3 +38,6 @@ temp/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# Data files
+backend/data/savedPacks.json
