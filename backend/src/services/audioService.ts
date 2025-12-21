@@ -1,4 +1,5 @@
-import { ApiClient } from './apiClient';
+import { ApiClient, defaultApiKeyManager } from './apiClient';
+import { LruCache } from '../utils/cache';
 import { mockSounds, mockTracks, mockSampleCategories } from '../mocks/audioMocks';
 
 export interface AudioServiceConfig {
@@ -44,6 +45,7 @@ export class AudioService {
   private freesoundClient: ApiClient | null;
   private jamendoClient: ApiClient | null;
   private config: AudioServiceConfig;
+  private cache = new LruCache<string, Sound[]>(50);
 
   constructor(config: AudioServiceConfig) {
     this.config = config;
@@ -51,14 +53,16 @@ export class AudioService {
     this.freesoundClient = config.freesoundApiKey
       ? new ApiClient({
           baseURL: config.freesoundUrl,
+          apiKeyManager: defaultApiKeyManager,
+          apiKeyName: 'FREESOUND_API_KEY',
           headers: {
             'Authorization': `Token ${config.freesoundApiKey}`
           }
         })
       : null;
-    
+
     this.jamendoClient = config.jamendoClientId
-      ? new ApiClient({ baseURL: config.jamendoUrl })
+      ? new ApiClient({ baseURL: config.jamendoUrl, apiKeyManager: defaultApiKeyManager, apiKeyName: 'JAMENDO_CLIENT_ID' })
       : null;
   }
 
@@ -68,6 +72,10 @@ export class AudioService {
    * @param pageSize Number of results (default: 10)
    */
   async searchSounds(query: string, pageSize: number = 10): Promise<Sound[]> {
+    const cacheKey = `search:${query}:${pageSize}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) return cached;
+
     if (!this.freesoundClient) {
       console.warn('[AudioService] Freesound API key not configured, using mock data');
       if (this.config.useMockFallback) {
@@ -82,6 +90,7 @@ export class AudioService {
         page_size: pageSize,
         fields: 'id,name,tags,description,duration,previews,type'
       });
+      this.cache.set(cacheKey, response.results, 60 * 1000);
       return response.results;
     } catch (error) {
       console.warn('[AudioService] Failed to search sounds, using mock data');
@@ -249,6 +258,18 @@ export class AudioService {
   private getRandomMockSounds(count: number): Sound[] {
     const shuffled = [...mockSounds].sort(() => 0.5 - Math.random());
     return shuffled.slice(0, count);
+  }
+
+  getHealth() {
+    return {
+      name: 'audio',
+      status: this.freesoundClient || this.jamendoClient ? 'ok' : 'degraded',
+      cache: this.cache.metrics(),
+      usingKeys: {
+        freesound: Boolean(this.config.freesoundApiKey),
+        jamendo: Boolean(this.config.jamendoClientId)
+      }
+    };
   }
 }
 

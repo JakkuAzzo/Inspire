@@ -10,6 +10,7 @@ dotenv.config();
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { generateFuelPack, GenerateOptions } from './fuelPackGenerator';
 import {
   FuelPack,
@@ -45,6 +46,9 @@ import fs from 'fs';
 import path from 'path';
 import { createId } from './utils/id';
 import { listChallengeActivity } from './data/challengeActivity';
+import { validateEnvironment } from './config/env';
+import { buildAuthRouter } from './auth/routes';
+import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -53,6 +57,7 @@ const LISTEN_PORT = Number(PORT) || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
 app.use((req: Request, _res: Response, next: NextFunction) => {
   console.log(`[request] ${req.method} ${req.url}`);
   next();
@@ -64,6 +69,7 @@ const assets = new Map<string, any>();
 const magicTokens = new Map<string, { email: string; expiresAt: number }>();
 const services = createAllServices();
 let packRepoPromise: Promise<PackRepository> | null = null;
+const envValidation = validateEnvironment();
 
 const modeDefinitions: ModeDefinition[] = listModeDefinitions();
 const modeIds = new Set(modeDefinitions.map((definition) => definition.id));
@@ -294,8 +300,22 @@ function writeSavedState(state: SavedState) {
 function buildApiRouter() {
   const router = express.Router();
 
+  router.use('/auth', buildAuthRouter());
+
   router.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', message: 'Inspire API is running' });
+    const serviceHealth = Object.values(services).map((svc: any) =>
+      typeof svc.getHealth === 'function'
+        ? svc.getHealth()
+        : { name: svc.constructor?.name ?? 'unknown', status: 'ok' }
+    );
+
+    const ready = envValidation.isProductionReady || process.env.NODE_ENV !== 'production';
+    res.json({
+      status: ready ? 'ok' : 'degraded',
+      message: ready ? 'Inspire API is running' : 'Missing production keys',
+      environment: envValidation,
+      services: serviceHealth
+    });
   });
 
   router.get('/modes', (_req: Request, res: Response) => {
@@ -398,6 +418,8 @@ function buildApiRouter() {
   // Packs persistence
   router.get('/packs/saved', async (req: Request, res: Response) => {
     const userId = (req.query.userId as string) || '';
+  router.get('/packs/saved', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.userId || (req.query.userId as string) || '';
     if (!userId) return res.status(400).json({ error: 'userId query param required' });
     const repo = await getPackRepo();
     const list = await repo.listSavedPacks(userId);
@@ -420,8 +442,9 @@ function buildApiRouter() {
   });
 
   router.post('/packs/:id/save', async (req: Request, res: Response) => {
+  router.post('/packs/:id/save', requireAuth, (req: AuthenticatedRequest, res: Response) => {
     const packId = req.params.id;
-    const { userId } = req.body || {};
+    const userId = req.userId || (req.body || {}).userId;
     if (!packId) return res.status(400).json({ error: 'pack id required' });
     if (!userId) return res.status(400).json({ error: 'userId required' });
 
