@@ -10,6 +10,8 @@ dotenv.config();
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import http from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 import cookieParser from 'cookie-parser';
 import { generateFuelPack, GenerateOptions } from './fuelPackGenerator';
 import {
@@ -53,6 +55,10 @@ import { buildAuthRouter } from './auth/routes';
 import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 
 const app = express();
+const server = http.createServer(app);
+const io = new SocketIOServer(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] }
+});
 const PORT = process.env.PORT || 3001;
 const LISTEN_PORT = Number(PORT) || 3001;
 
@@ -250,19 +256,57 @@ interface SavedState {
   users: Record<string, string[]>;
   snapshots: Record<string, FuelPack | ModePack>;
 }
+
+interface CommunityFeedPost {
+  id: string;
+  author: string;
+  content: string;
+  contentType: 'text' | 'link' | 'audio' | 'video' | 'beat';
+  remixOf?: { author?: string; sourceId?: string };
+  createdAt: string;
+  reactions: number;
+  comments: number;
+  remixCount: number;
+}
+
+interface LiveRoomState {
+  id: string;
+  title: string;
+  owner: string;
+  mode: CreativeMode;
+  status: 'live' | 'open';
+  participants: number;
+  viewers: number;
+}
+
+interface ReportFlag {
+  id: string;
+  targetType: 'post' | 'room';
+  targetId: string;
+  reason: string;
+  reporter?: string;
+  createdAt: string;
+}
 // Allow overriding the data directory (useful for CI or different run contexts)
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve(__dirname, '..', 'data');
 const SAVED_PACKS_FILE = process.env.SAVED_PACKS_FILE || path.join(DATA_DIR, 'savedPacks.json');
+const FEED_FILE = process.env.FEED_FILE || path.join(DATA_DIR, 'communityFeed.json');
+const REPORT_FILE = process.env.REPORT_FILE || path.join(DATA_DIR, 'reportedContent.json');
 const CHALLENGE_STATE_FILE = process.env.CHALLENGE_STATE_FILE || path.join(DATA_DIR, 'challengeState.json');
 const FRONTEND_DIST = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
 const FRONTEND_INDEX = path.join(FRONTEND_DIST, 'index.html');
 const hasFrontendBuild = fs.existsSync(FRONTEND_INDEX);
 const EMPTY_SAVED_STATE: SavedState = { users: {}, snapshots: {} };
+const liveRooms = new Map<string, LiveRoomState>();
+const rateLimitEvents = new Map<string, number[]>();
+const BLOCKED_PHRASES = ['spam', 'scam', 'violence', 'slur'];
 
 function ensureDataDir() {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(SAVED_PACKS_FILE)) fs.writeFileSync(SAVED_PACKS_FILE, JSON.stringify(EMPTY_SAVED_STATE, null, 2), 'utf8');
+    if (!fs.existsSync(FEED_FILE)) fs.writeFileSync(FEED_FILE, JSON.stringify([], null, 2), 'utf8');
+    if (!fs.existsSync(REPORT_FILE)) fs.writeFileSync(REPORT_FILE, JSON.stringify([], null, 2), 'utf8');
   } catch (err) {
     console.error('Failed to ensure data dir:', err);
   }
@@ -278,6 +322,90 @@ if (hasFrontendBuild) {
   console.log('[Inspire] Frontend build not detected. Run `npm run build` inside frontend/ to generate the UI.');
 }
 
+function readJsonFile<T>(filePath: string, fallback: T): T {
+  try {
+    if (!fs.existsSync(filePath)) return fallback;
+    const raw = fs.readFileSync(filePath, 'utf8');
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    console.error('Failed to read json file', filePath, err);
+    return fallback;
+  }
+}
+
+function writeJsonFile(filePath: string, payload: unknown) {
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to write json file', filePath, err);
+  }
+}
+
+function readFeedPosts(): CommunityFeedPost[] {
+  return readJsonFile<CommunityFeedPost[]>(FEED_FILE, []);
+}
+
+function writeFeedPosts(posts: CommunityFeedPost[]) {
+  writeJsonFile(FEED_FILE, posts.slice(0, 200));
+}
+
+function recordReport(report: ReportFlag) {
+  const existing = readJsonFile<ReportFlag[]>(REPORT_FILE, []);
+  existing.unshift(report);
+  writeJsonFile(REPORT_FILE, existing.slice(0, 500));
+}
+
+const DEFAULT_ROOMS: LiveRoomState[] = [
+  { id: 'room-lyric-lab', title: 'Hooksmiths', owner: 'Aria', mode: 'lyricist', status: 'live', participants: 3, viewers: 18 },
+  { id: 'room-producer', title: 'Sample Flip Night', owner: 'Koji', mode: 'producer', status: 'open', participants: 2, viewers: 11 },
+  { id: 'room-editor', title: 'Cut Clinic', owner: 'Ryn', mode: 'editor', status: 'live', participants: 4, viewers: 9 }
+];
+
+function seedLiveRooms() {
+  DEFAULT_ROOMS.forEach((room) => liveRooms.set(room.id, room));
+}
+
+seedLiveRooms();
+
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_EVENTS = 25;
+
+function isRateLimited(key: string): boolean {
+  const now = Date.now();
+  const entries = rateLimitEvents.get(key) ?? [];
+  const recent = entries.filter((timestamp) => now - timestamp < RATE_LIMIT_WINDOW_MS);
+  recent.push(now);
+  rateLimitEvents.set(key, recent);
+  return recent.length > RATE_LIMIT_MAX_EVENTS;
+}
+
+function containsBlockedContent(content: string): boolean {
+  const lower = content.toLowerCase();
+  return BLOCKED_PHRASES.some((phrase) => lower.includes(phrase));
+}
+
+function getRoomsSnapshot(): LiveRoomState[] {
+  return Array.from(liveRooms.values());
+}
+
+function incrementRoomCounts(roomId: string, participantsDelta: number, viewersDelta = 0): LiveRoomState {
+  const existing = liveRooms.get(roomId) ?? {
+    id: roomId,
+    title: `Room ${roomId}`,
+    owner: 'guest',
+    mode: 'lyricist' as CreativeMode,
+    status: 'open' as const,
+    participants: 0,
+    viewers: 0
+  };
+  const next: LiveRoomState = {
+    ...existing,
+    participants: Math.max(0, existing.participants + participantsDelta),
+    viewers: Math.max(0, existing.viewers + viewersDelta)
+  };
+  liveRooms.set(roomId, next);
+  return next;
 const challengeService = new ChallengeService(CHALLENGE_STATE_FILE);
 async function getPackRepo() {
   if (!packRepoPromise) {
@@ -338,6 +466,86 @@ function buildApiRouter() {
       environment: envValidation,
       services: serviceHealth
     });
+  });
+
+  router.get('/feed', (_req: Request, res: Response) => {
+    res.json({ items: readFeedPosts() });
+  });
+
+  router.post('/feed', (req: Request, res: Response) => {
+    const rateKey = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    if (isRateLimited(rateKey)) {
+      return res.status(429).json({ error: 'Rate limit exceeded. Take a breather and try again.' });
+    }
+
+    const { author, content, remixOf, contentType } = req.body || {};
+    if (!author || !content) return res.status(400).json({ error: 'author and content are required' });
+    if (containsBlockedContent(String(content))) {
+      return res.status(400).json({ error: 'Content failed moderation filters' });
+    }
+
+    const post: CommunityFeedPost = {
+      id: createId('post'),
+      author,
+      content: String(content).slice(0, 1200),
+      contentType: contentType ?? 'text',
+      remixOf,
+      createdAt: new Date().toISOString(),
+      reactions: 0,
+      comments: 0,
+      remixCount: remixOf ? 1 : 0
+    };
+
+    const existing = readFeedPosts();
+    existing.unshift(post);
+    writeFeedPosts(existing);
+    io.emit('feed:new', post);
+    res.status(201).json({ post });
+  });
+
+  router.get('/rooms', (_req: Request, res: Response) => {
+    res.json({ rooms: getRoomsSnapshot() });
+  });
+
+  router.post('/rooms/:roomId/join', (req: Request, res: Response) => {
+    const roomId = req.params.roomId;
+    const { user } = req.body || {};
+    const room = incrementRoomCounts(roomId, 1, 0);
+    io.emit('rooms:update', getRoomsSnapshot());
+    io.to(roomId).emit('room:presence', { roomId, user, action: 'joined' });
+    res.json({ room });
+  });
+
+  router.post('/rooms/:roomId/spectate', (req: Request, res: Response) => {
+    const roomId = req.params.roomId;
+    const { user } = req.body || {};
+    const room = incrementRoomCounts(roomId, 0, 1);
+    io.emit('rooms:update', getRoomsSnapshot());
+    io.to(roomId).emit('room:presence', { roomId, user, action: 'spectating' });
+    res.json({ room });
+  });
+
+  router.post('/rooms/:roomId/emit', (req: Request, res: Response) => {
+    const roomId = req.params.roomId;
+    const { event, payload } = req.body || {};
+    if (!event) return res.status(400).json({ error: 'event name required' });
+    io.to(roomId).emit(event, payload ?? {});
+    res.json({ roomId, event, payload: payload ?? {} });
+  });
+
+  router.post('/moderation/report', (req: Request, res: Response) => {
+    const { targetType, targetId, reason, reporter } = req.body || {};
+    if (!targetType || !targetId || !reason) return res.status(400).json({ error: 'targetType, targetId, reason required' });
+    const report: ReportFlag = {
+      id: createId('report'),
+      targetType,
+      targetId,
+      reason,
+      reporter,
+      createdAt: new Date().toISOString()
+    };
+    recordReport(report);
+    res.status(201).json({ report });
   });
 
   router.get('/modes', (_req: Request, res: Response) => {
@@ -967,6 +1175,26 @@ devRouter.get('/', (_req: Request, res: Response) => {
   `);
 });
 
+io.on('connection', (socket) => {
+  socket.emit('rooms:update', getRoomsSnapshot());
+  socket.emit('feed:init', readFeedPosts().slice(0, 50));
+
+  socket.on('rooms:join', ({ roomId, user }: { roomId: string; user?: string }) => {
+    socket.join(roomId);
+    const room = incrementRoomCounts(roomId, 1, 0);
+    io.emit('rooms:update', getRoomsSnapshot());
+    io.to(roomId).emit('room:presence', { roomId, user, action: 'joined' });
+    socket.emit('rooms:joined', room);
+  });
+
+  socket.on('rooms:spectate', ({ roomId, user }: { roomId: string; user?: string }) => {
+    socket.join(roomId);
+    const room = incrementRoomCounts(roomId, 0, 1);
+    io.emit('rooms:update', getRoomsSnapshot());
+    io.to(roomId).emit('room:presence', { roomId, user, action: 'spectating' });
+  });
+});
+
 if (hasFrontendBuild) {
   app.use(express.static(FRONTEND_DIST));
 }
@@ -1010,9 +1238,10 @@ if (hasFrontendBuild) {
 // without starting a real network listener.
 if (require.main === module) {
   // Bind to all interfaces so localhost resolves to both IPv4 and IPv6 addresses
-  app.listen(LISTEN_PORT, '0.0.0.0', () => {
+  server.listen(LISTEN_PORT, '0.0.0.0', () => {
     console.log(`🚀 Inspire API running on http://localhost:${LISTEN_PORT}`);
   });
 }
 
+export { app, server, io };
 export default app;
