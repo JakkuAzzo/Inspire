@@ -29,14 +29,16 @@ interface CacheEntry {
 
 export class NewsService {
   private baseUrl: string;
+  private apiKey?: string;
   private categories: string[];
   private country: string;
   private ttlMs: number;
   private cache: Map<string, CacheEntry>;
   private localDataDir: string;
 
-  constructor(opts?: { baseUrl?: string; categories?: string[]; country?: string; ttlMs?: number }) {
+  constructor(opts?: { baseUrl?: string; categories?: string[]; country?: string; ttlMs?: number; apiKey?: string }) {
     this.baseUrl = opts?.baseUrl || 'https://saurav.tech/NewsAPI';
+    this.apiKey = opts?.apiKey || process.env.NEWS_API_KEY;
     this.categories = opts?.categories || ['general', 'technology', 'entertainment', 'science', 'business'];
     this.country = opts?.country || 'us';
     this.ttlMs = opts?.ttlMs ?? 10 * 60 * 1000; // 10 minutes
@@ -81,6 +83,19 @@ export class NewsService {
   }
 
   private async fetchCategory(category: string): Promise<NewsApiArticle[]> {
+    if (this.apiKey) {
+      try {
+        const url = `${this.baseUrl}/top-headlines?country=${this.country}&category=${category}&apiKey=${this.apiKey}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = (await res.json()) as { articles?: NewsApiArticle[] };
+          if (Array.isArray(data.articles)) return data.articles;
+        }
+      } catch (err) {
+        console.warn('newsService NewsAPI call failed', err);
+      }
+    }
+
     // 1) Try local static JSON first (cloned NewsAPI data)
     try {
       const localPath = path.join(this.localDataDir, category, `${this.country}.json`);
@@ -137,5 +152,5 @@ export class NewsService {
 }
 
 export function createNewsService(): NewsService {
-  return new NewsService();
+  return new NewsService({ baseUrl: process.env.NEWS_API_URL, apiKey: process.env.NEWS_API_KEY });
 }

@@ -10,6 +10,7 @@ dotenv.config();
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { generateFuelPack, GenerateOptions } from './fuelPackGenerator';
 import {
   FuelPack,
@@ -40,10 +41,15 @@ import {
 } from './modePackGenerator';
 import { createAllServices } from './services';
 import { searchYoutubeKeyless, buildYoutubeQuery } from './services/youtubeSearchService';
+import { getPool } from './db/connection';
+import { PackRepository } from './repositories/packRepository';
 import fs from 'fs';
 import path from 'path';
 import { createId } from './utils/id';
 import { listChallengeActivity } from './data/challengeActivity';
+import { validateEnvironment } from './config/env';
+import { buildAuthRouter } from './auth/routes';
+import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -52,6 +58,7 @@ const LISTEN_PORT = Number(PORT) || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
 app.use((req: Request, _res: Response, next: NextFunction) => {
   console.log(`[request] ${req.method} ${req.url}`);
   next();
@@ -63,6 +70,8 @@ const assets = new Map<string, any>();
 const magicTokens = new Map<string, { email: string; expiresAt: number }>();
 const shareTokens = new Map<string, { packId: string; createdAt: number; userId?: string }>();
 const services = createAllServices();
+let packRepoPromise: Promise<PackRepository> | null = null;
+const envValidation = validateEnvironment();
 
 const modeDefinitions: ModeDefinition[] = listModeDefinitions();
 const modeIds = new Set(modeDefinitions.map((definition) => definition.id));
@@ -266,6 +275,16 @@ if (hasFrontendBuild) {
   console.log('[Inspire] Frontend build not detected. Run `npm run build` inside frontend/ to generate the UI.');
 }
 
+async function getPackRepo() {
+  if (!packRepoPromise) {
+    packRepoPromise = (async () => {
+      const pool = await getPool();
+      return new PackRepository(pool);
+    })();
+  }
+  return packRepoPromise;
+}
+
 function readSavedState(): SavedState {
   try {
     const raw = fs.readFileSync(SAVED_PACKS_FILE, 'utf8');
@@ -299,8 +318,22 @@ function writeSavedState(state: SavedState) {
 function buildApiRouter() {
   const router = express.Router();
 
+  router.use('/auth', buildAuthRouter());
+
   router.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', message: 'Inspire API is running' });
+    const serviceHealth = Object.values(services).map((svc: any) =>
+      typeof svc.getHealth === 'function'
+        ? svc.getHealth()
+        : { name: svc.constructor?.name ?? 'unknown', status: 'ok' }
+    );
+
+    const ready = envValidation.isProductionReady || process.env.NODE_ENV !== 'production';
+    res.json({
+      status: ready ? 'ok' : 'degraded',
+      message: ready ? 'Inspire API is running' : 'Missing production keys',
+      environment: envValidation,
+      services: serviceHealth
+    });
   });
 
   router.get('/modes', (_req: Request, res: Response) => {
@@ -401,48 +434,52 @@ function buildApiRouter() {
   });
 
   // Packs persistence
-  router.get('/packs/saved', (req: Request, res: Response) => {
+  router.get('/packs/saved', async (req: Request, res: Response) => {
     const userId = (req.query.userId as string) || '';
+  router.get('/packs/saved', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.userId || (req.query.userId as string) || '';
     if (!userId) return res.status(400).json({ error: 'userId query param required' });
-    const state = readSavedState();
-    const ids = state.users[userId] || [];
-    console.log('[packs/saved] state users keys:', Object.keys(state.users));
-    console.log('[packs/saved] requesting userId=', userId, 'found ids=', ids);
-    const packsList = ids.map((id) => state.snapshots[id]).filter((entry): entry is FuelPack | ModePack => Boolean(entry));
-    res.json({ userId, saved: ids, packs: packsList });
+    const repo = await getPackRepo();
+    const list = await repo.listSavedPacks(userId);
+    res.json({ userId, saved: list.map((p: FuelPack | ModePack) => p.id), packs: list });
   });
 
-  router.get('/packs/:id', (req: Request, res: Response) => {
+  router.get('/packs/:id', async (req: Request, res: Response) => {
     const id = req.params.id;
-    let pack = packs.get(id);
+    let pack: FuelPack | ModePack | undefined = packs.get(id);
     if (!pack) {
-      const savedState = readSavedState();
-      pack = savedState.snapshots[id];
-      if (pack) packs.set(id, pack);
+      const repo = await getPackRepo();
+      const repoPack = await repo.getPack(id);
+      if (repoPack) {
+        pack = repoPack;
+        packs.set(id, repoPack);
+      }
     }
     if (!pack) return res.status(404).json({ error: 'Pack not found' });
     res.json(pack);
   });
 
-  router.post('/packs/:id/save', (req: Request, res: Response) => {
+  router.post('/packs/:id/save', async (req: Request, res: Response) => {
+  router.post('/packs/:id/save', requireAuth, (req: AuthenticatedRequest, res: Response) => {
     const packId = req.params.id;
-    const { userId } = req.body || {};
+    const userId = req.userId || (req.body || {}).userId;
     if (!packId) return res.status(400).json({ error: 'pack id required' });
     if (!userId) return res.status(400).json({ error: 'userId required' });
 
-    const state = readSavedState();
-    const pack = packs.get(packId) || state.snapshots[packId];
+    const repo = await getPackRepo();
+    let pack: FuelPack | ModePack | undefined = packs.get(packId);
+    if (!pack) {
+      const repoPack = await repo.getPack(packId);
+      if (repoPack) {
+        pack = repoPack;
+        packs.set(packId, repoPack);
+      }
+    }
     if (!pack) {
       return res.status(404).json({ error: 'Pack not found. Spin or craft a pack before saving.' });
     }
 
-    const existing = state.users[userId] ? state.users[userId].filter((id) => id !== packId) : [];
-    existing.unshift(packId);
-    state.users[userId] = existing.slice(0, 100);
-    state.snapshots[packId] = pack;
-    packs.set(packId, pack);
-    writeSavedState(state);
-
+    await repo.savePackForUser(userId, pack);
     res.json({ saved: true, userId, packId, snapshot: pack });
   });
 
@@ -508,6 +545,26 @@ function buildApiRouter() {
     if (!pack) return res.status(404).json({ error: 'Shared pack missing' });
 
     res.json({ token, packId: entry.packId, pack });
+  router.post('/packs/:id/share', async (req: Request, res: Response) => {
+    const packId = req.params.id;
+    const { userId, visibility, expiresAt } = req.body || {};
+    if (!packId || !userId) return res.status(400).json({ error: 'pack id and userId required' });
+    const repo = await getPackRepo();
+    const pack = packs.get(packId) || (await repo.getPack(packId));
+    if (!pack) return res.status(404).json({ error: 'Pack not found' });
+
+    await repo.savePackSnapshot(userId, pack);
+    const parsedExpiry = expiresAt ? new Date(expiresAt) : null;
+    const token = await repo.createShareToken(userId, packId, visibility ?? 'unlisted', parsedExpiry ?? null);
+    res.json({ ...token, shareUrl: `/api/packs/share/${token.token}` });
+  });
+
+  router.get('/packs/share/:token', async (req: Request, res: Response) => {
+    const token = req.params.token;
+    const repo = await getPackRepo();
+    const entry = await repo.resolveShareToken(token);
+    if (!entry) return res.status(404).json({ error: 'Share link expired or missing' });
+    res.json({ token, visibility: entry.visibility, pack: entry.pack });
   });
 
   // Assets stubs
