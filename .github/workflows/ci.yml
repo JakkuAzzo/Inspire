@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      API_KEY: ${{ secrets.API_KEY }}
+      TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+      - name: Lint backend
+        run: cd backend && npm run lint
+      - name: Test backend with coverage
+        run: cd backend && npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+    env:
+      API_KEY: ${{ secrets.API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+      - name: Lint frontend
+        run: cd frontend && npm run lint
+      - name: Component tests
+        run: cd frontend && npm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    env:
+      API_KEY: ${{ secrets.API_KEY }}
+      TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install root deps
+        run: npm ci
+      - name: Install backend deps
+        run: cd backend && npm ci
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+      - name: Build frontend
+        run: cd frontend && npm run build
+      - name: Start backend (dev) in background
+        run: |
+          cd backend
+          ENABLE_DEV_CONSOLE=true npm run dev &
+          npx wait-on http://localhost:3001/dev -t 20000
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+      - name: Run Playwright suite
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

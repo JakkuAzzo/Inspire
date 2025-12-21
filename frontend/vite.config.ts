@@ -16,4 +16,19 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/setupTests.ts',
+    globals: true,
+    exclude: ['tests/**', 'playwright/**', 'e2e/**', 'dist/**', 'node_modules/**'],
+    coverage: {
+      reporter: ['text', 'lcov'],
+      thresholds: {
+        lines: 2,
+        statements: 2,
+        functions: 2,
+        branches: 0,
+      },
+    },
+  },
 })

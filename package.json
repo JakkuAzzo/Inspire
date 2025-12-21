@@ -10,7 +10,9 @@
     "build": "npm run build:backend && npm run build:frontend",
     "start:backend": "cd backend && npm start",
     "dev": "./run_dev.sh",
-    "test": "(cd backend && npm test)",
+    "test:backend": "cd backend && npm test",
+    "test:frontend": "cd frontend && npm test",
+    "test": "npm run test:backend && npm run test:frontend",
     "lint": "(cd backend && npm run lint) && (cd frontend && npm run lint)"
   },
   "keywords": [

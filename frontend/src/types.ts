@@ -81,7 +81,12 @@ export interface ModePackBase {
 
 export interface ModePackRequest {
   submode: string;
-  filters: RelevanceFilter;
+  filters?: RelevanceFilter;
+  tone?: RelevanceTone;
+  timeframe?: RelevanceTimeframe;
+  semantic?: RelevanceSemantic;
+  relevance?: Partial<RelevanceFilter>;
+  mood?: string;
   genre?: string;
   wordOptions?: WordGeneratorOptions;
 }
@@ -205,6 +210,28 @@ export interface ChallengeActivity {
   type?: string;
 }
 
+export interface ChallengeAchievement {
+  id: string;
+  title: string;
+  description: string;
+  unlockedAt?: string;
+}
+
+export interface ChallengeCompletion {
+  challengeId: string;
+  completedAt: string;
+}
+
+export interface ChallengeStats {
+  userId: string;
+  streak: number;
+  totalCompletions: number;
+  lastCompletedAt: string | null;
+  achievements: ChallengeAchievement[];
+  completions: ChallengeCompletion[];
+  completedToday?: boolean;
+}
+
 export type WorkspaceQueueItemType = 'youtube' | 'stream' | 'instrumental' | 'reference';
 
 export interface WorkspaceQueueItem {
@@ -226,6 +253,11 @@ export interface WordGeneratorOptions {
   syllables?: number;
   maxResults?: number;
   topic?: string;
+  tone?: RelevanceTone;
+  semantic?: RelevanceSemantic;
+  mood?: string;
+  timeframe?: RelevanceTimeframe;
+  tags?: string[];
 }
 
 export interface WordIdea {
