@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, FormEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import './App.css';
 import inspireLogo from './assets/Inspire_transparent_white.png';
 import lyricistCardImage from './assets/images/Lyracist_Studio.jpeg';
@@ -13,6 +13,7 @@ import MouseParticles from './components/MouseParticles';
 import { FallingWordStream } from './components/FallingWordStream';
 import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
 import { FocusModeOverlay } from './components/FocusModeOverlay';
+import { useAuth } from './context/AuthContext';
 import type {
   CreativeMode,
   ModeDefinition,
@@ -764,9 +765,10 @@ function resolveChallengeText(pack: InspireAnyPack | null): string {
 }
 
 function App() {
-	const initialUserId = typeof window === 'undefined' ? `creator-${Date.now().toString(36)}` : loadStoredUserId();
-	const [modeDefinitions, setModeDefinitions] = useState<ModeDefinition[]>(FALLBACK_MODE_DEFINITIONS);
-	const [mode, setMode] = useState<CreativeMode | null>(null);
+        const initialUserId = typeof window === 'undefined' ? `creator-${Date.now().toString(36)}` : loadStoredUserId();
+        const { user, loading: authLoading, error: authError, signIn, signUp, signOut } = useAuth();
+        const [modeDefinitions, setModeDefinitions] = useState<ModeDefinition[]>(FALLBACK_MODE_DEFINITIONS);
+        const [mode, setMode] = useState<CreativeMode | null>(null);
 	const [submode, setSubmode] = useState<string | null>(null);
 	const [genre, setGenre] = useState<string>('r&b');
 	const [filters, setFilters] = useState<RelevanceFilter>(DEFAULT_FILTERS);
@@ -787,9 +789,13 @@ function App() {
 		if (typeof window === 'undefined') return false;
 		return false; // Don't show onboarding modal on initial load; use mode-gate instead
 	});
-	const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
-	const [showAccountModal, setShowAccountModal] = useState(false);
-	const [showCommunityOverlay, setShowCommunityOverlay] = useState(false);
+        const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
+        const [showAccountModal, setShowAccountModal] = useState(false);
+        const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+        const [authEmail, setAuthEmail] = useState('');
+        const [authPassword, setAuthPassword] = useState('');
+        const [authDisplayName, setAuthDisplayName] = useState('');
+        const [showCommunityOverlay, setShowCommunityOverlay] = useState(false);
 	const [controlsCollapsed, setControlsCollapsed] = useState<boolean>(() => {
 		if (typeof window === 'undefined') return true;
 		const stored = window.localStorage.getItem(CONTROLS_COLLAPSED_KEY);
@@ -1004,7 +1010,7 @@ function App() {
 		}
 	}, [dailyChallenge.expiresAt]);
 
-	const isAuthenticated = useMemo(() => Boolean(userId) && !userId.startsWith('creator-'), [userId]);
+        const isAuthenticated = useMemo(() => Boolean(user), [user]);
 
 	useEffect(() => {
 		const updateCountdown = () => setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
@@ -1704,15 +1710,9 @@ function App() {
 		[userId, playCue]
 	);
 
-	const handleUserHandleClick = useCallback(() => {
-		if (isAuthenticated) {
-			if (typeof window !== 'undefined') {
-				window.location.assign('/dashboard');
-			}
-			return;
-		}
-		setShowAccountModal(true);
-	}, [isAuthenticated, setShowAccountModal]);
+        const handleUserHandleClick = useCallback(() => {
+                setShowAccountModal(true);
+        }, []);
 
 	const handleUserIdChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
 		setUserId(event.target.value.slice(0, 32));
@@ -1726,16 +1726,34 @@ function App() {
 		});
 	}, []);
 
-	const handleUserIdKey = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-		if (event.key === 'Enter') {
-			event.currentTarget.blur();
-		}
-	}, []);
+        const handleUserIdKey = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+                if (event.key === 'Enter') {
+                        event.currentTarget.blur();
+                }
+        }, []);
 
-	const handleThemeChange = useCallback((value: string) => {
-		setTheme(value);
-		if (typeof window !== 'undefined') {
-			window.localStorage.setItem(THEME_KEY, value);
+        const handleAuthSubmit = useCallback(
+                async (event: FormEvent<HTMLFormElement>) => {
+                        event.preventDefault();
+                        try {
+                                if (authMode === 'register') {
+                                        await signUp({ email: authEmail, password: authPassword, displayName: authDisplayName || userId });
+                                } else {
+                                        await signIn({ email: authEmail, password: authPassword });
+                                }
+                                setError(null);
+                                setShowAccountModal(false);
+                        } catch (err: any) {
+                                setError(err?.message || 'Unable to authenticate');
+                        }
+                },
+                [authMode, authDisplayName, authEmail, authPassword, signIn, signUp, userId]
+        );
+
+        const handleThemeChange = useCallback((value: string) => {
+                setTheme(value);
+                if (typeof window !== 'undefined') {
+                        window.localStorage.setItem(THEME_KEY, value);
 		}
 	}, []);
 
@@ -2225,7 +2243,7 @@ function App() {
 		if (typeof window !== 'undefined') {
 			window.localStorage.setItem('inspire:userId', userId);
 		}
-	}, [userId]);
+        }, [isAuthenticated, user, userId]);
 
 	useEffect(() => {
 		persistCreatorStats(userId, creatorStats);
@@ -2271,9 +2289,9 @@ function App() {
 		void loadModes();
 	}, []);
 
-	useEffect(() => {
-		if (typeof window === 'undefined') return;
-		const params = new URLSearchParams(window.location.search);
+        useEffect(() => {
+                if (typeof window === 'undefined') return;
+                const params = new URLSearchParams(window.location.search);
 		const encodedPack = params.get(SHARE_PARAM);
 		if (!encodedPack) return;
 		const shared = decodePack(encodedPack);
@@ -2286,38 +2304,56 @@ function App() {
 		}
 		handleDismissOnboarding();
 		params.delete(SHARE_PARAM);
-		const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash ?? ''}`;
-		window.history.replaceState({}, '', nextUrl);
-	}, [setPack, handleDismissOnboarding]);
+                const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash ?? ''}`;
+                window.history.replaceState({}, '', nextUrl);
+        }, [setPack, handleDismissOnboarding]);
 
-	const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
+        useEffect(() => {
+                if (user?.displayName) {
+                        setUserId(user.displayName);
+                }
+        }, [user]);
+
+        const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
 	const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
 	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
 	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
 	const fatalError = error && !loading;
 
-	const handleSaveCurrentPack = useCallback(async () => {
-		if (!fuelPack || !isModePack(fuelPack)) return;
-		try {
-			const res = await fetch(`/api/packs/${encodeURIComponent(fuelPack.id)}/save`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ userId: userId || 'guest' })
-			});
-			if (!res.ok) throw new Error('Save failed');
-			setStatus('Saved to your archive');
-		} catch (err) {
-			setError('Could not save pack');
-		}
-	}, [fuelPack, userId]);
+        const handleSaveCurrentPack = useCallback(async () => {
+                if (!fuelPack || !isModePack(fuelPack)) return;
+                if (!isAuthenticated) {
+                        setError('Sign in to save packs.');
+                        setShowAccountModal(true);
+                        return;
+                }
+                try {
+                        const res = await fetch(`/api/packs/${encodeURIComponent(fuelPack.id)}/save`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ userId: user?.id || userId || 'guest' })
+                        });
+                        if (!res.ok) throw new Error('Save failed');
+                        setStatus('Saved to your archive');
+                } catch (err) {
+                        setError('Could not save pack');
+                }
+        }, [fuelPack, isAuthenticated, user, userId]);
 
-	const openSavedOverlay = useCallback(async () => {
-		setShowSavedOverlay(true);
-		setSavedLoading(true);
-		setSavedError(null);
-		try {
-			const qs = new URLSearchParams({ userId: userId || 'guest' });
-			const res = await fetch(`/api/packs/saved?${qs.toString()}`);
+        const openSavedOverlay = useCallback(async () => {
+                if (!isAuthenticated) {
+                        setError('Sign in to view saved packs.');
+                        setShowAccountModal(true);
+                        return;
+                }
+                setShowSavedOverlay(true);
+                setSavedLoading(true);
+                setSavedError(null);
+                try {
+                        const ownerId = user?.id || userId || 'guest';
+                        const qs = new URLSearchParams({ userId: ownerId });
+                        const res = await fetch(`/api/packs/saved?${qs.toString()}`, { credentials: 'include' });
 			if (!res.ok) throw new Error('Failed to load saved packs');
 			const data = await res.json();
 			setSavedPacks(Array.isArray(data.packs) ? data.packs : []);
@@ -3579,32 +3615,88 @@ function App() {
 				</FocusModeOverlay>
 			)}
 
-			{showAccountModal && (
-				<FocusModeOverlay
-					isOpen={showAccountModal}
-					onClose={() => setShowAccountModal(false)}
-					title="Sign in to Inspire"
-					ariaLabel="Creator handle sign in"
-				>
-					<div>
-						<p className="overlay-copy">Claim your creator handle to sync packs across sessions.</p>
-						<label className="handle-field" htmlFor="overlayUserId">
-							<span className="label">Creator handle</span>
-							<input
-								id="overlayUserId"
-								value={userId}
-								maxLength={32}
-								onChange={handleUserIdChange}
-								onBlur={handleUserIdBlur}
-								onKeyDown={handleUserIdKey}
-							/>
-						</label>
-						<button type="button" className="btn primary" onClick={() => setShowAccountModal(false)}>
-							Save handle
-						</button>
-					</div>
-				</FocusModeOverlay>
-			)}
+                        {showAccountModal && (
+                                <FocusModeOverlay
+                                        isOpen={showAccountModal}
+                                        onClose={() => setShowAccountModal(false)}
+                                        title={isAuthenticated ? 'Profile' : 'Sign in to Inspire'}
+                                        ariaLabel="Authentication"
+                                >
+                                        <div className="auth-modal">
+                                                {isAuthenticated && user ? (
+                                                        <div className="profile-summary">
+                                                                <p className="overlay-copy">Signed in as {user.email}</p>
+                                                                <p className="overlay-copy subtle">Display name: {user.displayName}</p>
+                                                                <button
+                                                                        type="button"
+                                                                        className="btn ghost"
+                                                                        onClick={() => {
+                                                                                void signOut();
+                                                                                setShowAccountModal(false);
+                                                                        }}
+                                                                >
+                                                                        Log out
+                                                                </button>
+                                                        </div>
+                                                ) : (
+                                                        <form className="auth-form" onSubmit={handleAuthSubmit}>
+                                                                <div className="auth-toggle" role="tablist">
+                                                                        <button
+                                                                                type="button"
+                                                                                className={`nav-pill${authMode === 'login' ? ' active' : ''}`}
+                                                                                onClick={() => setAuthMode('login')}
+                                                                        >
+                                                                                Log in
+                                                                        </button>
+                                                                        <button
+                                                                                type="button"
+                                                                                className={`nav-pill${authMode === 'register' ? ' active' : ''}`}
+                                                                                onClick={() => setAuthMode('register')}
+                                                                        >
+                                                                                Sign up
+                                                                        </button>
+                                                                </div>
+                                                                <label className="handle-field" htmlFor="authEmail">
+                                                                        <span className="label">Email</span>
+                                                                        <input
+                                                                                id="authEmail"
+                                                                                type="email"
+                                                                                required
+                                                                                value={authEmail}
+                                                                                onChange={(event) => setAuthEmail(event.target.value)}
+                                                                        />
+                                                                </label>
+                                                                <label className="handle-field" htmlFor="authPassword">
+                                                                        <span className="label">Password</span>
+                                                                        <input
+                                                                                id="authPassword"
+                                                                                type="password"
+                                                                                required
+                                                                                minLength={6}
+                                                                                value={authPassword}
+                                                                                onChange={(event) => setAuthPassword(event.target.value)}
+                                                                        />
+                                                                </label>
+                                                                {authMode === 'register' && (
+                                                                        <label className="handle-field" htmlFor="authDisplayName">
+                                                                                <span className="label">Display name</span>
+                                                                                <input
+                                                                                        id="authDisplayName"
+                                                                                        value={authDisplayName}
+                                                                                        placeholder="Your creator handle"
+                                                                                        onChange={(event) => setAuthDisplayName(event.target.value)}
+                                                                                />
+                                                                        </label>
+                                                                )}
+                                                                {(authError || error) && <p className="error">{authError ?? error}</p>}
+                                                                <button type="submit" className="btn primary" disabled={authLoading}>
+                                                                        {authLoading ? 'Working…' : authMode === 'register' ? 'Create account' : 'Log in'}
+                                                                </button>
+                                                        </form>
+                                                )}
+                                        </div>
+                                </FocusModeOverlay>
+                        )}
 
 			{showSavedOverlay && (
 				<FocusModeOverlay
