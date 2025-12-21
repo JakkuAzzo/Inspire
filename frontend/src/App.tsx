@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, FormEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import './App.css';
 import inspireLogo from './assets/Inspire_transparent_white.png';
 import lyricistCardImage from './assets/images/Lyracist_Studio.jpeg';
@@ -13,6 +13,8 @@ import MouseParticles from './components/MouseParticles';
 import { FallingWordStream } from './components/FallingWordStream';
 import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
 import { FocusModeOverlay } from './components/FocusModeOverlay';
+import { fetchPackById, fetchSharedPack, listSavedPacks, remixPack as remixPackApi, savePack as savePackApi, sharePack as sharePackApi } from './services/packs';
+import { useAuth } from './context/AuthContext';
 import type {
   CreativeMode,
   ModeDefinition,
@@ -35,6 +37,7 @@ import type {
         MemeTemplate,
         RemixMeta
 } from './types';
+import { usePackStore } from './state/packStore';
 
 // Background helpers for mode/submode cards
 const MODE_BG_BY_ID: Record<CreativeMode, string> = {
@@ -111,14 +114,15 @@ const MODE_BACKGROUNDS: Record<CreativeMode, string> = {
 };
 
 const THEME_OPTIONS = [
-	{ id: 'default', label: 'Aurora', emoji: '✨' },
-	{ id: 'lofi', label: 'Lo-Fi', emoji: '🌙' },
-	{ id: 'neon', label: 'Neon', emoji: '🌈' },
-	{ id: 'vaporwave', label: 'Vaporwave', emoji: '🌅' },
-	{ id: 'noir', label: 'Noir', emoji: '🖤' }
+        { id: 'default', label: 'Aurora', emoji: '✨' },
+        { id: 'lofi', label: 'Lo-Fi', emoji: '🌙' },
+        { id: 'neon', label: 'Neon', emoji: '🌈' },
+        { id: 'vaporwave', label: 'Vaporwave', emoji: '🌅' },
+        { id: 'noir', label: 'Noir', emoji: '🖤' }
 ];
 
 const SHARE_PARAM = 'pack';
+const SHARE_TOKEN_PARAM = 'share';
 const STATS_KEY_PREFIX = 'inspire:creatorStats:';
 const ONBOARDING_KEY = 'inspire:onboardingComplete';
 const THEME_KEY = 'inspire:theme';
@@ -566,28 +570,13 @@ function mergeUniqueBy<T>(items: T[], key: (item: T) => string, limit?: number):
 	return result;
 }
 
-function base64Encode(text: string): string {
-	if (typeof window === 'undefined') return '';
-	const utf8 = encodeURIComponent(text).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(Number.parseInt(p1, 16)));
-	return window.btoa(utf8);
-}
-
 function base64Decode(text: string): string {
-	if (typeof window === 'undefined') return '';
-	const binary = window.atob(text);
-	const percentEncoded = Array.from(binary)
-		.map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
-		.join('');
-	return decodeURIComponent(percentEncoded);
-}
-
-function encodePack(pack: InspireAnyPack): string {
-	try {
-		return base64Encode(JSON.stringify(pack));
-	} catch (err) {
-		console.error('Unable to encode pack', err);
-		return '';
-	}
+        if (typeof window === 'undefined') return '';
+        const binary = window.atob(text);
+        const percentEncoded = Array.from(binary)
+                .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+                .join('');
+        return decodeURIComponent(percentEncoded);
 }
 
 function decodePack(encoded: string): InspireAnyPack | null {
@@ -693,60 +682,75 @@ function formatShareText(pack: InspireAnyPack, userId: string) {
 }
 
 function createRemixPack(original: ModePack, fresh: ModePack): ModePack {
-	if (original.mode !== fresh.mode) return fresh;
-	if (fresh.mode === 'lyricist' && original.mode === 'lyricist') {
-		const baseFresh = fresh as LyricistModePack;
-		const baseOriginal = original as LyricistModePack;
-		const mergedWords = mergeUniqueStrings([...baseOriginal.powerWords.slice(0, 3), ...baseFresh.powerWords], 6);
-		const mergedFlow = mergeUniqueStrings([...baseFresh.flowPrompts.slice(0, 3), ...baseOriginal.flowPrompts.slice(0, 2)], 5);
-		const mergedFragments = mergeUniqueStrings([...baseFresh.lyricFragments.slice(0, 3), ...baseOriginal.lyricFragments.slice(0, 2)], 6);
-		return {
-			...baseFresh,
-			powerWords: mergedWords,
-			flowPrompts: mergedFlow,
-			lyricFragments: mergedFragments,
-			storyArc: {
-				start: baseOriginal.storyArc.start,
-				middle: baseFresh.storyArc.middle,
-				end: baseFresh.storyArc.end
-			},
-			memeSound: Math.random() > 0.5 ? baseOriginal.memeSound : baseFresh.memeSound,
-			topicChallenge: Math.random() > 0.5 ? baseOriginal.topicChallenge : baseFresh.topicChallenge,
-			summary: `${baseOriginal.summary.split('.').at(0) ?? baseOriginal.summary}. ${baseFresh.summary}`.trim()
-		};
-	}
+        const remixEntry: RemixMeta = {
+                author: original.author ?? '@guest',
+                packId: original.id,
+                generation: (original.remixOf?.generation ?? 0) + 1
+        };
+        const remixLineage = [...(original.remixLineage ?? []), remixEntry];
+        if (original.mode !== fresh.mode) return { ...fresh, remixOf: remixEntry, remixLineage };
+        if (fresh.mode === 'lyricist' && original.mode === 'lyricist') {
+                const baseFresh = fresh as LyricistModePack;
+                const baseOriginal = original as LyricistModePack;
+                const mergedWords = mergeUniqueStrings([...baseOriginal.powerWords.slice(0, 3), ...baseFresh.powerWords], 6);
+                const mergedFlow = mergeUniqueStrings([...baseFresh.flowPrompts.slice(0, 3), ...baseOriginal.flowPrompts.slice(0, 2)], 5);
+                const mergedFragments = mergeUniqueStrings([...baseFresh.lyricFragments.slice(0, 3), ...baseOriginal.lyricFragments.slice(0, 2)], 6);
+                return {
+                        ...baseFresh,
+                        author: baseFresh.author ?? baseOriginal.author,
+                        remixOf: remixEntry,
+                        remixLineage,
+                        powerWords: mergedWords,
+                        flowPrompts: mergedFlow,
+                        lyricFragments: mergedFragments,
+                        storyArc: {
+                                start: baseOriginal.storyArc.start,
+                                middle: baseFresh.storyArc.middle,
+                                end: baseFresh.storyArc.end
+                        },
+                        memeSound: Math.random() > 0.5 ? baseOriginal.memeSound : baseFresh.memeSound,
+                        topicChallenge: Math.random() > 0.5 ? baseOriginal.topicChallenge : baseFresh.topicChallenge,
+                        summary: `${baseOriginal.summary.split('.').at(0) ?? baseOriginal.summary}. ${baseFresh.summary}`.trim()
+                };
+        }
 
-	if (fresh.mode === 'producer' && original.mode === 'producer') {
-		const baseFresh = fresh as ProducerModePack;
-		const baseOriginal = original as ProducerModePack;
-		const mergedConstraints = mergeUniqueStrings([...baseFresh.constraints, ...baseOriginal.constraints.slice(0, 2)], 6);
-		const mergedFx = mergeUniqueStrings([...baseFresh.fxIdeas, ...baseOriginal.fxIdeas.slice(0, 2)], 6);
-		const mergedPalette = mergeUniqueStrings([...baseFresh.instrumentPalette, ...baseOriginal.instrumentPalette.slice(0, 3)], 6);
-		return {
-			...baseFresh,
-			sample: Math.random() > 0.5 ? baseOriginal.sample : baseFresh.sample,
-			secondarySample: Math.random() > 0.5 ? baseOriginal.secondarySample : baseFresh.secondarySample,
-			constraints: mergedConstraints,
-			fxIdeas: mergedFx,
-			instrumentPalette: mergedPalette,
-			challenge: `${baseOriginal.challenge.split('.')[0] ?? baseOriginal.challenge}. Remix: ${baseFresh.challenge}`.trim()
-		};
-	}
+        if (fresh.mode === 'producer' && original.mode === 'producer') {
+                const baseFresh = fresh as ProducerModePack;
+                const baseOriginal = original as ProducerModePack;
+                const mergedConstraints = mergeUniqueStrings([...baseFresh.constraints, ...baseOriginal.constraints.slice(0, 2)], 6);
+                const mergedFx = mergeUniqueStrings([...baseFresh.fxIdeas, ...baseOriginal.fxIdeas.slice(0, 2)], 6);
+                const mergedPalette = mergeUniqueStrings([...baseFresh.instrumentPalette, ...baseOriginal.instrumentPalette.slice(0, 3)], 6);
+                return {
+                        ...baseFresh,
+                        author: baseFresh.author ?? baseOriginal.author,
+                        remixOf: remixEntry,
+                        remixLineage,
+                        sample: Math.random() > 0.5 ? baseOriginal.sample : baseFresh.sample,
+                        secondarySample: Math.random() > 0.5 ? baseOriginal.secondarySample : baseFresh.secondarySample,
+                        constraints: mergedConstraints,
+                        fxIdeas: mergedFx,
+                        instrumentPalette: mergedPalette,
+                        challenge: `${baseOriginal.challenge.split('.')[0] ?? baseOriginal.challenge}. Remix: ${baseFresh.challenge}`.trim()
+                };
+        }
 
-	const baseFresh = fresh as EditorModePack;
-	const baseOriginal = original as EditorModePack;
-	const mergedMoodboard = mergeUniqueBy([...baseFresh.moodboard, ...baseOriginal.moodboard], (clip) => clip.title, 6);
-	const mergedAudio = mergeUniqueBy([...baseFresh.audioPrompts, ...baseOriginal.audioPrompts], (prompt) => prompt.name, 6);
-	const mergedTimeline = mergeUniqueStrings([...baseFresh.timelineBeats, ...baseOriginal.timelineBeats], 7);
-	const mergedConstraints = mergeUniqueStrings([...baseFresh.visualConstraints, ...baseOriginal.visualConstraints], 6);
-	return {
-		...baseFresh,
-		moodboard: mergedMoodboard,
-		audioPrompts: mergedAudio,
-		timelineBeats: mergedTimeline,
-		visualConstraints: mergedConstraints,
-		challenge: `${baseOriginal.challenge} | Remix: ${baseFresh.challenge}`.slice(0, 240)
-	};
+        const baseFresh = fresh as EditorModePack;
+        const baseOriginal = original as EditorModePack;
+        const mergedMoodboard = mergeUniqueBy([...baseFresh.moodboard, ...baseOriginal.moodboard], (clip) => clip.title, 6);
+        const mergedAudio = mergeUniqueBy([...baseFresh.audioPrompts, ...baseOriginal.audioPrompts], (prompt) => prompt.name, 6);
+        const mergedTimeline = mergeUniqueStrings([...baseFresh.timelineBeats, ...baseOriginal.timelineBeats], 7);
+        const mergedConstraints = mergeUniqueStrings([...baseFresh.visualConstraints, ...baseOriginal.visualConstraints], 6);
+        return {
+                ...baseFresh,
+                author: baseFresh.author ?? baseOriginal.author,
+                remixOf: remixEntry,
+                remixLineage,
+                moodboard: mergedMoodboard,
+                audioPrompts: mergedAudio,
+                timelineBeats: mergedTimeline,
+                visualConstraints: mergedConstraints,
+                challenge: `${baseOriginal.challenge} | Remix: ${baseFresh.challenge}`.slice(0, 240)
+        };
 }
 
 function isModePack(pack: InspireAnyPack | null): pack is ModePack {
@@ -778,9 +782,10 @@ function resolveChallengeText(pack: InspireAnyPack | null): string {
 }
 
 function App() {
-	const initialUserId = typeof window === 'undefined' ? `creator-${Date.now().toString(36)}` : loadStoredUserId();
-	const [modeDefinitions, setModeDefinitions] = useState<ModeDefinition[]>(FALLBACK_MODE_DEFINITIONS);
-	const [mode, setMode] = useState<CreativeMode | null>(null);
+        const initialUserId = typeof window === 'undefined' ? `creator-${Date.now().toString(36)}` : loadStoredUserId();
+        const { user, loading: authLoading, error: authError, signIn, signUp, signOut } = useAuth();
+        const [modeDefinitions, setModeDefinitions] = useState<ModeDefinition[]>(FALLBACK_MODE_DEFINITIONS);
+        const [mode, setMode] = useState<CreativeMode | null>(null);
 	const [submode, setSubmode] = useState<string | null>(null);
 	const [genre, setGenre] = useState<string>('r&b');
 	const [filters, setFilters] = useState<RelevanceFilter>(DEFAULT_FILTERS);
@@ -801,9 +806,13 @@ function App() {
 		if (typeof window === 'undefined') return false;
 		return false; // Don't show onboarding modal on initial load; use mode-gate instead
 	});
-	const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
-	const [showAccountModal, setShowAccountModal] = useState(false);
-	const [showCommunityOverlay, setShowCommunityOverlay] = useState(false);
+        const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
+        const [showAccountModal, setShowAccountModal] = useState(false);
+        const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+        const [authEmail, setAuthEmail] = useState('');
+        const [authPassword, setAuthPassword] = useState('');
+        const [authDisplayName, setAuthDisplayName] = useState('');
+        const [showCommunityOverlay, setShowCommunityOverlay] = useState(false);
 	const [controlsCollapsed, setControlsCollapsed] = useState<boolean>(() => {
 		if (typeof window === 'undefined') return true;
 		const stored = window.localStorage.getItem(CONTROLS_COLLAPSED_KEY);
@@ -853,10 +862,11 @@ function App() {
 	const [showModePicker, setShowModePicker] = useState(false);
 
 	// Saved packs overlay
-	const [showSavedOverlay, setShowSavedOverlay] = useState(false);
-	const [savedPacks, setSavedPacks] = useState<InspireAnyPack[]>([]);
-	const [savedLoading, setSavedLoading] = useState(false);
-	const [savedError, setSavedError] = useState<string | null>(null);
+        const [showSavedOverlay, setShowSavedOverlay] = useState(false);
+        const [savedPacks, setSavedPacks] = useState<InspireAnyPack[]>([]);
+        const [savedLoading, setSavedLoading] = useState(false);
+        const [savedError, setSavedError] = useState<string | null>(null);
+        const { setCurrentPack, setSavedPacks: syncSavedPacks, addSavedPack, recordRemix, setCombinedFocusIds: syncCombinedFocusIds } = usePackStore();
 
 	// Word Explorer overlay
 	const [showWordExplorer, setShowWordExplorer] = useState(false);
@@ -884,11 +894,23 @@ function App() {
 	const [memeStimuli, setMemeStimuli] = useState<MemeTemplate[]>([]);
 	const [memeStimuliError, setMemeStimuliError] = useState<string | null>(null);
 
-	useEffect(() => {
-		if (!focusMode) {
-			setMixerHover(false);
-		}
-	}, [focusMode]);
+        useEffect(() => {
+                if (!focusMode) {
+                        setMixerHover(false);
+                }
+        }, [focusMode]);
+
+        useEffect(() => {
+                setCurrentPack(fuelPack);
+        }, [fuelPack, setCurrentPack]);
+
+        useEffect(() => {
+                syncSavedPacks(savedPacks);
+        }, [savedPacks, syncSavedPacks]);
+
+        useEffect(() => {
+                syncCombinedFocusIds(combinedFocusCardIds);
+        }, [combinedFocusCardIds, syncCombinedFocusIds]);
 
 
 	useEffect(() => {
@@ -1027,7 +1049,7 @@ function App() {
 
         const unlockedAchievements = useMemo(() => challengeStats?.achievements ?? [], [challengeStats?.achievements]);
 
-	const isAuthenticated = useMemo(() => Boolean(userId) && !userId.startsWith('creator-'), [userId]);
+        const isAuthenticated = useMemo(() => Boolean(user), [user]);
 
 	useEffect(() => {
 		const updateCountdown = () => setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
@@ -1543,18 +1565,20 @@ function App() {
 		}
 		setLoading('remix');
 		setError(null);
-		try {
-			const fresh = await requestModePack();
-			const remixed = createRemixPack(fuelPack as ModePack, fresh);
-			setPack(remixed, 'Remix spark ready 🔁');
-			registerPackGenerated(remixed, filters);
-		} catch (err) {
-			console.error(err);
-			setError(err instanceof Error ? err.message : 'Remix attempt failed');
-		} finally {
-			setLoading(null);
-		}
-	}, [mode, submode, fuelPack, requestModePack, setPack, registerPackGenerated, filters, handleGeneratePack]);
+                try {
+                        const fresh = await requestModePack();
+                        const remixed = createRemixPack(fuelPack as ModePack, fresh);
+                        setPack(remixed, 'Remix spark ready 🔁');
+                        registerPackGenerated(remixed, filters);
+                        recordRemix(remixed);
+                        void remixPackApi(fuelPack.id, userId || 'guest', remixed as ModePack).catch(() => undefined);
+                } catch (err) {
+                        console.error(err);
+                        setError(err instanceof Error ? err.message : 'Remix attempt failed');
+                } finally {
+                        setLoading(null);
+                }
+        }, [mode, submode, fuelPack, requestModePack, setPack, registerPackGenerated, filters, handleGeneratePack, recordRemix, userId]);
 
 	const handleAddWordToPack = useCallback((word: string) => {
 		const trimmed = word.trim();
@@ -1704,60 +1728,50 @@ function App() {
 		void fetchChallengeActivity();
 	}, [showChallengeOverlay, fetchChallengeActivity]);
 
-	const handleLoadById = useCallback(async () => {
-		const target = lookupId.trim();
-		if (!target) return;
-		setLoading('load');
-		setError(null);
-		try {
-			const res = await fetch(`/api/packs/${encodeURIComponent(target)}`);
-			if (!res.ok) throw new Error('Pack not found');
-			const data = await res.json();
-			setPack(data, 'Loaded from the archive');
-			if (isModePack(data)) {
-				setMode(data.mode);
-				setSubmode(data.submode);
-				if (isLyricistPack(data)) setGenre(data.genre);
-			}
-		} catch (err) {
-			console.error(err);
-			setError(err instanceof Error ? err.message : 'Unable to load that pack');
-		} finally {
-			setLoading(null);
-		}
-	}, [lookupId, setPack]);
+        const handleLoadById = useCallback(async () => {
+                const target = lookupId.trim();
+                if (!target) return;
+                setLoading('load');
+                setError(null);
+                try {
+                        const data = await fetchPackById(target);
+                        setPack(data, 'Loaded from the archive');
+                        if (isModePack(data)) {
+                                setMode(data.mode);
+                                setSubmode(data.submode);
+                                if (isLyricistPack(data)) setGenre(data.genre);
+                        }
+                } catch (err) {
+                        console.error(err);
+                        setError(err instanceof Error ? err.message : 'Unable to load that pack');
+                } finally {
+                        setLoading(null);
+                }
+        }, [lookupId, setPack]);
 
-	const handleSharePack = useCallback(
-		async (pack: InspireAnyPack | null) => {
-			if (!pack) return;
-			const encoded = encodePack(pack);
-			const shareUrl = typeof window !== 'undefined' && encoded ? `${window.location.origin}${window.location.pathname}?${SHARE_PARAM}=${encoded}` : '';
-			const shareText = shareUrl ? `${formatShareText(pack, userId)}\n${shareUrl}` : formatShareText(pack, userId);
-			if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
-				setError('Clipboard not available. Try copying manually.');
-				return;
-			}
-			try {
-				await navigator.clipboard.writeText(shareText);
-				playCue('save');
-				setStatus('Share link copied 🔗');
-			} catch (err) {
-				console.error(err);
-				setError('Clipboard permission denied. Try selecting manually.');
-			}
-		},
-		[userId, playCue]
-	);
+        const handleSharePack = useCallback(
+                async (pack: InspireAnyPack | null) => {
+                        if (!pack) return;
+                        try {
+                                const { shareUrl } = await sharePackApi(getPackId(pack), userId);
+                                const shareText = `${formatShareText(pack, userId)}${shareUrl ? `\n${shareUrl}` : ''}`;
+                                if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+                                        throw new Error('Clipboard not available');
+                                }
+                                await navigator.clipboard.writeText(shareText);
+                                playCue('save');
+                                setStatus('Share link copied 🔗');
+                        } catch (err) {
+                                console.error(err);
+                                setError('Clipboard permission denied. Try selecting manually.');
+                        }
+                },
+                [userId, playCue]
+        );
 
-	const handleUserHandleClick = useCallback(() => {
-		if (isAuthenticated) {
-			if (typeof window !== 'undefined') {
-				window.location.assign('/dashboard');
-			}
-			return;
-		}
-		setShowAccountModal(true);
-	}, [isAuthenticated, setShowAccountModal]);
+        const handleUserHandleClick = useCallback(() => {
+                setShowAccountModal(true);
+        }, []);
 
 	const handleUserIdChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
 		setUserId(event.target.value.slice(0, 32));
@@ -1771,16 +1785,34 @@ function App() {
 		});
 	}, []);
 
-	const handleUserIdKey = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-		if (event.key === 'Enter') {
-			event.currentTarget.blur();
-		}
-	}, []);
+        const handleUserIdKey = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+                if (event.key === 'Enter') {
+                        event.currentTarget.blur();
+                }
+        }, []);
 
-	const handleThemeChange = useCallback((value: string) => {
-		setTheme(value);
-		if (typeof window !== 'undefined') {
-			window.localStorage.setItem(THEME_KEY, value);
+        const handleAuthSubmit = useCallback(
+                async (event: FormEvent<HTMLFormElement>) => {
+                        event.preventDefault();
+                        try {
+                                if (authMode === 'register') {
+                                        await signUp({ email: authEmail, password: authPassword, displayName: authDisplayName || userId });
+                                } else {
+                                        await signIn({ email: authEmail, password: authPassword });
+                                }
+                                setError(null);
+                                setShowAccountModal(false);
+                        } catch (err: any) {
+                                setError(err?.message || 'Unable to authenticate');
+                        }
+                },
+                [authMode, authDisplayName, authEmail, authPassword, signIn, signUp, userId]
+        );
+
+        const handleThemeChange = useCallback((value: string) => {
+                setTheme(value);
+                if (typeof window !== 'undefined') {
+                        window.localStorage.setItem(THEME_KEY, value);
 		}
 	}, []);
 
@@ -2270,7 +2302,7 @@ function App() {
 		if (typeof window !== 'undefined') {
 			window.localStorage.setItem('inspire:userId', userId);
 		}
-	}, [userId]);
+        }, [isAuthenticated, user, userId]);
 
 	useEffect(() => {
 		persistCreatorStats(userId, creatorStats);
@@ -2316,9 +2348,42 @@ function App() {
 		void loadModes();
 	}, []);
 
-	useEffect(() => {
-		if (typeof window === 'undefined') return;
-		const params = new URLSearchParams(window.location.search);
+        useEffect(() => {
+                if (typeof window === 'undefined') return;
+                const params = new URLSearchParams(window.location.search);
+                const shareToken = params.get(SHARE_TOKEN_PARAM);
+                if (shareToken) {
+                        (async () => {
+                                try {
+                                        const shared = await fetchSharedPack(shareToken);
+                                        setPack(shared, 'Loaded shared pack 🔗');
+                                        if (isModePack(shared)) {
+                                                setMode(shared.mode);
+                                                setSubmode(shared.submode);
+                                                if (isLyricistPack(shared)) setGenre(shared.genre);
+                                        }
+                                } catch (err) {
+                                        setError('Shared pack not available');
+                                } finally {
+                                        params.delete(SHARE_TOKEN_PARAM);
+                                        const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash ?? ''}`;
+                                        window.history.replaceState({}, '', nextUrl);
+                                }
+                        })();
+                        return;
+                }
+                const encodedPack = params.get(SHARE_PARAM);
+                if (!encodedPack) return;
+                const shared = decodePack(encodedPack);
+                if (!shared) return;
+                setPack(shared, 'Loaded shared pack 🔗');
+                if (isModePack(shared)) {
+                        setMode(shared.mode);
+                        setSubmode(shared.submode);
+                        if (isLyricistPack(shared)) setGenre(shared.genre);
+                }
+                handleDismissOnboarding();
+                params.delete(SHARE_PARAM);
 		const encodedPack = params.get(SHARE_PARAM);
 		if (!encodedPack) return;
 		const shared = decodePack(encodedPack);
@@ -2331,38 +2396,77 @@ function App() {
 		}
 		handleDismissOnboarding();
 		params.delete(SHARE_PARAM);
-		const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash ?? ''}`;
-		window.history.replaceState({}, '', nextUrl);
-	}, [setPack, handleDismissOnboarding]);
+                const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash ?? ''}`;
+                window.history.replaceState({}, '', nextUrl);
+        }, [setPack, handleDismissOnboarding]);
 
-	const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
+        useEffect(() => {
+                if (user?.displayName) {
+                        setUserId(user.displayName);
+                }
+        }, [user]);
+
+        const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
 	const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
 	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
 	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
 	const fatalError = error && !loading;
 
-	const handleSaveCurrentPack = useCallback(async () => {
-		if (!fuelPack || !isModePack(fuelPack)) return;
-		try {
-			const res = await fetch(`/api/packs/${encodeURIComponent(fuelPack.id)}/save`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ userId: userId || 'guest' })
-			});
-			if (!res.ok) throw new Error('Save failed');
-			setStatus('Saved to your archive');
-		} catch (err) {
-			setError('Could not save pack');
-		}
-	}, [fuelPack, userId]);
+        const handleSaveCurrentPack = useCallback(async () => {
+                if (!fuelPack || !isModePack(fuelPack)) return;
+                const packId = fuelPack.id;
+                addSavedPack(fuelPack);
+                try {
+                        await savePackApi(packId, userId || 'guest');
+                        setStatus('Saved to your archive');
+                } catch (err) {
+                        setSavedPacks((prev) => prev.filter((entry) => getPackId(entry) !== packId));
+                        setError('Could not save pack');
+                }
+        }, [fuelPack, userId, addSavedPack, setSavedPacks]);
 
 	const openSavedOverlay = useCallback(async () => {
-		setShowSavedOverlay(true);
-		setSavedLoading(true);
-		setSavedError(null);
-		try {
-			const qs = new URLSearchParams({ userId: userId || 'guest' });
-			const res = await fetch(`/api/packs/saved?${qs.toString()}`);
+                if (!isAuthenticated) {
+                        setError('Sign in to save packs.');
+                        setShowAccountModal(true);
+                        return;
+                }
+                try {
+                        const res = await fetch(`/api/packs/${encodeURIComponent(fuelPack.id)}/save`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ userId: user?.id || userId || 'guest' })
+                        });
+                        if (!res.ok) throw new Error('Save failed');
+                        setStatus('Saved to your archive');
+                } catch (err) {
+                        setError('Could not save pack');
+                }
+        }, [fuelPack, isAuthenticated, user, userId]);
+
+        const openSavedOverlay = useCallback(async () => {
+                if (!isAuthenticated) {
+                        setError('Sign in to view saved packs.');
+                        setShowAccountModal(true);
+                        return;
+                }
+                setShowSavedOverlay(true);
+                setSavedLoading(true);
+                setSavedError(null);
+                try {
+                        const packs = await listSavedPacks(userId || 'guest');
+                        setSavedPacks(packs);
+                } catch (err) {
+                        setSavedPacks([]);
+                        setSavedError('Unable to load saved packs');
+                } finally {
+                        setSavedLoading(false);
+                }
+        }, [userId]);
+                        const ownerId = user?.id || userId || 'guest';
+                        const qs = new URLSearchParams({ userId: ownerId });
+                        const res = await fetch(`/api/packs/saved?${qs.toString()}`, { credentials: 'include' });
 			if (!res.ok) throw new Error('Failed to load saved packs');
 			const data = await res.json();
 			setSavedPacks(Array.isArray(data.packs) ? data.packs : []);
@@ -3648,32 +3752,88 @@ function App() {
 				</FocusModeOverlay>
 			)}
 
-			{showAccountModal && (
-				<FocusModeOverlay
-					isOpen={showAccountModal}
-					onClose={() => setShowAccountModal(false)}
-					title="Sign in to Inspire"
-					ariaLabel="Creator handle sign in"
-				>
-					<div>
-						<p className="overlay-copy">Claim your creator handle to sync packs across sessions.</p>
-						<label className="handle-field" htmlFor="overlayUserId">
-							<span className="label">Creator handle</span>
-							<input
-								id="overlayUserId"
-								value={userId}
-								maxLength={32}
-								onChange={handleUserIdChange}
-								onBlur={handleUserIdBlur}
-								onKeyDown={handleUserIdKey}
-							/>
-						</label>
-						<button type="button" className="btn primary" onClick={() => setShowAccountModal(false)}>
-							Save handle
-						</button>
-					</div>
-				</FocusModeOverlay>
-			)}
+                        {showAccountModal && (
+                                <FocusModeOverlay
+                                        isOpen={showAccountModal}
+                                        onClose={() => setShowAccountModal(false)}
+                                        title={isAuthenticated ? 'Profile' : 'Sign in to Inspire'}
+                                        ariaLabel="Authentication"
+                                >
+                                        <div className="auth-modal">
+                                                {isAuthenticated && user ? (
+                                                        <div className="profile-summary">
+                                                                <p className="overlay-copy">Signed in as {user.email}</p>
+                                                                <p className="overlay-copy subtle">Display name: {user.displayName}</p>
+                                                                <button
+                                                                        type="button"
+                                                                        className="btn ghost"
+                                                                        onClick={() => {
+                                                                                void signOut();
+                                                                                setShowAccountModal(false);
+                                                                        }}
+                                                                >
+                                                                        Log out
+                                                                </button>
+                                                        </div>
+                                                ) : (
+                                                        <form className="auth-form" onSubmit={handleAuthSubmit}>
+                                                                <div className="auth-toggle" role="tablist">
+                                                                        <button
+                                                                                type="button"
+                                                                                className={`nav-pill${authMode === 'login' ? ' active' : ''}`}
+                                                                                onClick={() => setAuthMode('login')}
+                                                                        >
+                                                                                Log in
+                                                                        </button>
+                                                                        <button
+                                                                                type="button"
+                                                                                className={`nav-pill${authMode === 'register' ? ' active' : ''}`}
+                                                                                onClick={() => setAuthMode('register')}
+                                                                        >
+                                                                                Sign up
+                                                                        </button>
+                                                                </div>
+                                                                <label className="handle-field" htmlFor="authEmail">
+                                                                        <span className="label">Email</span>
+                                                                        <input
+                                                                                id="authEmail"
+                                                                                type="email"
+                                                                                required
+                                                                                value={authEmail}
+                                                                                onChange={(event) => setAuthEmail(event.target.value)}
+                                                                        />
+                                                                </label>
+                                                                <label className="handle-field" htmlFor="authPassword">
+                                                                        <span className="label">Password</span>
+                                                                        <input
+                                                                                id="authPassword"
+                                                                                type="password"
+                                                                                required
+                                                                                minLength={6}
+                                                                                value={authPassword}
+                                                                                onChange={(event) => setAuthPassword(event.target.value)}
+                                                                        />
+                                                                </label>
+                                                                {authMode === 'register' && (
+                                                                        <label className="handle-field" htmlFor="authDisplayName">
+                                                                                <span className="label">Display name</span>
+                                                                                <input
+                                                                                        id="authDisplayName"
+                                                                                        value={authDisplayName}
+                                                                                        placeholder="Your creator handle"
+                                                                                        onChange={(event) => setAuthDisplayName(event.target.value)}
+                                                                                />
+                                                                        </label>
+                                                                )}
+                                                                {(authError || error) && <p className="error">{authError ?? error}</p>}
+                                                                <button type="submit" className="btn primary" disabled={authLoading}>
+                                                                        {authLoading ? 'Working…' : authMode === 'register' ? 'Create account' : 'Log in'}
+                                                                </button>
+                                                        </form>
+                                                )}
+                                        </div>
+                                </FocusModeOverlay>
+                        )}
 
 			{showSavedOverlay && (
 				<FocusModeOverlay
