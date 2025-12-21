@@ -1,0 +1,10 @@
+[
+  {
+    "id": "d3ef88c8-ec10-42df-b992-27b37989dbbb",
+    "email": "tester-1766334819416@example.com",
+    "passwordHash": "$2b$10$3hZuwVn09FvBmhWnixGqW..5MEbLEppTqECluotYM5JtGXGYhebFe",
+    "displayName": "tester",
+    "avatarUrl": null,
+    "createdAt": 1766334819574
+  }
+]
