@@ -47,6 +47,7 @@ import fs from 'fs';
 import path from 'path';
 import { createId } from './utils/id';
 import { listChallengeActivity } from './data/challengeActivity';
+import { ChallengeService } from './services/challengeService';
 import { validateEnvironment } from './config/env';
 import { buildAuthRouter } from './auth/routes';
 import { requireAuth, AuthenticatedRequest } from './auth/middleware';
@@ -252,6 +253,7 @@ interface SavedState {
 // Allow overriding the data directory (useful for CI or different run contexts)
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve(__dirname, '..', 'data');
 const SAVED_PACKS_FILE = process.env.SAVED_PACKS_FILE || path.join(DATA_DIR, 'savedPacks.json');
+const CHALLENGE_STATE_FILE = process.env.CHALLENGE_STATE_FILE || path.join(DATA_DIR, 'challengeState.json');
 const FRONTEND_DIST = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
 const FRONTEND_INDEX = path.join(FRONTEND_DIST, 'index.html');
 const hasFrontendBuild = fs.existsSync(FRONTEND_INDEX);
@@ -269,12 +271,14 @@ function ensureDataDir() {
 ensureDataDir();
 console.log('[Inspire] Data directory:', DATA_DIR);
 console.log('[Inspire] Saved packs file:', SAVED_PACKS_FILE);
+console.log('[Inspire] Challenge state file:', CHALLENGE_STATE_FILE);
 if (hasFrontendBuild) {
   console.log('[Inspire] Serving frontend build from:', FRONTEND_DIST);
 } else {
   console.log('[Inspire] Frontend build not detected. Run `npm run build` inside frontend/ to generate the UI.');
 }
 
+const challengeService = new ChallengeService(CHALLENGE_STATE_FILE);
 async function getPackRepo() {
   if (!packRepoPromise) {
     packRepoPromise = (async () => {
@@ -408,6 +412,45 @@ function buildApiRouter() {
     const parsedLimit = limitParam ? Number.parseInt(String(limitParam), 10) : NaN;
     const activity = listChallengeActivity(Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10);
     res.json({ activity });
+  });
+
+  router.get('/challenges/current', (req: Request, res: Response) => {
+    const userId = (req.query.userId as string) || '';
+    const challenge = challengeService.getCurrentChallenge();
+    if (userId) {
+      const stats = challengeService.getStats(userId);
+      const completedToday = stats.completions.some((entry) => {
+        const timestamp = new Date(entry.completedAt).getTime();
+        const expiry = new Date(challenge.expiresAt).getTime();
+        const start = expiry - 86_400_000;
+        return entry.challengeId === challenge.id && timestamp >= start && timestamp < expiry;
+      });
+      res.json({ challenge: { ...challenge, streakCount: stats.streak }, stats: { ...stats, completedToday } });
+      return;
+    }
+    res.json({ challenge });
+  });
+
+  router.post('/challenges/complete', (req: Request, res: Response) => {
+    const { userId, challengeId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    if (!challengeId) return res.status(400).json({ error: 'challengeId is required' });
+    try {
+      const stats = challengeService.submitCompletion(userId, challengeId);
+      const challenge = challengeService.getCurrentChallenge();
+      res.json({ ...stats, challenge: { ...challenge, streakCount: stats.streak } });
+    } catch (err) {
+      console.error('[challenges/complete] error', err);
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Unable to record completion' });
+    }
+  });
+
+  router.get('/challenges/stats', (req: Request, res: Response) => {
+    const userId = (req.query.userId as string) || '';
+    if (!userId) return res.status(400).json({ error: 'userId query param required' });
+    const stats = challengeService.getStats(userId);
+    const achievements = challengeService.listAchievements();
+    res.json({ stats, achievements });
   });
 
   // Legacy simple generator routes
