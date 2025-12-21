@@ -13,6 +13,10 @@ import MouseParticles from './components/MouseParticles';
 import { FallingWordStream } from './components/FallingWordStream';
 import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
 import { FocusModeOverlay } from './components/FocusModeOverlay';
+import { CombinedFocusMode } from './components/workspace/CombinedFocusMode';
+import { CreatorSettingsModal } from './components/workspace/CreatorSettingsModal';
+import { FocusModeControls } from './components/workspace/FocusModeControls';
+import { trackEvent } from './utils/analytics';
 import { io as createSocket } from 'socket.io-client';
 import { fetchPackById, fetchSharedPack, listSavedPacks, remixPack as remixPackApi, savePack as savePackApi, sharePack as sharePackApi } from './services/packs';
 import { useAuth } from './context/AuthContext';
@@ -162,6 +166,9 @@ const THEME_OPTIONS = [
 const SHARE_PARAM = 'pack';
 const SHARE_TOKEN_PARAM = 'share';
 const STATS_KEY_PREFIX = 'inspire:creatorStats:';
+const FOCUS_CONTROLS_KEY = 'inspire:focusControls';
+const COLLAB_MODE_KEY = 'inspire:collaborationMode';
+const AUTO_REFRESH_KEY = 'inspire:autoRefreshMs';
 const ONBOARDING_KEY = 'inspire:onboardingComplete';
 const THEME_KEY = 'inspire:theme';
 const CONTROLS_COLLAPSED_KEY = 'inspire:workspaceControlsCollapsed';
@@ -862,6 +869,32 @@ function App() {
                 if (stored === null) return true;
                 return stored === 'true';
         });
+        const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(() => {
+                if (typeof window === 'undefined') return null;
+                const stored = window.localStorage.getItem(AUTO_REFRESH_KEY);
+                if (!stored) return null;
+                const parsed = Number(stored);
+                return Number.isFinite(parsed) ? parsed : null;
+        });
+        const [focusMode, setFocusMode] = useState(false);
+        const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
+        const [focusDensity, setFocusDensity] = useState<number>(() => {
+                if (typeof window === 'undefined') return 8;
+                const stored = window.localStorage.getItem(`${FOCUS_CONTROLS_KEY}:density`);
+                return stored ? Number(stored) || 8 : 8;
+        });
+        const [focusSpeed, setFocusSpeed] = useState<number>(() => {
+                if (typeof window === 'undefined') return 1;
+                const stored = window.localStorage.getItem(`${FOCUS_CONTROLS_KEY}:speed`);
+                return stored ? Number(stored) || 1 : 1;
+        });
+        const [focusControlsOpen, setFocusControlsOpen] = useState(false);
+        const [collaborationMode, setCollaborationMode] = useState<'solo' | 'live' | 'collaborative'>(() => {
+                if (typeof window === 'undefined') return 'solo';
+                const stored = window.localStorage.getItem(COLLAB_MODE_KEY);
+                if (stored === 'live' || stored === 'collaborative') return stored;
+                return 'solo';
+        });
         const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
         const [focusMode, setFocusMode] = useState(false);
         const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
@@ -925,6 +958,44 @@ function App() {
 	const youtubeVideosRef = useRef<Record<string, YouTubeVideoPreview>>({});
 
 	// New: store playlists (arrays) keyed by queue item id
+        const [youtubePlaylists, setYoutubePlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
+        const youtubePlaylistsRef = useRef<Record<string, YouTubeVideoPreview[]>>({});
+        // Interactive playlist state: per-item selected main and custom overrides
+        const [youtubeMainByItem, setYoutubeMainByItem] = useState<Record<string, string>>({});
+        const [youtubeCustomPlaylists, setYoutubeCustomPlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
+        const [trackAddInputByItem, setTrackAddInputByItem] = useState<Record<string, string>>({});
+        const [youtubeError, setYoutubeError] = useState<string | null>(null);
+
+        useEffect(() => {
+                if (typeof window === 'undefined') return;
+                window.localStorage.setItem(`${FOCUS_CONTROLS_KEY}:density`, String(focusDensity));
+        }, [focusDensity]);
+
+        useEffect(() => {
+                if (typeof window === 'undefined') return;
+                window.localStorage.setItem(`${FOCUS_CONTROLS_KEY}:speed`, String(focusSpeed));
+        }, [focusSpeed]);
+
+        useEffect(() => {
+                if (typeof window === 'undefined') return;
+                window.localStorage.setItem(COLLAB_MODE_KEY, collaborationMode);
+        }, [collaborationMode]);
+
+        useEffect(() => {
+                if (typeof window === 'undefined') return;
+                if (autoRefreshMs === null) {
+                        window.localStorage.removeItem(AUTO_REFRESH_KEY);
+                } else {
+                        window.localStorage.setItem(AUTO_REFRESH_KEY, String(autoRefreshMs));
+                }
+        }, [autoRefreshMs]);
+	const initialDailyChallenge = useMemo(() => initializeDailyChallenge(), []);
+	const [, setDailyChallengeStored] = useState<StoredDailyChallenge>(initialDailyChallenge.stored);
+	const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge>(initialDailyChallenge.challenge);
+	const [challengeCompletedToday, setChallengeCompletedToday] = useState<boolean>(initialDailyChallenge.stored.completed);
+	const [showChallengeOverlay, setShowChallengeOverlay] = useState(false);
+	const [challengeCountdown, setChallengeCountdown] = useState<string>(() => formatChallengeCountdown(initialDailyChallenge.challenge.expiresAt));
+	const [challengeActivity, setChallengeActivity] = useState<ChallengeActivity[]>([]);
 	const [youtubePlaylists, setYoutubePlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
 	const youtubePlaylistsRef = useRef<Record<string, YouTubeVideoPreview[]>>({});
 	// Interactive playlist state: per-item selected main and custom overrides
@@ -1470,23 +1541,32 @@ function App() {
 		setQueueCollapsed((prev) => !prev);
 	}, []);
 
-	const handleAutoRefreshSelect = useCallback((interval: number | null) => {
-		setAutoRefreshMs((current) => {
-			if (interval === null) return null;
-			return current === interval ? null : interval;
-		});
-	}, []);
+        const handleAutoRefreshSelect = useCallback((interval: number | null) => {
+                setAutoRefreshMs((current) => {
+                        if (interval === null) return null;
+                        return current === interval ? null : interval;
+                });
+                trackEvent('auto_refresh_selected', { interval });
+        }, []);
 
 	const handleFocusModeToggle = useCallback(() => {
 		setFocusModeType('single');
 		setFocusMode((prev) => !prev);
 	}, []);
 
-	const handleBackToPackList = useCallback(() => {
-		setExpandedCard(null);
-		setFocusMode(false);
-	}, []);
+        const handleBackToPackList = useCallback(() => {
+                setExpandedCard(null);
+                setFocusMode(false);
+        }, []);
 
+        const handleSpectateSession = useCallback((sessionId: string) => {
+                const targetSession = activeSessions.find((session) => session.id === sessionId);
+                if (!targetSession) return;
+                setSelectedSessionId(sessionId);
+		setViewerMode('spectating');
+		setCollaborationMode('solo');
+		setMode(targetSession.mode);
+		setSubmode(targetSession.submode);
         const handleCollaborationModeToggle = useCallback(
                 (next: 'live' | 'collaborative') => {
                         setCollaborationMode((current) => (current === next ? 'solo' : next));
@@ -2472,18 +2552,32 @@ function App() {
 		setMixerHover(false);
 	}, []);
 
-	const handleMixerDrop = useCallback(
-		(event: ReactDragEvent<HTMLDivElement>) => {
-			event.preventDefault();
-			setMixerHover(false);
-			const cardId = event.dataTransfer.getData('text/plain') || dragSourceRef.current;
-			if (!cardId) return;
-			const card = orderedPackDeck.find((entry) => entry.id === cardId);
-			if (!card) return;
-			setCombinedFocusCardIds((current) => (current.includes(card.id) ? current : [...current, card.id]));
-		},
-		[orderedPackDeck]
-	);
+        const handleMixerDrop = useCallback(
+                (event: ReactDragEvent<HTMLDivElement>) => {
+                        event.preventDefault();
+                        setMixerHover(false);
+                        const cardId =
+                                event.dataTransfer.getData('text/plain') ||
+                                dragSourceRef.current ||
+                                expandedCard ||
+                                orderedPackDeck[0]?.id;
+                        if (!cardId) return;
+                        const card = orderedPackDeck.find((entry) => entry.id === cardId);
+                        if (!card) return;
+                        setCombinedFocusCardIds((current) => (current.includes(card.id) ? current : [...current, card.id]));
+                },
+                [expandedCard, orderedPackDeck]
+        );
+
+        const handleMixerKeyboardAdd = useCallback(() => {
+                const cardId = expandedCard ?? orderedPackDeck[0]?.id;
+                if (!cardId) return false;
+                const card = orderedPackDeck.find((entry) => entry.id === cardId);
+                if (!card) return false;
+                setCombinedFocusCardIds((current) => (current.includes(card.id) ? current : [...current, card.id]));
+                trackEvent('combined_focus_keyboard_add', { cardId });
+                return true;
+        }, [expandedCard, orderedPackDeck]);
 
 
 		useEffect(() => {
@@ -3579,39 +3673,36 @@ function App() {
 												))}
 											</div>
 										)}
-										{isModePack(fuelPack) && !focusMode && !showingDetail && (
-											<section
-												className={`focus-mixer glass${mixerHover ? ' hover' : ''}`}
-												onDragOver={handleMixerDragOver}
-												onDragLeave={handleMixerDragLeave}
-												onDrop={handleMixerDrop}
-											>
-												<div className="focus-mixer-header">
-													<div>
-														<p className="label">Combined focus</p>
-														<h4>Drop pack cards to mix</h4>
-													</div>
-													<div className="mixer-actions">
-														<button type="button" className="btn tertiary micro" onClick={() => setCombinedFocusCardIds([])}>Clear</button>
-														<button
-															type="button"
-															className="btn secondary micro"
-															onClick={() => {
-																setFocusModeType('combined');
-																setFocusMode(true);
-																if (!expandedCard && orderedPackDeck.length) setExpandedCard(orderedPackDeck[0].id);
-															}}
-														>
-															Open focus mode
-														</button>
-													</div>
-												</div>
-												<div className={`combined-drop${mixerHover ? ' hover' : ''}`} aria-label="Combined focus drop area">
-													<span className="drop-instruction">Drop pack cards here</span>
-													<span className="drop-sub">{combinedFocusCardIds.length ? `${combinedFocusCardIds.length} added` : 'Drag from the pack deck to build this mix.'}</span>
-												</div>
-											</section>
-										)}
+                                                                                {isModePack(fuelPack) && !focusMode && !showingDetail && (
+                                                                                        <section className="focus-mixer-shell">
+                                                                                                <CombinedFocusMode
+                                                                                                        className={mixerHover ? 'focus-mixer hover' : 'focus-mixer'}
+                                                                                                        mixerHover={mixerHover}
+                                                                                                        combinedCount={combinedFocusCardIds.length}
+                                                                                                        onDragOver={handleMixerDragOver}
+                                                                                                        onDragLeave={handleMixerDragLeave}
+                                                                                                        onDrop={handleMixerDrop}
+                                                                                                        onClear={() => setCombinedFocusCardIds([])}
+                                                                                                        onKeyboardAdd={handleMixerKeyboardAdd}
+                                                                                                        stream={<FocusStream anchored forceActive />}
+                                                                                                        actions={(
+                                                                                                                <button
+                                                                                                                        type="button"
+                                                                                                                        className="btn secondary micro"
+                                                                                                                        title="Open the combined focus animation"
+                                                                                                                        onClick={() => {
+                                                                                                                                setFocusModeType('combined');
+                                                                                                                                setFocusMode(true);
+                                                                                                                                trackEvent('focus_mode_open', { type: 'combined' });
+                                                                                                                                if (!expandedCard && orderedPackDeck.length) setExpandedCard(orderedPackDeck[0].id);
+                                                                                                                        }}
+                                                                                                                >
+                                                                                                                        Open focus mode
+                                                                                                                </button>
+                                                                                                        )}
+                                                                                                />
+                                                                                        </section>
+                                                                                )}
 										{selectedCard && !focusMode && renderPackDetail(false)}
 									</>
 								)}
@@ -3781,75 +3872,44 @@ function App() {
 						)}
 					</div>
 					{focusModeType === 'single' && selectedCard && renderPackDetail(true)}
-					{focusModeType === 'combined' && (
-						<div
-							className={`combined-focus glass${mixerHover ? ' hover' : ''}`}
-							onDragOver={handleMixerDragOver}
-							onDragLeave={handleMixerDragLeave}
-							onDrop={handleMixerDrop}
-						>
-							<FocusStream anchored forceActive />
-							<div className="combined-focus-header">
-								<div>
-									<p className="label">Combined focus</p>
-									<h3>Drop pack cards to mix</h3>
-								</div>
-								<div className="mixer-actions">
-									<button type="button" className="btn ghost micro" onClick={() => setCombinedFocusCardIds([])}>Clear</button>
-								</div>
-							</div>
-							<div className={`combined-drop${mixerHover ? ' hover' : ''}`} aria-label="Combined focus drop area">
-								<span className="drop-instruction">Drop pack cards here</span>
-								<span className="drop-sub">{combinedFocusCardIds.length ? `${combinedFocusCardIds.length} added` : 'Drag from the pack deck to build this mix.'}</span>
-							</div>
-						</div>
-					)}
-				</FocusModeOverlay>
-			)}
+                                        {focusModeType === 'combined' && (
+                                                <CombinedFocusMode
+                                                        mixerHover={mixerHover}
+                                                        combinedCount={combinedFocusCardIds.length}
+                                                        onDragOver={handleMixerDragOver}
+                                                        onDragLeave={handleMixerDragLeave}
+                                                        onDrop={handleMixerDrop}
+                                                        onClear={() => setCombinedFocusCardIds([])}
+                                                        onKeyboardAdd={handleMixerKeyboardAdd}
+                                                        stream={<FocusStream anchored forceActive />}
+                                                />
+                                        )}
+                                </FocusModeOverlay>
+                        )}
 
-			{focusControlsOpen && (
-				<FocusModeOverlay
-					isOpen={focusControlsOpen}
-					onClose={() => setFocusControlsOpen(false)}
-					title="Focus word mode"
-					ariaLabel="Focus mode controls"
-				>
-					<div className="focus-controls-grid">
-						<div>
-							<span className="label">Animation</span>
-							<p className="hint">Falling words</p>
-						</div>
-						<div className="control-field">
-							<label htmlFor="focusDensity">Visible items</label>
-							<input
-								id="focusDensity"
-								type="range"
-								min={4}
-								max={24}
-								value={focusDensity}
-								onChange={(event) => setFocusDensity(Number(event.target.value))}
-							/>
-							<span className="range-value">{focusDensity}</span>
-						</div>
-						<div className="control-field">
-							<label htmlFor="focusSpeed">Speed</label>
-							<input
-								id="focusSpeed"
-								type="range"
-								min={0.5}
-								max={3}
-								step={0.1}
-								value={focusSpeed}
-								onChange={(event) => setFocusSpeed(Number(event.target.value))}
-							/>
-								<span className="range-value">{focusSpeed.toFixed(1)}x</span>
-							</div>
-							<div className="control-preview">
-								<FocusStream anchored compact forceActive />
-							</div>
-						</div>
-				</FocusModeOverlay>
-			)}
+                        {focusControlsOpen && (
+                                <FocusModeOverlay
+                                        isOpen={focusControlsOpen}
+                                        onClose={() => setFocusControlsOpen(false)}
+                                        title="Focus word mode"
+                                        ariaLabel="Focus mode controls"
+                                >
+                                        <div className="focus-controls-grid">
+                                                <div>
+                                                        <span className="label">Animation</span>
+                                                        <p className="hint">Falling words with your preferred pace and density.</p>
+                                                </div>
+                                                <FocusModeControls
+                                                        focusDensity={focusDensity}
+                                                        setFocusDensity={setFocusDensity}
+                                                        focusSpeed={focusSpeed}
+                                                        setFocusSpeed={setFocusSpeed}
+                                                        preview={<FocusStream anchored compact forceActive />}
+                                                        persistenceKey={FOCUS_CONTROLS_KEY}
+                                                />
+                                        </div>
+                                </FocusModeOverlay>
+                        )}
 
 			{chipPicker && (
 				<FocusModeOverlay
@@ -3964,44 +4024,23 @@ function App() {
 				</FocusModeOverlay>
 			)}
 
-			{showSettingsOverlay && (
-				<FocusModeOverlay
-					isOpen={showSettingsOverlay}
-					onClose={() => setShowSettingsOverlay(false)}
-					title="Creator dashboard"
-					ariaLabel="Creator dashboard settings"
-				>
-					<section className="settings-section" aria-label="Live studio controls">
-						<h3>Live studio</h3>
-						<div className="settings-collab-row">
-							<div className="nav-status" aria-live="polite">
-								<span>{collaborationStatusLabel}</span>
-								{(viewerMode === 'spectating' || viewerMode === 'joining') && (
-									<button type="button" className="btn micro ghost" onClick={handleLeaveViewerMode}>
-										Leave
-									</button>
-								)}
-							</div>
-							<div className="nav-toggle-group" role="group" aria-label="Collaboration mode">
-								<button
-									type="button"
-									className={`nav-pill${collaborationMode === 'live' ? ' active' : ''}`}
-									onClick={() => handleCollaborationModeToggle('live')}
-								>
-									Go Live
-								</button>
-								<button
-									type="button"
-									className={`nav-pill${collaborationMode === 'collaborative' ? ' active' : ''}`}
-									onClick={() => handleCollaborationModeToggle('collaborative')}
-								>
-									Collaborate
-								</button>
-							</div>
-						</div>
-					</section>
-				</FocusModeOverlay>
-			)}
+                        {showSettingsOverlay && (
+                                <CreatorSettingsModal
+                                        open={showSettingsOverlay}
+                                        onClose={() => setShowSettingsOverlay(false)}
+                                        collaborationMode={collaborationMode}
+                                        viewerMode={viewerMode}
+                                        statusLabel={collaborationStatusLabel}
+                                        autoRefreshMs={autoRefreshMs}
+                                        onCollaborationChange={(mode) => {
+                                                setCollaborationMode(mode);
+                                                setViewerMode('idle');
+                                                setSelectedSessionId(null);
+                                        }}
+                                        onAutoRefreshChange={handleAutoRefreshSelect}
+                                        onLeaveViewer={handleLeaveViewerMode}
+                                />
+                        )}
 
                         {showAccountModal && (
                                 <FocusModeOverlay
