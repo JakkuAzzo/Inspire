@@ -67,11 +67,30 @@ export interface ModePackBase {
   headline: string;
   summary: string;
   filters: RelevanceFilter;
+  author?: string;
+  remixOf?: RemixMeta;
+  remixLineage?: RemixMeta[];
+}
+
+export interface RemixMeta {
+  author: string;
+  packId: string;
+  generation: number;
 }
 
 export interface ModePackRequest {
   submode: string;
-  filters: RelevanceFilter;
+  filters?: RelevanceFilter;
+  /** Optional top-level tone override for service providers */
+  tone?: RelevanceTone;
+  /** Optional timeframe override for service providers */
+  timeframe?: RelevanceTimeframe;
+  /** Optional semantic distance override for service providers */
+  semantic?: RelevanceSemantic;
+  /** Visual or emotional mood palette to bias content */
+  mood?: string;
+  /** Additional relevance tuning parameters */
+  relevance?: Partial<RelevanceFilter>;
   genre?: string;
   wordOptions?: WordGeneratorOptions;
 }
@@ -156,6 +175,11 @@ export interface WordGeneratorOptions {
   syllables?: number;
   maxResults?: number;
   topic?: string;
+  tone?: RelevanceTone;
+  semantic?: RelevanceSemantic;
+  mood?: string;
+  timeframe?: RelevanceTimeframe;
+  tags?: string[];
 }
 
 export interface WordIdea {
@@ -171,4 +195,35 @@ export interface ChallengeActivity {
   timestamp: string;
   activity: string;
   type?: string;
+}
+
+export interface DailyChallenge {
+  id: string;
+  title: string;
+  description: string;
+  constraints: string[];
+  reward?: string;
+  expiresAt: string;
+  streakCount?: number;
+}
+
+export interface ChallengeAchievement {
+  id: string;
+  title: string;
+  description: string;
+  unlockedAt?: string;
+}
+
+export interface ChallengeCompletion {
+  challengeId: string;
+  completedAt: string;
+}
+
+export interface ChallengeStats {
+  userId: string;
+  streak: number;
+  totalCompletions: number;
+  lastCompletedAt: string | null;
+  achievements: ChallengeAchievement[];
+  completions: ChallengeCompletion[];
 }
