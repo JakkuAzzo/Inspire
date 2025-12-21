@@ -1,4 +1,5 @@
 import { ApiClient } from './apiClient';
+import { LruCache } from '../utils/cache';
 
 export interface YouTubeServiceConfig {
   pipedApiUrl: string;
@@ -52,6 +53,7 @@ interface PipedSearchItem {
 export class YouTubeService {
   private client: ApiClient;
   private config: YouTubeServiceConfig;
+  private cache = new LruCache<string, InstrumentalVideo[]>(50);
 
   constructor(config: YouTubeServiceConfig) {
     this.config = config;
@@ -59,12 +61,18 @@ export class YouTubeService {
   }
 
   async searchInstrumentals(query: string, limit: number = 5): Promise<InstrumentalVideo[]> {
+    const cacheKey = `${query}:${limit}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) return cached;
+
     try {
-      const items = await this.client.get<PipedSearchItem[]>(`/search`, {
+      const response = await this.client.get<{ items?: PipedSearchItem[] } | PipedSearchItem[]>(`/search`, {
         q: query,
         filter: 'music',
         region: 'US'
       });
+
+      const items = Array.isArray(response) ? response : response.items;
 
       if (!Array.isArray(items)) {
         return this.getFallback(limit);
@@ -82,7 +90,9 @@ export class YouTubeService {
         }
       }
 
-      return playable.length ? playable : this.getFallback(limit);
+      const results = playable.length ? playable : this.getFallback(limit);
+      this.cache.set(cacheKey, results, 60 * 1000);
+      return results;
     } catch (error) {
       if (this.config.useMockFallback) {
         return this.getFallback(limit);
@@ -138,6 +148,15 @@ export class YouTubeService {
 
   private getFallback(limit: number): InstrumentalVideo[] {
     return MOCK_INSTRUMENTALS.slice(0, limit);
+  }
+
+  getHealth() {
+    return {
+      name: 'youtube',
+      status: this.config.pipedApiUrl ? 'ok' : 'degraded',
+      cache: this.cache.metrics(),
+      endpoint: this.config.pipedApiUrl
+    };
   }
 }
 
