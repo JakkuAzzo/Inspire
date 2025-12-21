@@ -3158,6 +3158,71 @@
   gap: 1rem;
 }
 
+.streak-meter {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.streak-meter-bar {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.streak-meter-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #f59e0b, #22d3ee);
+  transition: width 0.3s ease;
+}
+
+.streak-meter-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.78);
+}
+
+.achievement-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.achievement-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.achievement-item p {
+  margin: 0.1rem 0 0;
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.achievement-empty {
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 0.95rem;
+}
+
+.badge-pill {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(34, 211, 238, 0.08);
+}
+
 .challenge-list,
 .challenge-activity,
 .challenge-steps {
