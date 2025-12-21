@@ -205,6 +205,28 @@ export interface ChallengeActivity {
   type?: string;
 }
 
+export interface ChallengeAchievement {
+  id: string;
+  title: string;
+  description: string;
+  unlockedAt?: string;
+}
+
+export interface ChallengeCompletion {
+  challengeId: string;
+  completedAt: string;
+}
+
+export interface ChallengeStats {
+  userId: string;
+  streak: number;
+  totalCompletions: number;
+  lastCompletedAt: string | null;
+  achievements: ChallengeAchievement[];
+  completions: ChallengeCompletion[];
+  completedToday?: boolean;
+}
+
 export type WorkspaceQueueItemType = 'youtube' | 'stream' | 'instrumental' | 'reference';
 
 export interface WorkspaceQueueItem {
