@@ -1,5 +1,6 @@
 import { URLSearchParams } from 'url';
-import { ApiClient } from './apiClient';
+import { ApiClient, defaultApiKeyManager } from './apiClient';
+import { LruCache } from '../utils/cache';
 import { mockMemes, mockImages, mockRedditPosts } from '../mocks/memeMocks';
 
 export interface MemeServiceConfig {
@@ -50,20 +51,28 @@ export class MemeService {
   private unsplashClient: ApiClient | null;
   private redditClient: ApiClient;
   private config: MemeServiceConfig;
+  private memeCache = new LruCache<string, Meme[]>(50);
+  private imageCache = new LruCache<string, Image[]>(50);
 
   constructor(config: MemeServiceConfig) {
     this.config = config;
-    this.imgflipClient = new ApiClient({ baseURL: config.imgflipUrl });
+    this.imgflipClient = new ApiClient({
+      baseURL: config.imgflipUrl,
+      apiKeyManager: defaultApiKeyManager,
+      apiKeyName: 'IMGFLIP_USERNAME'
+    });
     
     this.unsplashClient = config.unsplashAccessKey
       ? new ApiClient({
           baseURL: config.unsplashUrl,
+          apiKeyManager: defaultApiKeyManager,
+          apiKeyName: 'UNSPLASH_ACCESS_KEY',
           headers: {
             'Authorization': `Client-ID ${config.unsplashAccessKey}`
           }
         })
       : null;
-    
+
     this.redditClient = new ApiClient({ baseURL: config.redditUrl });
   }
 
@@ -138,9 +147,19 @@ export class MemeService {
    * Get popular meme templates
    */
   async getMemes(): Promise<Meme[]> {
+    const cached = this.memeCache.get('templates');
+    if (cached) return cached;
+
     try {
       const response = await this.imgflipClient.get<{ success: boolean; data: { memes: Meme[] } }>('/get_memes');
-      return response.data.memes;
+      if (response.success && response.data?.memes?.length) {
+        this.memeCache.set('templates', response.data.memes, 5 * 60 * 1000);
+        return response.data.memes;
+      }
+      if (this.config.useMockFallback) {
+        return mockMemes;
+      }
+      return [];
     } catch (error) {
       console.warn('[MemeService] Failed to fetch memes, using mock data');
       if (this.config.useMockFallback) {
@@ -178,12 +197,17 @@ export class MemeService {
    * @param perPage Number of results per page (default: 10)
    */
   async searchImages(query: string, perPage: number = 10): Promise<Image[]> {
+    const cacheKey = `${query}:${perPage}`;
+    const cached = this.imageCache.get(cacheKey);
+    if (cached) return cached;
+
     if (!this.unsplashClient) {
       // Return a small set of Picsum-based images to simulate search results
       const results: Image[] = [];
       for (let i = 0; i < Math.min(Math.max(perPage, 1), 20); i++) {
         results.push(this.buildPicsumImage(`${query}-${i}-${Date.now().toString(36)}`));
       }
+      this.imageCache.set(cacheKey, results, 60 * 1000);
       return results;
     }
 
@@ -192,7 +216,14 @@ export class MemeService {
         query,
         per_page: perPage
       });
-      return response.results;
+      if (response.results?.length) {
+        this.imageCache.set(cacheKey, response.results, 5 * 60 * 1000);
+        return response.results;
+      }
+      if (this.config.useMockFallback) {
+        return mockImages.slice(0, perPage);
+      }
+      return [];
     } catch (error) {
       console.warn('[MemeService] Failed to search images, using Picsum fallback');
       const results: Image[] = [];
@@ -247,6 +278,21 @@ export class MemeService {
   private getMockCaption(templateId: string, captions: string[]): { url: string } {
     const text = encodeURIComponent((captions || []).filter(Boolean).join('\n') || templateId || 'Inspire');
     return { url: `https://dummyimage.com/800x600/111/eeeeee.png&text=${text}` };
+  }
+
+  getHealth() {
+    return {
+      name: 'meme',
+      status: this.config.unsplashAccessKey || this.config.imgflipUsername ? 'ok' : 'degraded',
+      cache: {
+        memes: this.memeCache.metrics(),
+        images: this.imageCache.metrics()
+      },
+      usingKeys: {
+        imgflip: Boolean(this.config.imgflipUsername && this.config.imgflipPassword),
+        unsplash: Boolean(this.config.unsplashAccessKey)
+      }
+    };
   }
 }
 
