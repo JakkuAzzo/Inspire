@@ -67,6 +67,15 @@ export interface ModePackBase {
   headline: string;
   summary: string;
   filters: RelevanceFilter;
+  author?: string;
+  remixOf?: RemixMeta;
+  remixLineage?: RemixMeta[];
+}
+
+export interface RemixMeta {
+  author: string;
+  packId: string;
+  generation: number;
 }
 
 export interface ModePackRequest {
@@ -186,4 +195,35 @@ export interface ChallengeActivity {
   timestamp: string;
   activity: string;
   type?: string;
+}
+
+export interface DailyChallenge {
+  id: string;
+  title: string;
+  description: string;
+  constraints: string[];
+  reward?: string;
+  expiresAt: string;
+  streakCount?: number;
+}
+
+export interface ChallengeAchievement {
+  id: string;
+  title: string;
+  description: string;
+  unlockedAt?: string;
+}
+
+export interface ChallengeCompletion {
+  challengeId: string;
+  completedAt: string;
+}
+
+export interface ChallengeStats {
+  userId: string;
+  streak: number;
+  totalCompletions: number;
+  lastCompletedAt: string | null;
+  achievements: ChallengeAchievement[];
+  completions: ChallengeCompletion[];
 }
