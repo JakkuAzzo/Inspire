@@ -44,6 +44,7 @@ import fs from 'fs';
 import path from 'path';
 import { createId } from './utils/id';
 import { listChallengeActivity } from './data/challengeActivity';
+import { validateEnvironment } from './config/env';
 import { buildAuthRouter } from './auth/routes';
 import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 
@@ -65,6 +66,7 @@ const packs = new Map<string, FuelPack | ModePack>();
 const assets = new Map<string, any>();
 const magicTokens = new Map<string, { email: string; expiresAt: number }>();
 const services = createAllServices();
+const envValidation = validateEnvironment();
 
 const modeDefinitions: ModeDefinition[] = listModeDefinitions();
 const modeIds = new Set(modeDefinitions.map((definition) => definition.id));
@@ -288,7 +290,19 @@ function buildApiRouter() {
   router.use('/auth', buildAuthRouter());
 
   router.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', message: 'Inspire API is running' });
+    const serviceHealth = Object.values(services).map((svc: any) =>
+      typeof svc.getHealth === 'function'
+        ? svc.getHealth()
+        : { name: svc.constructor?.name ?? 'unknown', status: 'ok' }
+    );
+
+    const ready = envValidation.isProductionReady || process.env.NODE_ENV !== 'production';
+    res.json({
+      status: ready ? 'ok' : 'degraded',
+      message: ready ? 'Inspire API is running' : 'Missing production keys',
+      environment: envValidation,
+      services: serviceHealth
+    });
   });
 
   router.get('/modes', (_req: Request, res: Response) => {
