@@ -103,10 +103,47 @@ const LYRICIST_GENRES = [
 ];
 
 const MODE_BACKGROUNDS: Record<CreativeMode, string> = {
-	lyricist: 'mode-lyricist',
-	producer: 'mode-producer',
-	editor: 'mode-editor'
+        lyricist: 'mode-lyricist',
+        producer: 'mode-producer',
+        editor: 'mode-editor'
 };
+
+type MoodKey = 'midnight' | 'sunrise' | 'neon-dusk';
+
+const DEFAULT_MOOD: MoodKey = 'midnight';
+const MOOD_PALETTES: Record<MoodKey, { label: string; helper: string; accent: string; surface: string; border: string; glow: string; contrast: string; toneAccents?: Partial<Record<RelevanceTone, string>> }> = {
+        midnight: {
+                label: 'Midnight',
+                helper: 'Violet + navy for deep focus',
+                accent: '#7c3aed',
+                surface: 'rgba(10,16,37,0.72)',
+                border: 'rgba(148,163,184,0.22)',
+                glow: 'rgba(124,58,237,0.4)',
+                contrast: '#e2e8f0',
+                toneAccents: { dark: '#f97316' }
+        },
+        sunrise: {
+                label: 'Sunrise',
+                helper: 'Amber warmth + optimism',
+                accent: '#f59e0b',
+                surface: 'rgba(39,26,14,0.72)',
+                border: 'rgba(248,180,54,0.38)',
+                glow: 'rgba(245,158,11,0.45)',
+                contrast: '#fff7ed',
+                toneAccents: { funny: '#38bdf8' }
+        },
+        'neon-dusk': {
+                label: 'Neon Dusk',
+                helper: 'Electric cyan + magenta',
+                accent: '#22d3ee',
+                surface: 'rgba(5,10,25,0.74)',
+                border: 'rgba(56,189,248,0.35)',
+                glow: 'rgba(236,72,153,0.42)',
+                contrast: '#e0f2fe',
+                toneAccents: { deep: '#a855f7' }
+        }
+};
+const MOOD_OPTIONS = Object.entries(MOOD_PALETTES).map(([id, data]) => ({ id: id as MoodKey, ...data }));
 
 const THEME_OPTIONS = [
 	{ id: 'default', label: 'Aurora', emoji: '✨' },
@@ -766,11 +803,12 @@ function resolveChallengeText(pack: InspireAnyPack | null): string {
 function App() {
 	const initialUserId = typeof window === 'undefined' ? `creator-${Date.now().toString(36)}` : loadStoredUserId();
 	const [modeDefinitions, setModeDefinitions] = useState<ModeDefinition[]>(FALLBACK_MODE_DEFINITIONS);
-	const [mode, setMode] = useState<CreativeMode | null>(null);
-	const [submode, setSubmode] = useState<string | null>(null);
-	const [genre, setGenre] = useState<string>('r&b');
-	const [filters, setFilters] = useState<RelevanceFilter>(DEFAULT_FILTERS);
-	const [fuelPack, setFuelPack] = useState<InspireAnyPack | null>(null);
+        const [mode, setMode] = useState<CreativeMode | null>(null);
+        const [submode, setSubmode] = useState<string | null>(null);
+        const [genre, setGenre] = useState<string>('r&b');
+        const [filters, setFilters] = useState<RelevanceFilter>(DEFAULT_FILTERS);
+        const [mood, setMood] = useState<MoodKey>(DEFAULT_MOOD);
+        const [fuelPack, setFuelPack] = useState<InspireAnyPack | null>(null);
 	const [loading, setLoading] = useState<LoadingState>(null);
 	const [status, setStatus] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -1387,19 +1425,27 @@ function App() {
 			const targetFilters = overrides?.filters ?? filters;
 			const targetGenre = overrides?.genre ?? genre;
 			if (!targetMode || !targetSubmode) throw new Error('Pick a studio and lane first.');
-			const payload: ModePackRequest = { submode: targetSubmode, filters: targetFilters };
-			if (targetMode === 'lyricist') payload.genre = targetGenre;
-			const res = await fetch(`/api/modes/${targetMode}/fuel-pack`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+                        const payload: ModePackRequest = {
+                                submode: targetSubmode,
+                                filters: targetFilters,
+                                tone: targetFilters.tone,
+                                timeframe: targetFilters.timeframe,
+                                semantic: targetFilters.semantic,
+                                relevance: targetFilters,
+                                mood
+                        };
+                        if (targetMode === 'lyricist') payload.genre = targetGenre;
+                        const res = await fetch(`/api/modes/${targetMode}/fuel-pack`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(payload)
 			});
 			if (!res.ok) throw new Error('Generator not responding');
 			const data = await res.json();
 			return data.pack as ModePack;
 		},
-		[mode, submode, filters, genre]
-	);
+                [mode, submode, filters, genre, mood]
+        );
 
 	const registerPackGenerated = useCallback((pack: InspireAnyPack, activeFilters: RelevanceFilter) => {
 		if (!isModePack(pack)) return;
@@ -2290,11 +2336,24 @@ function App() {
 		window.history.replaceState({}, '', nextUrl);
 	}, [setPack, handleDismissOnboarding]);
 
-	const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
-	const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
-	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
-	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
-	const fatalError = error && !loading;
+        const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
+        const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
+        const focusEnvironment = focusMode || wordFocusMode;
+        const moodPalette = useMemo(() => MOOD_PALETTES[mood], [mood]);
+        const moodAccent = useMemo(() => moodPalette.toneAccents?.[filters.tone] ?? moodPalette.accent, [moodPalette, filters.tone]);
+        const appStyle: CSSProperties = useMemo(
+                () => ({
+                        '--mood-accent': moodAccent,
+                        '--mood-surface': moodPalette.surface,
+                        '--mood-border': moodPalette.border,
+                        '--mood-contrast': moodPalette.contrast,
+                        '--mood-glow': moodPalette.glow
+                }),
+                [moodAccent, moodPalette]
+        );
+        const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusEnvironment ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
+        const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
+        const fatalError = error && !loading;
 
 	const handleSaveCurrentPack = useCallback(async () => {
 		if (!fuelPack || !isModePack(fuelPack)) return;
@@ -2351,9 +2410,9 @@ function App() {
 		}
 	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
 
-	const workspaceMainClassName = `workspace-main${isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail ? ' with-queue' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`;
-	const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
-	const packStageClassName = `pack-stage glass${focusMode ? ' focus-mode' : ''}`;
+        const workspaceMainClassName = `workspace-main${isModePack(fuelPack) && workspaceQueue.length > 0 && !focusEnvironment && !showingDetail ? ' with-queue' : ''}${focusEnvironment || showingDetail ? ' detail-expanded' : ''}${focusEnvironment ? ' focus-layout' : ''}`;
+        const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
+        const packStageClassName = `pack-stage glass${focusEnvironment ? ' focus-mode' : ''}`;
 	const headerChips = useMemo(() => {
 		if (!fuelPack || !isModePack(fuelPack)) return [] as Array<{ label: string; type: 'headline' | 'powerWord' | 'instrument' | 'meme' | 'sample'; index?: number }>;
 		if (isLyricistPack(fuelPack)) {
@@ -2671,8 +2730,8 @@ function App() {
 		</>
 	);
 
-	return (
-		<div className={appClassName}>
+        return (
+                <div className={appClassName} style={appStyle}>
 			{!mode && <MouseParticles particleCount={500} repelDistance={300} colors={['#ec4899', '#22d3ee', '#a855f7', '#8b5cf6', '#06b6d4', '#f472b6']} particleSize={2} />}
 			<div className="ambient orb-left" aria-hidden="true" />
 			<div className="ambient orb-right" aria-hidden="true" />
@@ -3032,22 +3091,37 @@ function App() {
 				</section>
 			)}
 
-			{mode && submode && (
-				<main className={workspaceClassName}>
-					{!controlsCollapsed && !focusMode && !showingDetail && (
-						<div className="workspace-controls-overlay" role="dialog" aria-modal="true" aria-label="Workspace controls" onClick={toggleWorkspaceControls}>
-							<div className="workspace-controls" id="workspaceControls" onClick={(event) => event.stopPropagation()}>
-								<div className="controls-overlay-header">
+                        {mode && submode && (
+                                <main className={workspaceClassName}>
+                                        {!controlsCollapsed && !focusEnvironment && !showingDetail && (
+                                                <div className="workspace-controls-overlay" role="dialog" aria-modal="true" aria-label="Workspace controls" onClick={toggleWorkspaceControls}>
+                                                        <div className="workspace-controls" id="workspaceControls" onClick={(event) => event.stopPropagation()}>
+                                                                <div className="controls-overlay-header">
 									<h3>Workspace Controls</h3>
 									<button type="button" className="btn ghost micro" onClick={toggleWorkspaceControls}>Close</button>
 								</div>
 								<div className="controls-columns">
 									{/* Left Column: Relevance Blend */}
-									<div className="controls-column left">
-										<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
-											<RelevanceSlider value={filters} onChange={setFilters} />
-										</CollapsibleSection>
-									</div>
+                                                                        <div className="controls-column left">
+                                                                                <CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
+                                                                                        <RelevanceSlider value={filters} onChange={setFilters} />
+                                                                                </CollapsibleSection>
+                                                                                <CollapsibleSection title="Mood Palette" icon="🎨" description="Paint the workspace to match the pack vibe." defaultOpen>
+                                                                                        <div className="option-group mood-options">
+                                                                                                {MOOD_OPTIONS.map((option) => (
+                                                                                                        <button
+                                                                                                                key={option.id}
+                                                                                                                type="button"
+                                                                                                                className={option.id === mood ? 'chip active' : 'chip'}
+                                                                                                                onClick={() => setMood(option.id)}
+                                                                                                        >
+                                                                                                                <strong>{option.label}</strong>
+                                                                                                                <small>{option.helper}</small>
+                                                                                                        </button>
+                                                                                                ))}
+                                                                                        </div>
+                                                                                </CollapsibleSection>
+                                                                        </div>
 
 									{/* Right Column: Genre Priority & Archive */}
 									<div className="controls-column right">
@@ -3653,12 +3727,13 @@ function App() {
 			)}
 
 			{showWordExplorer && (
-				<FocusModeOverlay
-					isOpen={showWordExplorer}
-					onClose={() => setShowWordExplorer(false)}
-					title="Word Explorer"
-					ariaLabel="Word Explorer overlay"
-				>
+                                <FocusModeOverlay
+                                        isOpen={showWordExplorer}
+                                        onClose={() => setShowWordExplorer(false)}
+                                        title="Word Explorer"
+                                        ariaLabel="Word Explorer overlay"
+                                        extended={wordFocusMode}
+                                >
 					<div className="settings-section">
 						<div className="detail-toolbox" style={{ marginBottom: 12 }}>
 							<button

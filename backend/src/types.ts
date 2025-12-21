@@ -71,7 +71,17 @@ export interface ModePackBase {
 
 export interface ModePackRequest {
   submode: string;
-  filters: RelevanceFilter;
+  filters?: RelevanceFilter;
+  /** Optional top-level tone override for service providers */
+  tone?: RelevanceTone;
+  /** Optional timeframe override for service providers */
+  timeframe?: RelevanceTimeframe;
+  /** Optional semantic distance override for service providers */
+  semantic?: RelevanceSemantic;
+  /** Visual or emotional mood palette to bias content */
+  mood?: string;
+  /** Additional relevance tuning parameters */
+  relevance?: Partial<RelevanceFilter>;
   genre?: string;
   wordOptions?: WordGeneratorOptions;
 }
@@ -156,6 +166,11 @@ export interface WordGeneratorOptions {
   syllables?: number;
   maxResults?: number;
   topic?: string;
+  tone?: RelevanceTone;
+  semantic?: RelevanceSemantic;
+  mood?: string;
+  timeframe?: RelevanceTimeframe;
+  tags?: string[];
 }
 
 export interface WordIdea {

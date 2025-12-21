@@ -81,7 +81,12 @@ export interface ModePackBase {
 
 export interface ModePackRequest {
   submode: string;
-  filters: RelevanceFilter;
+  filters?: RelevanceFilter;
+  tone?: RelevanceTone;
+  timeframe?: RelevanceTimeframe;
+  semantic?: RelevanceSemantic;
+  relevance?: Partial<RelevanceFilter>;
+  mood?: string;
   genre?: string;
   wordOptions?: WordGeneratorOptions;
 }
@@ -226,6 +231,11 @@ export interface WordGeneratorOptions {
   syllables?: number;
   maxResults?: number;
   topic?: string;
+  tone?: RelevanceTone;
+  semantic?: RelevanceSemantic;
+  mood?: string;
+  timeframe?: RelevanceTimeframe;
+  tags?: string[];
 }
 
 export interface WordIdea {
