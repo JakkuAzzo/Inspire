@@ -15,6 +15,13 @@ describe('Inspire API error cases and saved packs', () => {
   });
 
   test('Save a created pack and retrieve saved packs for user', async () => {
+    const email = `tester-${Date.now()}@example.com`;
+    const password = 'pass1234';
+    const register = await request(app).post('/api/auth/register').send({ email, password, displayName: 'tester' });
+    expect(register.status).toBe(201);
+    const header = register.get('set-cookie');
+    const cookies = Array.isArray(header) ? header : header ? [header] : [];
+
     // create a pack
   const create = await request(app).post('/dev/api/fuel-pack').send({ words: 4, memes: 1 });
     expect(create.status).toBe(201);
@@ -22,8 +29,11 @@ describe('Inspire API error cases and saved packs', () => {
     expect(packId).toBeTruthy();
 
     // save it for user
-    const userId = 'testuser-' + Date.now();
-  const save = await request(app).post(`/dev/api/packs/${encodeURIComponent(packId)}/save`).send({ userId });
+    const userId = register.body.user.id;
+  const save = await request(app)
+      .post(`/dev/api/packs/${encodeURIComponent(packId)}/save`)
+      .set('Cookie', cookies)
+      .send({ userId });
     expect(save.status).toBe(200);
     expect(save.body).toHaveProperty('saved', true);
     expect(save.body).toHaveProperty('snapshot');
@@ -31,7 +41,7 @@ describe('Inspire API error cases and saved packs', () => {
     expect(Array.isArray(save.body.snapshot.words)).toBe(true);
 
     // retrieve saved packs
-  const list = await request(app).get('/dev/api/packs/saved').query({ userId });
+  const list = await request(app).get('/dev/api/packs/saved').set('Cookie', cookies).query({ userId });
     expect(list.status).toBe(200);
     expect(list.body).toHaveProperty('saved');
     expect(Array.isArray(list.body.saved)).toBe(true);
