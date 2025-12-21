@@ -300,7 +300,13 @@ function buildApiRouter() {
       return res.status(400).json({ error: 'submode is required' });
     }
 
-    const filters = coalesceFilters(body.filters);
+    const filters = coalesceFilters({
+      ...body.filters,
+      ...body.relevance,
+      timeframe: body.timeframe ?? body.filters?.timeframe ?? body.relevance?.timeframe,
+      tone: body.tone ?? body.filters?.tone ?? body.relevance?.tone,
+      semantic: body.semantic ?? body.filters?.semantic ?? body.relevance?.semantic
+    });
     const started = Date.now();
     console.log(`[fuel-pack] ${mode}/${body.submode} req filters=${JSON.stringify(filters)}`);
 
