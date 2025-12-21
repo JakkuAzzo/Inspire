@@ -21,6 +21,11 @@ export interface WordSearchOptions {
   topic?: string;
   syllables?: number;
   maxResults?: number;
+  tone?: 'funny' | 'deep' | 'dark';
+  semantic?: 'tight' | 'balanced' | 'wild';
+  mood?: string;
+  timeframe?: 'fresh' | 'recent' | 'timeless';
+  tags?: string[];
 }
 
 export interface WordDefinition {
@@ -160,8 +165,15 @@ export class WordService {
       }
     }
 
-    if (options.topic) {
-      params.topics = options.topic;
+    const topics: string[] = [];
+    if (options.topic) topics.push(options.topic);
+    if (options.mood) topics.push(options.mood);
+    if (options.tone) topics.push(options.tone);
+    if (options.semantic) topics.push(options.semantic);
+    if (options.timeframe) topics.push(options.timeframe);
+    if (options.tags?.length) topics.push(...options.tags);
+    if (topics.length) {
+      params.topics = topics.join(',');
     }
 
     if (options.rhymeWith) {
