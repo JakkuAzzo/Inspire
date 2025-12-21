@@ -80,6 +80,18 @@ Inspire/
 └── run_dev.sh                     # Dual-serve script for local dev
 ```
 
+## Database setup
+
+The backend now ships with PostgreSQL persistence. Provide `DATABASE_URL` in `backend/.env` (e.g. `postgres://user:pass@localhost:5432/inspire`) and the server will run SQL migrations on startup. Without this variable, an in-memory `pg-mem` database is used automatically for local development and tests.
+
+Example local bootstrap:
+
+```bash
+docker run --name inspire-postgres -e POSTGRES_PASSWORD=devpass -e POSTGRES_USER=devuser -e POSTGRES_DB=inspire -p 5432:5432 -d postgres:16
+cd backend && echo "DATABASE_URL=postgres://devuser:devpass@localhost:5432/inspire" > .env
+npm run dev:backend
+```
+
 ## Getting Started
 
 ### Prerequisites

@@ -3,10 +3,15 @@
 .app {
   --app-padding: clamp(2rem, 4vw, 4rem);
   --nav-height: 68px;
+  --mood-accent: #60a5fa;
+  --mood-surface: rgba(10, 16, 37, 0.62);
+  --mood-border: rgba(148, 163, 184, 0.18);
+  --mood-contrast: rgba(241, 245, 255, 0.96);
+  --mood-glow: rgba(96, 165, 250, 0.4);
   position: relative;
   min-height: 100vh;
   padding: var(--app-padding);
-  color: rgba(241, 245, 255, 0.96);
+  color: var(--mood-contrast);
   overflow-x: hidden;
   transition: background 0.6s ease, color 0.6s ease;
 }
@@ -22,6 +27,29 @@
 
 .app.focus-mode-active {
   overflow: hidden;
+}
+
+.app.focus-mode-active .top-nav,
+.app.focus-mode-active .workspace-queue,
+.app.focus-mode-active .workspace-controls-overlay {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s ease;
+}
+
+.workspace-main.focus-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-main.focus-layout > .workspace-queue,
+.workspace-main.focus-layout > .workspace-resize-divider {
+  display: none;
+}
+
+.workspace-main.focus-layout > .pack-stage {
+  max-height: calc(100vh - (var(--app-padding) * 2));
 }
 
 @keyframes backdropEnter {
@@ -174,10 +202,10 @@
 .glass {
   position: relative;
   border-radius: 22px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(10, 16, 37, 0.62);
+  border: 1px solid var(--mood-border);
+  background: var(--mood-surface);
   backdrop-filter: blur(18px);
-  box-shadow: 0 18px 45px rgba(8, 12, 28, 0.55);
+  box-shadow: 0 18px 45px color-mix(in srgb, var(--mood-glow) 60%, transparent 40%);
 }
 
 /* Navigation */
@@ -192,6 +220,8 @@
   min-height: var(--nav-height);
   margin-bottom: clamp(1.5rem, 3vw, 2.5rem);
   flex-wrap: wrap;
+  background: var(--mood-surface);
+  border: 1px solid var(--mood-border);
 }
 
 .nav-left {
@@ -834,9 +864,9 @@
 }
 
 .btn.primary {
-  background: linear-gradient(135deg, #60a5fa 0%, #818cf8 100%);
+  background: linear-gradient(135deg, var(--mood-accent) 0%, color-mix(in srgb, var(--mood-accent) 40%, var(--mood-glow) 60%) 100%);
   color: #0b1020;
-  box-shadow: 0 12px 25px rgba(96, 165, 250, 0.4);
+  box-shadow: 0 12px 25px color-mix(in srgb, var(--mood-accent) 45%, transparent 55%);
 }
 
 .btn.primary.halo {
@@ -1526,9 +1556,9 @@
   gap: 1.25rem;
   padding: 1.5rem 1.75rem;
   border-radius: 20px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(9, 16, 32, 0.78);
-  backdrop-filter: blur(14px);
+  border: 1px solid var(--mood-border);
+  background: color-mix(in srgb, var(--mood-surface) 85%, rgba(0, 0, 0, 0.45));
+  backdrop-filter: blur(14px) saturate(1.08);
   animation: fade-slide 0.6s ease;
   max-height: calc(100vh - (var(--app-padding) * 2) - var(--nav-height) - 1rem);
   overflow: auto;
@@ -2171,8 +2201,8 @@
   gap: 1.5rem;
   padding: clamp(1.8rem, 3vw, 2.4rem);
   border-radius: 22px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(10, 16, 37, 0.62);
+  border: 1px solid var(--mood-border);
+  background: color-mix(in srgb, var(--mood-surface) 92%, rgba(0, 0, 0, 0.2));
   backdrop-filter: blur(18px);
   box-shadow: 0 18px 45px rgba(8, 12, 28, 0.55);
   animation: focusModeEnter 0.45s cubic-bezier(0.22, 1, 0.36, 1);
@@ -2210,10 +2240,11 @@
   width: min(1180px, 94vw);
   padding: clamp(2rem, 4vw, 3rem);
   border-radius: 24px;
-  border: 2px solid rgba(96, 165, 250, 0.4);
-  background: rgba(8, 12, 24, 0.985);
+  border: 2px solid var(--mood-border);
+  background: color-mix(in srgb, var(--mood-surface) 94%, rgba(0, 0, 0, 0.2));
   color: rgba(255, 255, 255, 0.99);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 80px rgba(88, 121, 255, 0.5), 0 40px 120px rgba(5, 9, 20, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 80px color-mix(in srgb, var(--mood-accent) 45%, var(--mood-glow) 55%),
+    0 40px 120px rgba(5, 9, 20, 0.88);
   backdrop-filter: blur(3px) saturate(1.08);
   outline: 1px solid rgba(255, 255, 255, 0.12);
 }
@@ -2567,7 +2598,8 @@
 }
 
 .chip.active {
-  border-color: rgba(59, 130, 246, 0.8);
+  border-color: var(--mood-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--mood-accent) 40%, transparent);
   transform: translateY(-1px);
 }
 
@@ -3124,6 +3156,71 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1rem;
+}
+
+.streak-meter {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.streak-meter-bar {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.streak-meter-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #f59e0b, #22d3ee);
+  transition: width 0.3s ease;
+}
+
+.streak-meter-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.78);
+}
+
+.achievement-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.achievement-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.achievement-item p {
+  margin: 0.1rem 0 0;
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.achievement-empty {
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 0.95rem;
+}
+
+.badge-pill {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(34, 211, 238, 0.08);
 }
 
 .challenge-list,
