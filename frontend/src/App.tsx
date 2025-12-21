@@ -29,9 +29,11 @@ import type {
   CommunityPost,
   DailyChallenge,
   ChallengeActivity,
+  ChallengeAchievement,
+  ChallengeStats,
   WorkspaceQueueItem,
-	MemeTemplate,
-	RemixMeta
+        MemeTemplate,
+        RemixMeta
 } from './types';
 
 // Background helpers for mode/submode cards
@@ -367,10 +369,10 @@ function computeDailyChallengeState(existing?: StoredDailyChallenge | null): { s
 }
 
 function initializeDailyChallenge(): { stored: StoredDailyChallenge; challenge: DailyChallenge } {
-	let stored: StoredDailyChallenge | null = null;
-	if (typeof window !== 'undefined') {
-		const raw = window.localStorage.getItem(DAILY_CHALLENGE_STORAGE_KEY);
-		if (raw) {
+        let stored: StoredDailyChallenge | null = null;
+        if (typeof window !== 'undefined') {
+                const raw = window.localStorage.getItem(DAILY_CHALLENGE_STORAGE_KEY);
+                if (raw) {
 			try {
 				stored = JSON.parse(raw) as StoredDailyChallenge;
 			} catch (err) {
@@ -378,9 +380,21 @@ function initializeDailyChallenge(): { stored: StoredDailyChallenge; challenge: 
 			}
 		}
 	}
-	const state = computeDailyChallengeState(stored);
-	persistDailyChallengeState(state.stored);
-	return state;
+        const state = computeDailyChallengeState(stored);
+        persistDailyChallengeState(state.stored);
+        return state;
+}
+
+function isCompletionForChallengeDay(completedAt: string, challenge: DailyChallenge): boolean {
+        try {
+                const completedTs = new Date(completedAt).getTime();
+                const expiry = new Date(challenge.expiresAt).getTime();
+                const start = expiry - 86_400_000;
+                return completedTs >= start && completedTs < expiry;
+        } catch (err) {
+                console.warn('Unable to parse completion timestamp', err);
+                return false;
+        }
 }
 
 function formatRelativeTime(timestamp: string): string {
@@ -825,16 +839,16 @@ function App() {
 	const youtubePlaylistsRef = useRef<Record<string, YouTubeVideoPreview[]>>({});
 	// Interactive playlist state: per-item selected main and custom overrides
 	const [youtubeMainByItem, setYoutubeMainByItem] = useState<Record<string, string>>({});
-	const [youtubeCustomPlaylists, setYoutubeCustomPlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
-	const [trackAddInputByItem, setTrackAddInputByItem] = useState<Record<string, string>>({});
-	const [youtubeError, setYoutubeError] = useState<string | null>(null);
-	const initialDailyChallenge = useMemo(() => initializeDailyChallenge(), []);
-	const [, setDailyChallengeStored] = useState<StoredDailyChallenge>(initialDailyChallenge.stored);
-	const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge>(initialDailyChallenge.challenge);
-	const [challengeCompletedToday, setChallengeCompletedToday] = useState<boolean>(initialDailyChallenge.stored.completed);
-	const [showChallengeOverlay, setShowChallengeOverlay] = useState(false);
-	const [challengeCountdown, setChallengeCountdown] = useState<string>(() => formatChallengeCountdown(initialDailyChallenge.challenge.expiresAt));
-	const [challengeActivity, setChallengeActivity] = useState<ChallengeActivity[]>([]);
+        const [youtubeCustomPlaylists, setYoutubeCustomPlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
+        const [trackAddInputByItem, setTrackAddInputByItem] = useState<Record<string, string>>({});
+        const [youtubeError, setYoutubeError] = useState<string | null>(null);
+        const initialDailyChallenge = useMemo(() => initializeDailyChallenge(), []);
+        const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge>(initialDailyChallenge.challenge);
+        const [challengeCompletedToday, setChallengeCompletedToday] = useState<boolean>(initialDailyChallenge.stored.completed);
+        const [challengeStats, setChallengeStats] = useState<ChallengeStats | null>(null);
+        const [showChallengeOverlay, setShowChallengeOverlay] = useState(false);
+        const [challengeCountdown, setChallengeCountdown] = useState<string>(() => formatChallengeCountdown(initialDailyChallenge.challenge.expiresAt));
+        const [challengeActivity, setChallengeActivity] = useState<ChallengeActivity[]>([]);
 	const [challengeActivityError, setChallengeActivityError] = useState<string | null>(null);
 	const [showModePicker, setShowModePicker] = useState(false);
 
@@ -994,15 +1008,24 @@ function App() {
 		return 'Solo Session';
 	}, [activeSession, collaborationMode, viewerMode]);
 
-	const challengeResetLabel = useMemo(() => {
-		try {
-			const expiry = new Date(dailyChallenge.expiresAt);
-			return expiry.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-		} catch (err) {
+        const challengeResetLabel = useMemo(() => {
+                try {
+                        const expiry = new Date(dailyChallenge.expiresAt);
+                        return expiry.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } catch (err) {
 			console.warn('Unable to parse challenge expiry', err);
 			return 'midnight';
-		}
-	}, [dailyChallenge.expiresAt]);
+                }
+        }, [dailyChallenge.expiresAt]);
+
+        const streakProgress = useMemo(() => {
+                const current = challengeStats?.streak ?? dailyChallenge.streakCount ?? 0;
+                const nextTarget = current >= 7 ? 14 : current >= 3 ? 7 : 3;
+                const percent = Math.min(100, Math.round((current / nextTarget) * 100));
+                return { current, nextTarget, percent };
+        }, [challengeStats?.streak, dailyChallenge.streakCount]);
+
+        const unlockedAchievements = useMemo(() => challengeStats?.achievements ?? [], [challengeStats?.achievements]);
 
 	const isAuthenticated = useMemo(() => Boolean(userId) && !userId.startsWith('creator-'), [userId]);
 
@@ -1197,23 +1220,29 @@ function App() {
 		[ensureAudioContext]
 	);
 
-	const markDailyChallengeComplete = useCallback(() => {
-		if (challengeCompletedToday) return;
-		setChallengeCompletedToday(true);
-		setDailyChallengeStored((prev) => {
-			const updated: StoredDailyChallenge = {
-				...prev,
-				streak: prev.streak + 1,
-				completed: true
-			};
-			persistDailyChallengeState(updated);
-			setDailyChallenge((current) => ({
-				...current,
-				streakCount: updated.streak
-			}));
-			return updated;
-		});
-	}, [challengeCompletedToday]);
+        const markDailyChallengeComplete = useCallback(async () => {
+                if (challengeCompletedToday || !dailyChallenge) return;
+                try {
+                        const res = await fetch('/api/challenges/complete', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ userId: userId || 'guest', challengeId: dailyChallenge.id })
+                        });
+                        if (!res.ok) throw new Error('Failed to submit challenge completion');
+                        const payload = (await res.json()) as ChallengeStats & { challenge?: DailyChallenge };
+                        setChallengeStats({ ...payload, completedToday: true });
+                        if (payload.challenge) {
+                                setDailyChallenge(payload.challenge);
+                        } else {
+                                setDailyChallenge((current) => ({ ...current, streakCount: payload.streak }));
+                        }
+                        setChallengeCompletedToday(true);
+                        setStatus('Daily challenge cleared ✅');
+                } catch (err) {
+                        console.warn('Unable to mark challenge complete', err);
+                        setStatus('Challenge completion failed. Try again.');
+                }
+        }, [challengeCompletedToday, dailyChallenge, userId, setStatus]);
 
 
 	const handleDismissOnboarding = useCallback(() => {
@@ -1569,21 +1598,44 @@ function App() {
 		[userId, setPack, setMode, setSubmode, setGenre]
 	);
 
-	const handleDailyChallengeComplete = useCallback(() => {
-		if (challengeCompletedToday) return;
-		markDailyChallengeComplete();
-		setStatus('Daily challenge cleared ✅');
-	}, [challengeCompletedToday, markDailyChallengeComplete]);
+        const handleDailyChallengeComplete = useCallback(() => {
+                if (challengeCompletedToday) return;
+                void markDailyChallengeComplete();
+        }, [challengeCompletedToday, markDailyChallengeComplete]);
 
-	const handleChallengeCompleteAndClose = useCallback(() => {
-		handleDailyChallengeComplete();
-		setShowChallengeOverlay(false);
-	}, [handleDailyChallengeComplete]);
+        const handleChallengeCompleteAndClose = useCallback(() => {
+                handleDailyChallengeComplete();
+                setShowChallengeOverlay(false);
+        }, [handleDailyChallengeComplete]);
 
-	const fetchChallengeActivity = useCallback(async () => {
-		try {
-			const res = await fetch('/api/challenges/activity');
-			if (!res.ok) throw new Error('Failed to load activity');
+        const refreshChallengeFromBackend = useCallback(async () => {
+                try {
+                        const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+                        const res = await fetch(`/api/challenges/current${qs}`);
+                        if (!res.ok) throw new Error('Failed to load challenge');
+                        const payload = (await res.json()) as { challenge: DailyChallenge; stats?: ChallengeStats };
+                        if (payload.challenge) {
+                                setDailyChallenge(payload.challenge);
+                                setChallengeCountdown(formatChallengeCountdown(payload.challenge.expiresAt));
+                        }
+                        if (payload.stats) {
+                                setChallengeStats(payload.stats);
+                                const completed = payload.stats.completedToday
+                                        ?? (payload.challenge
+                                                ? payload.stats.completions.some((entry) => isCompletionForChallengeDay(entry.completedAt, payload.challenge))
+                                                : false);
+                                setChallengeCompletedToday(completed);
+                        }
+                } catch (err) {
+                        console.warn('Failed to refresh challenge', err);
+                        setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
+                }
+        }, [dailyChallenge.expiresAt, userId]);
+
+        const fetchChallengeActivity = useCallback(async () => {
+                try {
+                        const res = await fetch('/api/challenges/activity');
+                        if (!res.ok) throw new Error('Failed to load activity');
 			const payload = (await res.json()) as { activity?: ChallengeActivity[] };
 			const items = Array.isArray(payload.activity) ? payload.activity : [];
 			setChallengeActivity(items);
@@ -1595,21 +1647,14 @@ function App() {
 		}
 	}, []);
 
-	useEffect(() => {
-		if (typeof window === 'undefined') return;
-		const timer = window.setInterval(() => {
-			const todayId = getTodayId();
-			setDailyChallengeStored((prev) => {
-				if (prev.dayId === todayId) return prev;
-				const nextState = computeDailyChallengeState(prev);
-				setDailyChallenge(nextState.challenge);
-				setChallengeCompletedToday(nextState.stored.completed);
-				persistDailyChallengeState(nextState.stored);
-				return nextState.stored;
-			});
-		}, 60_000);
-		return () => window.clearInterval(timer);
-	}, [setDailyChallengeStored, setDailyChallenge, setChallengeCompletedToday]);
+        useEffect(() => {
+                if (typeof window === 'undefined') return;
+                void refreshChallengeFromBackend();
+                const timer = window.setInterval(() => {
+                        void refreshChallengeFromBackend();
+                }, 60_000);
+                return () => window.clearInterval(timer);
+        }, [refreshChallengeFromBackend]);
 
 	useEffect(() => {
 		void fetchChallengeActivity();
@@ -3492,20 +3537,44 @@ function App() {
 								<span>Resets {challengeResetLabel}</span>
 							</div>
 						</section>
-						<div className="challenge-columns">
-							<section className="challenge-card">
-								<h3>Constraints</h3>
-								<ul className="challenge-list">
-									{dailyChallenge.constraints.map((constraint) => (
-										<li key={constraint}>{constraint}</li>
-									))}
-								</ul>
-							</section>
-							<section className="challenge-card">
-								<h3>Recent activity</h3>
-								<ul className="challenge-activity">
-									{challengeActivity.length > 0 ? (
-										challengeActivity.map((entry) => (
+                                                <div className="challenge-columns">
+                                                        <section className="challenge-card">
+                                                                <h3>Constraints</h3>
+                                                                <ul className="challenge-list">
+                                                                        {dailyChallenge.constraints.map((constraint) => (
+                                                                                <li key={constraint}>{constraint}</li>
+                                                                        ))}
+                                                                </ul>
+                                                        </section>
+                                                        <section className="challenge-card">
+                                                                <h3>Streak + Badges</h3>
+                                                                <div className="streak-meter" aria-label="challenge streak progress">
+                                                                        <div className="streak-meter-bar">
+                                                                                <span style={{ width: `${streakProgress.percent}%` }} />
+                                                                        </div>
+                                                                        <div className="streak-meter-labels">
+                                                                                <span>{streakProgress.current} day streak</span>
+                                                                                <span>Next badge at {streakProgress.nextTarget} days</span>
+                                                                        </div>
+                                                                </div>
+                                                                <ul className="achievement-list">
+                                                                        {unlockedAchievements.length === 0 && <li className="achievement-empty">No badges yet. Finish today to unlock your first.</li>}
+                                                                        {unlockedAchievements.map((achievement) => (
+                                                                                <li key={achievement.id} className="achievement-item">
+                                                                                        <div>
+                                                                                                <strong>{achievement.title}</strong>
+                                                                                                <p>{achievement.description}</p>
+                                                                                        </div>
+                                                                                        <span className="badge-pill">{achievement.unlockedAt ? 'Unlocked' : 'Locked'}</span>
+                                                                                </li>
+                                                                        ))}
+                                                                </ul>
+                                                        </section>
+                                                        <section className="challenge-card">
+                                                                <h3>Recent activity</h3>
+                                                                <ul className="challenge-activity">
+                                                                        {challengeActivity.length > 0 ? (
+                                                                                challengeActivity.map((entry) => (
 											<li key={entry.id}>
 												<div className="activity-handle">{entry.handle}</div>
 												<div className="activity-status">{entry.status === 'submitted' ? 'Submitted' : 'Accepted'} · {formatRelativeTime(entry.timestamp)}</div>
