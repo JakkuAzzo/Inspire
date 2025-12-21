@@ -27,7 +27,8 @@ import {
   MemeSound,
   NewsPrompt,
   SampleReference,
-  InspirationClip
+  InspirationClip,
+  RemixMeta
 } from './types';
 import {
   generateModePack,
@@ -60,6 +61,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 const packs = new Map<string, FuelPack | ModePack>();
 const assets = new Map<string, any>();
 const magicTokens = new Map<string, { email: string; expiresAt: number }>();
+const shareTokens = new Map<string, { packId: string; createdAt: number; userId?: string }>();
 const services = createAllServices();
 
 const modeDefinitions: ModeDefinition[] = listModeDefinitions();
@@ -136,6 +138,22 @@ function buildFallbackLyricistPack(body: ModePackRequest, filters: RelevanceFilt
     chordMood: 'Minor 7th velvet',
     lyricFragments: ['"City lights blink Morse in the puddles"', '"Laughing in emojis, trauma in draft folders"'],
     wordLab: words.slice(0, 6).map((word, index) => ({ word, score: 95 - index * 3, numSyllables: Math.max(1, word.split(/[-\s]/).length) }))
+  };
+}
+
+function createRemixSnapshot(pack: ModePack, author?: string): ModePack {
+  const generation = (pack.remixOf?.generation ?? 0) + 1;
+  const remixEntry: RemixMeta = {
+    author: author ?? pack.author ?? 'guest',
+    packId: pack.id,
+    generation
+  };
+  return {
+    ...pack,
+    id: createId('remix'),
+    timestamp: Date.now(),
+    remixOf: remixEntry,
+    remixLineage: [...(pack.remixLineage ?? []), remixEntry]
   };
 }
 
@@ -426,6 +444,70 @@ function buildApiRouter() {
     writeSavedState(state);
 
     res.json({ saved: true, userId, packId, snapshot: pack });
+  });
+
+  router.post('/packs/:id/remix', (req: Request, res: Response) => {
+    const packId = req.params.id;
+    const { userId, snapshot } = req.body || {};
+    if (!packId) return res.status(400).json({ error: 'pack id required' });
+
+    const state = readSavedState();
+    const source = packs.get(packId) || state.snapshots[packId];
+    if (!source || !(source as any).mode) {
+      return res.status(404).json({ error: 'Original pack not found' });
+    }
+
+    const remixEntry: RemixMeta = {
+      author: userId || (source as any).author || 'guest',
+      packId,
+      generation: ((source as any).remixOf?.generation ?? 0) + 1
+    };
+
+    const remix: ModePack = snapshot
+      ? {
+          ...(snapshot as ModePack),
+          id: createId('remix'),
+          timestamp: Date.now(),
+          remixOf: (snapshot as ModePack).remixOf ?? remixEntry,
+          remixLineage: (snapshot as ModePack).remixLineage ?? [
+            ...(((source as ModePack).remixLineage as RemixMeta[]) ?? []),
+            remixEntry
+          ]
+        }
+      : createRemixSnapshot(source as ModePack, userId);
+    packs.set(remix.id, remix);
+    state.snapshots[remix.id] = remix;
+    writeSavedState(state);
+
+    res.status(201).json({ remix });
+  });
+
+  router.post('/packs/:id/share', (req: Request, res: Response) => {
+    const packId = req.params.id;
+    const { userId } = req.body || {};
+    if (!packId) return res.status(400).json({ error: 'pack id required' });
+
+    const state = readSavedState();
+    const pack = packs.get(packId) || state.snapshots[packId];
+    if (!pack) return res.status(404).json({ error: 'Pack not found' });
+
+    const token = createId('share');
+    shareTokens.set(token, { packId, createdAt: Date.now(), userId });
+    const shareUrl = `${req.protocol}://${req.get('host')}/share/${token}`;
+
+    res.status(201).json({ token, shareUrl, packId });
+  });
+
+  router.get('/share/:token', (req: Request, res: Response) => {
+    const token = req.params.token;
+    const entry = shareTokens.get(token);
+    if (!entry) return res.status(404).json({ error: 'Share token not found' });
+
+    const state = readSavedState();
+    const pack = packs.get(entry.packId) || state.snapshots[entry.packId];
+    if (!pack) return res.status(404).json({ error: 'Shared pack missing' });
+
+    res.json({ token, packId: entry.packId, pack });
   });
 
   // Assets stubs
