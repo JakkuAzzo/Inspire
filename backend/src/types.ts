@@ -67,6 +67,15 @@ export interface ModePackBase {
   headline: string;
   summary: string;
   filters: RelevanceFilter;
+  author?: string;
+  remixOf?: RemixMeta;
+  remixLineage?: RemixMeta[];
+}
+
+export interface RemixMeta {
+  author: string;
+  packId: string;
+  generation: number;
 }
 
 export interface ModePackRequest {
