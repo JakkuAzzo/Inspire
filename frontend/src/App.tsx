@@ -13,6 +13,7 @@ import MouseParticles from './components/MouseParticles';
 import { FallingWordStream } from './components/FallingWordStream';
 import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
 import { FocusModeOverlay } from './components/FocusModeOverlay';
+import { io as createSocket } from 'socket.io-client';
 import type {
   CreativeMode,
   ModeDefinition,
@@ -146,13 +147,14 @@ interface DeckCard {
 }
 
 interface LiveSession {
-	id: string;
-	mode: CreativeMode;
-	submode: string;
-	owner: string;
-	title: string;
-	participants: number;
-	status: 'live' | 'open';
+  id: string;
+  mode: CreativeMode;
+  submode?: string;
+  owner: string;
+  title: string;
+  participants: number;
+  viewers?: number;
+  status: 'live' | 'open';
 }
 
 interface YouTubeVideoPreview {
@@ -790,34 +792,37 @@ function App() {
 	const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
 	const [showAccountModal, setShowAccountModal] = useState(false);
 	const [showCommunityOverlay, setShowCommunityOverlay] = useState(false);
-	const [controlsCollapsed, setControlsCollapsed] = useState<boolean>(() => {
-		if (typeof window === 'undefined') return true;
-		const stored = window.localStorage.getItem(CONTROLS_COLLAPSED_KEY);
-		if (stored === null) return true;
-		return stored === 'true';
-	});
-	const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
-	const [focusMode, setFocusMode] = useState(false);
-	const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
-	const [focusDensity, setFocusDensity] = useState<number>(8);
-	const [focusSpeed, setFocusSpeed] = useState<number>(1);
-	const [focusControlsOpen, setFocusControlsOpen] = useState(false);
-	const [collaborationMode, setCollaborationMode] = useState<'solo' | 'live' | 'collaborative'>('solo');
-	const [activeSessions] = useState<LiveSession[]>(LIVE_SESSION_PRESETS);
-	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-	const [viewerMode, setViewerMode] = useState<'idle' | 'spectating' | 'joining'>('idle');
-	const [deckOrder, setDeckOrder] = useState<string[]>([]);
-	const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
-	const [combinedFocusCardIds, setCombinedFocusCardIds] = useState<string[]>([]);
-	const [customWordInput, setCustomWordInput] = useState('');
-	const [mixerHover, setMixerHover] = useState(false);
-	const [chipPicker, setChipPicker] = useState<{ type: 'powerWord' | 'instrument' | 'headline' | 'meme' | 'sample'; index?: number } | null>(null);
-	const dragSourceRef = useRef<string | null>(null);
-	const audioContextRef = useRef<AudioContext | null>(null);
-	const [communityPosts] = useState<CommunityPost[]>(COMMUNITY_POSTS);
-	const [workspaceQueue, setWorkspaceQueue] = useState<WorkspaceQueueItem[]>(INITIAL_WORKSPACE_QUEUE);
-	const [queueCollapsed, setQueueCollapsed] = useState(false);
-	const [youtubeVideos, setYoutubeVideos] = useState<Record<string, YouTubeVideoPreview>>({});
+        const [controlsCollapsed, setControlsCollapsed] = useState<boolean>(() => {
+                if (typeof window === 'undefined') return true;
+                const stored = window.localStorage.getItem(CONTROLS_COLLAPSED_KEY);
+                if (stored === null) return true;
+                return stored === 'true';
+        });
+        const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
+        const [focusMode, setFocusMode] = useState(false);
+        const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
+        const [focusDensity, setFocusDensity] = useState<number>(8);
+        const [focusSpeed, setFocusSpeed] = useState<number>(1);
+        const [focusControlsOpen, setFocusControlsOpen] = useState(false);
+        const [collaborationMode, setCollaborationMode] = useState<'solo' | 'live' | 'collaborative'>('solo');
+        const [activeSessions, setActiveSessions] = useState<LiveSession[]>(LIVE_SESSION_PRESETS);
+        const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+        const [viewerMode, setViewerMode] = useState<'idle' | 'spectating' | 'joining'>('idle');
+        const [deckOrder, setDeckOrder] = useState<string[]>([]);
+        const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
+        const [combinedFocusCardIds, setCombinedFocusCardIds] = useState<string[]>([]);
+        const [customWordInput, setCustomWordInput] = useState('');
+        const [mixerHover, setMixerHover] = useState(false);
+        const [chipPicker, setChipPicker] = useState<{ type: 'powerWord' | 'instrument' | 'headline' | 'meme' | 'sample'; index?: number } | null>(null);
+        const dragSourceRef = useRef<string | null>(null);
+        const audioContextRef = useRef<AudioContext | null>(null);
+        const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>(COMMUNITY_POSTS);
+        const [workspaceQueue, setWorkspaceQueue] = useState<WorkspaceQueueItem[]>(INITIAL_WORKSPACE_QUEUE);
+        const [queueCollapsed, setQueueCollapsed] = useState(false);
+        const [youtubeVideos, setYoutubeVideos] = useState<Record<string, YouTubeVideoPreview>>({});
+        const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
+        const [newPostContent, setNewPostContent] = useState('');
+        const [presenceNotice, setPresenceNotice] = useState<string | null>(null);
 	const youtubeVideosRef = useRef<Record<string, YouTubeVideoPreview>>({});
 
 	// New: store playlists (arrays) keyed by queue item id
@@ -994,25 +999,87 @@ function App() {
 		return 'Solo Session';
 	}, [activeSession, collaborationMode, viewerMode]);
 
-	const challengeResetLabel = useMemo(() => {
-		try {
-			const expiry = new Date(dailyChallenge.expiresAt);
-			return expiry.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-		} catch (err) {
-			console.warn('Unable to parse challenge expiry', err);
-			return 'midnight';
-		}
-	}, [dailyChallenge.expiresAt]);
+        const challengeResetLabel = useMemo(() => {
+                try {
+                        const expiry = new Date(dailyChallenge.expiresAt);
+                        return expiry.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } catch (err) {
+                        console.warn('Unable to parse challenge expiry', err);
+                        return 'midnight';
+                }
+        }, [dailyChallenge.expiresAt]);
 
-	const isAuthenticated = useMemo(() => Boolean(userId) && !userId.startsWith('creator-'), [userId]);
+        const isAuthenticated = useMemo(() => Boolean(userId) && !userId.startsWith('creator-'), [userId]);
 
-	useEffect(() => {
-		const updateCountdown = () => setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
-		updateCountdown();
-		if (typeof window === 'undefined') return;
-		const intervalId = window.setInterval(updateCountdown, 1000);
-		return () => window.clearInterval(intervalId);
-	}, [dailyChallenge.expiresAt]);
+        useEffect(() => {
+                const controller = new AbortController();
+
+                const loadRooms = async () => {
+                        try {
+                                const res = await fetch('/api/rooms', { signal: controller.signal });
+                                if (!res.ok) return;
+                                const data = await res.json();
+                                if (Array.isArray(data.rooms)) {
+                                        setActiveSessions(data.rooms);
+                                }
+                        } catch (err) {
+                                if (!controller.signal.aborted) {
+                                        console.warn('Unable to load rooms', err);
+                                }
+                        }
+                };
+
+                const loadFeed = async () => {
+                        try {
+                                const res = await fetch('/api/feed', { signal: controller.signal });
+                                if (!res.ok) return;
+                                const data = await res.json();
+                                if (Array.isArray(data.items)) {
+                                        setCommunityPosts(data.items);
+                                }
+                        } catch (err) {
+                                if (!controller.signal.aborted) {
+                                        console.warn('Unable to load feed', err);
+                                }
+                        }
+                };
+
+                void loadRooms();
+                void loadFeed();
+                return () => controller.abort();
+        }, []);
+
+        useEffect(() => {
+                const updateCountdown = () => setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
+                updateCountdown();
+                if (typeof window === 'undefined') return;
+                const intervalId = window.setInterval(updateCountdown, 1000);
+                return () => window.clearInterval(intervalId);
+        }, [dailyChallenge.expiresAt]);
+
+        useEffect(() => {
+                const socket = createSocket('/', { transports: ['websocket', 'polling'] });
+                socketRef.current = socket;
+
+                socket.on('feed:init', (items: CommunityPost[]) => {
+                        setCommunityPosts(items);
+                });
+                socket.on('feed:new', (post: CommunityPost) => {
+                        setCommunityPosts((prev) => [post, ...prev].slice(0, 60));
+                });
+                socket.on('rooms:update', (rooms: LiveSession[]) => {
+                        setActiveSessions(rooms);
+                });
+                socket.on('room:presence', ({ roomId, user, action }) => {
+                        setPresenceNotice(`${user ?? 'Someone'} ${action} ${roomId}`);
+                        window.setTimeout(() => setPresenceNotice(null), 2500);
+                });
+                socket.connect();
+                return () => {
+                        socket.disconnect();
+                        socketRef.current = null;
+                };
+        }, []);
 
 	useEffect(() => {
 		if (!isModePack(fuelPack) || !workspaceQueue.length) {
@@ -1279,35 +1346,52 @@ function App() {
 		setFocusMode(false);
 	}, []);
 
-	const handleCollaborationModeToggle = useCallback(
-		(next: 'live' | 'collaborative') => {
-			setCollaborationMode((current) => (current === next ? 'solo' : next));
-			setViewerMode('idle');
-			setSelectedSessionId(null);
-		},
-		[]
-	);
+        const handleCollaborationModeToggle = useCallback(
+                (next: 'live' | 'collaborative') => {
+                        setCollaborationMode((current) => (current === next ? 'solo' : next));
+                        setViewerMode('idle');
+                        setSelectedSessionId(null);
+                },
+                []
+        );
 
-	const handleSpectateSession = useCallback((sessionId: string) => {
-		const targetSession = activeSessions.find((session) => session.id === sessionId);
-		if (!targetSession) return;
-		setSelectedSessionId(sessionId);
-		setViewerMode('spectating');
-		setCollaborationMode('solo');
-		setMode(targetSession.mode);
-		setSubmode(targetSession.submode);
+        const sendRoomPresence = useCallback(
+                async (sessionId: string, intent: 'join' | 'spectate') => {
+                        try {
+                                await fetch(`/api/rooms/${encodeURIComponent(sessionId)}/${intent === 'join' ? 'join' : 'spectate'}`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ user: userId || 'guest' })
+                                });
+                        } catch (err) {
+                                console.warn('Unable to signal room presence', err);
+                        }
+                },
+                [userId]
+        );
+
+        const handleSpectateSession = useCallback((sessionId: string) => {
+                const targetSession = activeSessions.find((session) => session.id === sessionId);
+                if (!targetSession) return;
+                void sendRoomPresence(sessionId, 'spectate');
+                setSelectedSessionId(sessionId);
+                setViewerMode('spectating');
+                setCollaborationMode('solo');
+                setMode(targetSession.mode);
+                setSubmode(targetSession.submode);
 		setFuelPack(null);
 		setExpandedCard(null);
 		setStatus(`Spectating ${targetSession.owner}'s ${targetSession.title}`);
 	}, [activeSessions]);
 
-	const handleJoinSession = useCallback((sessionId: string) => {
-		const targetSession = activeSessions.find((session) => session.id === sessionId);
-		if (!targetSession) return;
-		setSelectedSessionId(sessionId);
-		setViewerMode('joining');
-		setCollaborationMode('collaborative');
-		setMode(targetSession.mode);
+        const handleJoinSession = useCallback((sessionId: string) => {
+                const targetSession = activeSessions.find((session) => session.id === sessionId);
+                if (!targetSession) return;
+                void sendRoomPresence(sessionId, 'join');
+                setSelectedSessionId(sessionId);
+                setViewerMode('joining');
+                setCollaborationMode('collaborative');
+                setMode(targetSession.mode);
 		setSubmode(targetSession.submode);
 		setFuelPack(null);
 		setExpandedCard(null);
@@ -1537,16 +1621,38 @@ function App() {
 		});
 	}, []);
 
-	const handleCustomWordSubmit = useCallback(() => {
-		if (!customWordInput.trim()) return;
-		handleAddWordToPack(customWordInput.trim());
-		setCustomWordInput('');
-	}, [customWordInput, handleAddWordToPack]);
+        const handleCustomWordSubmit = useCallback(() => {
+                if (!customWordInput.trim()) return;
+                handleAddWordToPack(customWordInput.trim());
+                setCustomWordInput('');
+        }, [customWordInput, handleAddWordToPack]);
 
-	const handleForkCommunityPost = useCallback(
-		(post: CommunityPost) => {
-			const sourcePack = post.featuredPack;
-			if (!sourcePack || !isModePack(sourcePack)) return;
+        const handleSubmitCommunityPost = useCallback(async () => {
+                const trimmed = newPostContent.trim();
+                if (!trimmed) return;
+                try {
+                        const res = await fetch('/api/feed', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ author: userId || 'guest', content: trimmed, contentType: 'text' })
+                        });
+                        if (!res.ok) throw new Error('post failed');
+                        const data = await res.json();
+                        if (data?.post) {
+                                setCommunityPosts((prev) => [data.post as CommunityPost, ...prev].slice(0, 60));
+                        }
+                        setNewPostContent('');
+                        setError(null);
+                } catch (err) {
+                        console.error(err);
+                        setError('Unable to share to the feed right now.');
+                }
+        }, [newPostContent, userId, setCommunityPosts, setError]);
+
+        const handleForkCommunityPost = useCallback(
+                (post: CommunityPost) => {
+                        const sourcePack = post.featuredPack;
+                        if (!sourcePack || !isModePack(sourcePack)) return;
 			const lineageEntry: RemixMeta = {
 				author: sourcePack.author ?? post.author,
 				packId: sourcePack.id,
@@ -2927,15 +3033,17 @@ function App() {
 				</>
 			)}
 
-			{(loading || status || error) && (
-				<div className="feedback-area" aria-live="polite">
-					{loading === 'generate' && <div className="feedback loading">Assembling your spark…</div>}
-					{loading === 'load' && <div className="feedback loading">Pulling from the archive…</div>}
-					{loading === 'remix' && <div className="feedback loading">Remixing your pack…</div>}
-					{status && <div className="feedback success">{status}</div>}
-					{error && <div className="feedback error">⚠️ {error}</div>}
-				</div>
-			)}
+                        {(loading || status || error) && (
+                                <div className="feedback-area" aria-live="polite">
+                                        {loading === 'generate' && <div className="feedback loading">Assembling your spark…</div>}
+                                        {loading === 'load' && <div className="feedback loading">Pulling from the archive…</div>}
+                                        {loading === 'remix' && <div className="feedback loading">Remixing your pack…</div>}
+                                        {status && <div className="feedback success">{status}</div>}
+                                        {error && <div className="feedback error">⚠️ {error}</div>}
+                                </div>
+                        )}
+
+                        {presenceNotice && <div className="feedback success" role="status" aria-live="polite">{presenceNotice}</div>}
 
 			{!mode && (
 				showModePicker ? (
@@ -2965,16 +3073,29 @@ function App() {
 
 			{showCommunityOverlay && (
 				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Community feed" onClick={() => setShowCommunityOverlay(false)}>
-					<div className="community-overlay glass" onClick={(event) => event.stopPropagation()}>
-						<div className="overlay-header">
-							<h3>Community feed</h3>
-							<button type="button" className="icon-button" aria-label="Close community feed" onClick={() => setShowCommunityOverlay(false)}>✕</button>
-						</div>
-						<div className="feed-scroll">
-							{communityPosts.map((post) => (
-								<article key={post.id} className="feed-card">
-									<div className="feed-meta">
-										<span className="feed-author">{post.author}</span>
+                                        <div className="community-overlay glass" onClick={(event) => event.stopPropagation()}>
+                                                <div className="overlay-header">
+                                                        <h3>Community feed</h3>
+                                                        <button type="button" className="icon-button" aria-label="Close community feed" onClick={() => setShowCommunityOverlay(false)}>✕</button>
+                                                </div>
+                                                <div className="feed-compose">
+                                                        <textarea
+                                                                placeholder="Share a spark, lyric, or link for collaborators..."
+                                                                value={newPostContent}
+                                                                onChange={(event) => setNewPostContent(event.target.value)}
+                                                        />
+                                                        <div className="compose-actions">
+                                                                <button type="button" className="btn micro" onClick={handleSubmitCommunityPost} disabled={!newPostContent.trim()}>
+                                                                        Post update
+                                                                </button>
+                                                                <span className="compose-hint">Real-time updates broadcast to everyone spectating.</span>
+                                                        </div>
+                                                </div>
+                                                <div className="feed-scroll">
+                                                        {communityPosts.map((post) => (
+                                                                <article key={post.id} className="feed-card">
+                                                                        <div className="feed-meta">
+                                                                                <span className="feed-author">{post.author}</span>
 										<span className="feed-timestamp">{formatRelativeTime(post.createdAt)}</span>
 									</div>
 									<p className="feed-content">{post.content}</p>
