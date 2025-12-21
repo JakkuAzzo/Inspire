@@ -13,6 +13,7 @@ import MouseParticles from './components/MouseParticles';
 import { FallingWordStream } from './components/FallingWordStream';
 import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
 import { FocusModeOverlay } from './components/FocusModeOverlay';
+import { fetchPackById, fetchSharedPack, listSavedPacks, remixPack as remixPackApi, savePack as savePackApi, sharePack as sharePackApi } from './services/packs';
 import { useAuth } from './context/AuthContext';
 import type {
   CreativeMode,
@@ -31,9 +32,10 @@ import type {
   DailyChallenge,
   ChallengeActivity,
   WorkspaceQueueItem,
-	MemeTemplate,
-	RemixMeta
+        MemeTemplate,
+        RemixMeta
 } from './types';
+import { usePackStore } from './state/packStore';
 
 // Background helpers for mode/submode cards
 const MODE_BG_BY_ID: Record<CreativeMode, string> = {
@@ -110,14 +112,15 @@ const MODE_BACKGROUNDS: Record<CreativeMode, string> = {
 };
 
 const THEME_OPTIONS = [
-	{ id: 'default', label: 'Aurora', emoji: '✨' },
-	{ id: 'lofi', label: 'Lo-Fi', emoji: '🌙' },
-	{ id: 'neon', label: 'Neon', emoji: '🌈' },
-	{ id: 'vaporwave', label: 'Vaporwave', emoji: '🌅' },
-	{ id: 'noir', label: 'Noir', emoji: '🖤' }
+        { id: 'default', label: 'Aurora', emoji: '✨' },
+        { id: 'lofi', label: 'Lo-Fi', emoji: '🌙' },
+        { id: 'neon', label: 'Neon', emoji: '🌈' },
+        { id: 'vaporwave', label: 'Vaporwave', emoji: '🌅' },
+        { id: 'noir', label: 'Noir', emoji: '🖤' }
 ];
 
 const SHARE_PARAM = 'pack';
+const SHARE_TOKEN_PARAM = 'share';
 const STATS_KEY_PREFIX = 'inspire:creatorStats:';
 const ONBOARDING_KEY = 'inspire:onboardingComplete';
 const THEME_KEY = 'inspire:theme';
@@ -553,28 +556,13 @@ function mergeUniqueBy<T>(items: T[], key: (item: T) => string, limit?: number):
 	return result;
 }
 
-function base64Encode(text: string): string {
-	if (typeof window === 'undefined') return '';
-	const utf8 = encodeURIComponent(text).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(Number.parseInt(p1, 16)));
-	return window.btoa(utf8);
-}
-
 function base64Decode(text: string): string {
-	if (typeof window === 'undefined') return '';
-	const binary = window.atob(text);
-	const percentEncoded = Array.from(binary)
-		.map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
-		.join('');
-	return decodeURIComponent(percentEncoded);
-}
-
-function encodePack(pack: InspireAnyPack): string {
-	try {
-		return base64Encode(JSON.stringify(pack));
-	} catch (err) {
-		console.error('Unable to encode pack', err);
-		return '';
-	}
+        if (typeof window === 'undefined') return '';
+        const binary = window.atob(text);
+        const percentEncoded = Array.from(binary)
+                .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+                .join('');
+        return decodeURIComponent(percentEncoded);
 }
 
 function decodePack(encoded: string): InspireAnyPack | null {
@@ -680,60 +668,75 @@ function formatShareText(pack: InspireAnyPack, userId: string) {
 }
 
 function createRemixPack(original: ModePack, fresh: ModePack): ModePack {
-	if (original.mode !== fresh.mode) return fresh;
-	if (fresh.mode === 'lyricist' && original.mode === 'lyricist') {
-		const baseFresh = fresh as LyricistModePack;
-		const baseOriginal = original as LyricistModePack;
-		const mergedWords = mergeUniqueStrings([...baseOriginal.powerWords.slice(0, 3), ...baseFresh.powerWords], 6);
-		const mergedFlow = mergeUniqueStrings([...baseFresh.flowPrompts.slice(0, 3), ...baseOriginal.flowPrompts.slice(0, 2)], 5);
-		const mergedFragments = mergeUniqueStrings([...baseFresh.lyricFragments.slice(0, 3), ...baseOriginal.lyricFragments.slice(0, 2)], 6);
-		return {
-			...baseFresh,
-			powerWords: mergedWords,
-			flowPrompts: mergedFlow,
-			lyricFragments: mergedFragments,
-			storyArc: {
-				start: baseOriginal.storyArc.start,
-				middle: baseFresh.storyArc.middle,
-				end: baseFresh.storyArc.end
-			},
-			memeSound: Math.random() > 0.5 ? baseOriginal.memeSound : baseFresh.memeSound,
-			topicChallenge: Math.random() > 0.5 ? baseOriginal.topicChallenge : baseFresh.topicChallenge,
-			summary: `${baseOriginal.summary.split('.').at(0) ?? baseOriginal.summary}. ${baseFresh.summary}`.trim()
-		};
-	}
+        const remixEntry: RemixMeta = {
+                author: original.author ?? '@guest',
+                packId: original.id,
+                generation: (original.remixOf?.generation ?? 0) + 1
+        };
+        const remixLineage = [...(original.remixLineage ?? []), remixEntry];
+        if (original.mode !== fresh.mode) return { ...fresh, remixOf: remixEntry, remixLineage };
+        if (fresh.mode === 'lyricist' && original.mode === 'lyricist') {
+                const baseFresh = fresh as LyricistModePack;
+                const baseOriginal = original as LyricistModePack;
+                const mergedWords = mergeUniqueStrings([...baseOriginal.powerWords.slice(0, 3), ...baseFresh.powerWords], 6);
+                const mergedFlow = mergeUniqueStrings([...baseFresh.flowPrompts.slice(0, 3), ...baseOriginal.flowPrompts.slice(0, 2)], 5);
+                const mergedFragments = mergeUniqueStrings([...baseFresh.lyricFragments.slice(0, 3), ...baseOriginal.lyricFragments.slice(0, 2)], 6);
+                return {
+                        ...baseFresh,
+                        author: baseFresh.author ?? baseOriginal.author,
+                        remixOf: remixEntry,
+                        remixLineage,
+                        powerWords: mergedWords,
+                        flowPrompts: mergedFlow,
+                        lyricFragments: mergedFragments,
+                        storyArc: {
+                                start: baseOriginal.storyArc.start,
+                                middle: baseFresh.storyArc.middle,
+                                end: baseFresh.storyArc.end
+                        },
+                        memeSound: Math.random() > 0.5 ? baseOriginal.memeSound : baseFresh.memeSound,
+                        topicChallenge: Math.random() > 0.5 ? baseOriginal.topicChallenge : baseFresh.topicChallenge,
+                        summary: `${baseOriginal.summary.split('.').at(0) ?? baseOriginal.summary}. ${baseFresh.summary}`.trim()
+                };
+        }
 
-	if (fresh.mode === 'producer' && original.mode === 'producer') {
-		const baseFresh = fresh as ProducerModePack;
-		const baseOriginal = original as ProducerModePack;
-		const mergedConstraints = mergeUniqueStrings([...baseFresh.constraints, ...baseOriginal.constraints.slice(0, 2)], 6);
-		const mergedFx = mergeUniqueStrings([...baseFresh.fxIdeas, ...baseOriginal.fxIdeas.slice(0, 2)], 6);
-		const mergedPalette = mergeUniqueStrings([...baseFresh.instrumentPalette, ...baseOriginal.instrumentPalette.slice(0, 3)], 6);
-		return {
-			...baseFresh,
-			sample: Math.random() > 0.5 ? baseOriginal.sample : baseFresh.sample,
-			secondarySample: Math.random() > 0.5 ? baseOriginal.secondarySample : baseFresh.secondarySample,
-			constraints: mergedConstraints,
-			fxIdeas: mergedFx,
-			instrumentPalette: mergedPalette,
-			challenge: `${baseOriginal.challenge.split('.')[0] ?? baseOriginal.challenge}. Remix: ${baseFresh.challenge}`.trim()
-		};
-	}
+        if (fresh.mode === 'producer' && original.mode === 'producer') {
+                const baseFresh = fresh as ProducerModePack;
+                const baseOriginal = original as ProducerModePack;
+                const mergedConstraints = mergeUniqueStrings([...baseFresh.constraints, ...baseOriginal.constraints.slice(0, 2)], 6);
+                const mergedFx = mergeUniqueStrings([...baseFresh.fxIdeas, ...baseOriginal.fxIdeas.slice(0, 2)], 6);
+                const mergedPalette = mergeUniqueStrings([...baseFresh.instrumentPalette, ...baseOriginal.instrumentPalette.slice(0, 3)], 6);
+                return {
+                        ...baseFresh,
+                        author: baseFresh.author ?? baseOriginal.author,
+                        remixOf: remixEntry,
+                        remixLineage,
+                        sample: Math.random() > 0.5 ? baseOriginal.sample : baseFresh.sample,
+                        secondarySample: Math.random() > 0.5 ? baseOriginal.secondarySample : baseFresh.secondarySample,
+                        constraints: mergedConstraints,
+                        fxIdeas: mergedFx,
+                        instrumentPalette: mergedPalette,
+                        challenge: `${baseOriginal.challenge.split('.')[0] ?? baseOriginal.challenge}. Remix: ${baseFresh.challenge}`.trim()
+                };
+        }
 
-	const baseFresh = fresh as EditorModePack;
-	const baseOriginal = original as EditorModePack;
-	const mergedMoodboard = mergeUniqueBy([...baseFresh.moodboard, ...baseOriginal.moodboard], (clip) => clip.title, 6);
-	const mergedAudio = mergeUniqueBy([...baseFresh.audioPrompts, ...baseOriginal.audioPrompts], (prompt) => prompt.name, 6);
-	const mergedTimeline = mergeUniqueStrings([...baseFresh.timelineBeats, ...baseOriginal.timelineBeats], 7);
-	const mergedConstraints = mergeUniqueStrings([...baseFresh.visualConstraints, ...baseOriginal.visualConstraints], 6);
-	return {
-		...baseFresh,
-		moodboard: mergedMoodboard,
-		audioPrompts: mergedAudio,
-		timelineBeats: mergedTimeline,
-		visualConstraints: mergedConstraints,
-		challenge: `${baseOriginal.challenge} | Remix: ${baseFresh.challenge}`.slice(0, 240)
-	};
+        const baseFresh = fresh as EditorModePack;
+        const baseOriginal = original as EditorModePack;
+        const mergedMoodboard = mergeUniqueBy([...baseFresh.moodboard, ...baseOriginal.moodboard], (clip) => clip.title, 6);
+        const mergedAudio = mergeUniqueBy([...baseFresh.audioPrompts, ...baseOriginal.audioPrompts], (prompt) => prompt.name, 6);
+        const mergedTimeline = mergeUniqueStrings([...baseFresh.timelineBeats, ...baseOriginal.timelineBeats], 7);
+        const mergedConstraints = mergeUniqueStrings([...baseFresh.visualConstraints, ...baseOriginal.visualConstraints], 6);
+        return {
+                ...baseFresh,
+                author: baseFresh.author ?? baseOriginal.author,
+                remixOf: remixEntry,
+                remixLineage,
+                moodboard: mergedMoodboard,
+                audioPrompts: mergedAudio,
+                timelineBeats: mergedTimeline,
+                visualConstraints: mergedConstraints,
+                challenge: `${baseOriginal.challenge} | Remix: ${baseFresh.challenge}`.slice(0, 240)
+        };
 }
 
 function isModePack(pack: InspireAnyPack | null): pack is ModePack {
@@ -845,10 +848,11 @@ function App() {
 	const [showModePicker, setShowModePicker] = useState(false);
 
 	// Saved packs overlay
-	const [showSavedOverlay, setShowSavedOverlay] = useState(false);
-	const [savedPacks, setSavedPacks] = useState<InspireAnyPack[]>([]);
-	const [savedLoading, setSavedLoading] = useState(false);
-	const [savedError, setSavedError] = useState<string | null>(null);
+        const [showSavedOverlay, setShowSavedOverlay] = useState(false);
+        const [savedPacks, setSavedPacks] = useState<InspireAnyPack[]>([]);
+        const [savedLoading, setSavedLoading] = useState(false);
+        const [savedError, setSavedError] = useState<string | null>(null);
+        const { setCurrentPack, setSavedPacks: syncSavedPacks, addSavedPack, recordRemix, setCombinedFocusIds: syncCombinedFocusIds } = usePackStore();
 
 	// Word Explorer overlay
 	const [showWordExplorer, setShowWordExplorer] = useState(false);
@@ -876,11 +880,23 @@ function App() {
 	const [memeStimuli, setMemeStimuli] = useState<MemeTemplate[]>([]);
 	const [memeStimuliError, setMemeStimuliError] = useState<string | null>(null);
 
-	useEffect(() => {
-		if (!focusMode) {
-			setMixerHover(false);
-		}
-	}, [focusMode]);
+        useEffect(() => {
+                if (!focusMode) {
+                        setMixerHover(false);
+                }
+        }, [focusMode]);
+
+        useEffect(() => {
+                setCurrentPack(fuelPack);
+        }, [fuelPack, setCurrentPack]);
+
+        useEffect(() => {
+                syncSavedPacks(savedPacks);
+        }, [savedPacks, syncSavedPacks]);
+
+        useEffect(() => {
+                syncCombinedFocusIds(combinedFocusCardIds);
+        }, [combinedFocusCardIds, syncCombinedFocusIds]);
 
 
 	useEffect(() => {
@@ -1520,18 +1536,20 @@ function App() {
 		}
 		setLoading('remix');
 		setError(null);
-		try {
-			const fresh = await requestModePack();
-			const remixed = createRemixPack(fuelPack as ModePack, fresh);
-			setPack(remixed, 'Remix spark ready 🔁');
-			registerPackGenerated(remixed, filters);
-		} catch (err) {
-			console.error(err);
-			setError(err instanceof Error ? err.message : 'Remix attempt failed');
-		} finally {
-			setLoading(null);
-		}
-	}, [mode, submode, fuelPack, requestModePack, setPack, registerPackGenerated, filters, handleGeneratePack]);
+                try {
+                        const fresh = await requestModePack();
+                        const remixed = createRemixPack(fuelPack as ModePack, fresh);
+                        setPack(remixed, 'Remix spark ready 🔁');
+                        registerPackGenerated(remixed, filters);
+                        recordRemix(remixed);
+                        void remixPackApi(fuelPack.id, userId || 'guest', remixed as ModePack).catch(() => undefined);
+                } catch (err) {
+                        console.error(err);
+                        setError(err instanceof Error ? err.message : 'Remix attempt failed');
+                } finally {
+                        setLoading(null);
+                }
+        }, [mode, submode, fuelPack, requestModePack, setPack, registerPackGenerated, filters, handleGeneratePack, recordRemix, userId]);
 
 	const handleAddWordToPack = useCallback((word: string) => {
 		const trimmed = word.trim();
@@ -1665,50 +1683,46 @@ function App() {
 		void fetchChallengeActivity();
 	}, [showChallengeOverlay, fetchChallengeActivity]);
 
-	const handleLoadById = useCallback(async () => {
-		const target = lookupId.trim();
-		if (!target) return;
-		setLoading('load');
-		setError(null);
-		try {
-			const res = await fetch(`/api/packs/${encodeURIComponent(target)}`);
-			if (!res.ok) throw new Error('Pack not found');
-			const data = await res.json();
-			setPack(data, 'Loaded from the archive');
-			if (isModePack(data)) {
-				setMode(data.mode);
-				setSubmode(data.submode);
-				if (isLyricistPack(data)) setGenre(data.genre);
-			}
-		} catch (err) {
-			console.error(err);
-			setError(err instanceof Error ? err.message : 'Unable to load that pack');
-		} finally {
-			setLoading(null);
-		}
-	}, [lookupId, setPack]);
+        const handleLoadById = useCallback(async () => {
+                const target = lookupId.trim();
+                if (!target) return;
+                setLoading('load');
+                setError(null);
+                try {
+                        const data = await fetchPackById(target);
+                        setPack(data, 'Loaded from the archive');
+                        if (isModePack(data)) {
+                                setMode(data.mode);
+                                setSubmode(data.submode);
+                                if (isLyricistPack(data)) setGenre(data.genre);
+                        }
+                } catch (err) {
+                        console.error(err);
+                        setError(err instanceof Error ? err.message : 'Unable to load that pack');
+                } finally {
+                        setLoading(null);
+                }
+        }, [lookupId, setPack]);
 
-	const handleSharePack = useCallback(
-		async (pack: InspireAnyPack | null) => {
-			if (!pack) return;
-			const encoded = encodePack(pack);
-			const shareUrl = typeof window !== 'undefined' && encoded ? `${window.location.origin}${window.location.pathname}?${SHARE_PARAM}=${encoded}` : '';
-			const shareText = shareUrl ? `${formatShareText(pack, userId)}\n${shareUrl}` : formatShareText(pack, userId);
-			if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
-				setError('Clipboard not available. Try copying manually.');
-				return;
-			}
-			try {
-				await navigator.clipboard.writeText(shareText);
-				playCue('save');
-				setStatus('Share link copied 🔗');
-			} catch (err) {
-				console.error(err);
-				setError('Clipboard permission denied. Try selecting manually.');
-			}
-		},
-		[userId, playCue]
-	);
+        const handleSharePack = useCallback(
+                async (pack: InspireAnyPack | null) => {
+                        if (!pack) return;
+                        try {
+                                const { shareUrl } = await sharePackApi(getPackId(pack), userId);
+                                const shareText = `${formatShareText(pack, userId)}${shareUrl ? `\n${shareUrl}` : ''}`;
+                                if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+                                        throw new Error('Clipboard not available');
+                                }
+                                await navigator.clipboard.writeText(shareText);
+                                playCue('save');
+                                setStatus('Share link copied 🔗');
+                        } catch (err) {
+                                console.error(err);
+                                setError('Clipboard permission denied. Try selecting manually.');
+                        }
+                },
+                [userId, playCue]
+        );
 
         const handleUserHandleClick = useCallback(() => {
                 setShowAccountModal(true);
@@ -2292,6 +2306,39 @@ function App() {
         useEffect(() => {
                 if (typeof window === 'undefined') return;
                 const params = new URLSearchParams(window.location.search);
+                const shareToken = params.get(SHARE_TOKEN_PARAM);
+                if (shareToken) {
+                        (async () => {
+                                try {
+                                        const shared = await fetchSharedPack(shareToken);
+                                        setPack(shared, 'Loaded shared pack 🔗');
+                                        if (isModePack(shared)) {
+                                                setMode(shared.mode);
+                                                setSubmode(shared.submode);
+                                                if (isLyricistPack(shared)) setGenre(shared.genre);
+                                        }
+                                } catch (err) {
+                                        setError('Shared pack not available');
+                                } finally {
+                                        params.delete(SHARE_TOKEN_PARAM);
+                                        const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash ?? ''}`;
+                                        window.history.replaceState({}, '', nextUrl);
+                                }
+                        })();
+                        return;
+                }
+                const encodedPack = params.get(SHARE_PARAM);
+                if (!encodedPack) return;
+                const shared = decodePack(encodedPack);
+                if (!shared) return;
+                setPack(shared, 'Loaded shared pack 🔗');
+                if (isModePack(shared)) {
+                        setMode(shared.mode);
+                        setSubmode(shared.submode);
+                        if (isLyricistPack(shared)) setGenre(shared.genre);
+                }
+                handleDismissOnboarding();
+                params.delete(SHARE_PARAM);
 		const encodedPack = params.get(SHARE_PARAM);
 		if (!encodedPack) return;
 		const shared = decodePack(encodedPack);
@@ -2322,6 +2369,18 @@ function App() {
 
         const handleSaveCurrentPack = useCallback(async () => {
                 if (!fuelPack || !isModePack(fuelPack)) return;
+                const packId = fuelPack.id;
+                addSavedPack(fuelPack);
+                try {
+                        await savePackApi(packId, userId || 'guest');
+                        setStatus('Saved to your archive');
+                } catch (err) {
+                        setSavedPacks((prev) => prev.filter((entry) => getPackId(entry) !== packId));
+                        setError('Could not save pack');
+                }
+        }, [fuelPack, userId, addSavedPack, setSavedPacks]);
+
+	const openSavedOverlay = useCallback(async () => {
                 if (!isAuthenticated) {
                         setError('Sign in to save packs.');
                         setShowAccountModal(true);
@@ -2351,6 +2410,15 @@ function App() {
                 setSavedLoading(true);
                 setSavedError(null);
                 try {
+                        const packs = await listSavedPacks(userId || 'guest');
+                        setSavedPacks(packs);
+                } catch (err) {
+                        setSavedPacks([]);
+                        setSavedError('Unable to load saved packs');
+                } finally {
+                        setSavedLoading(false);
+                }
+        }, [userId]);
                         const ownerId = user?.id || userId || 'guest';
                         const qs = new URLSearchParams({ userId: ownerId });
                         const res = await fetch(`/api/packs/saved?${qs.toString()}`, { credentials: 'include' });
