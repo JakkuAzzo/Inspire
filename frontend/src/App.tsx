@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, FormEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import './App.css';
 import inspireLogo from './assets/Inspire_transparent_white.png';
 import lyricistCardImage from './assets/images/Lyracist_Studio.jpeg';
@@ -17,9 +17,6 @@ import { CombinedFocusMode } from './components/workspace/CombinedFocusMode';
 import { CreatorSettingsModal } from './components/workspace/CreatorSettingsModal';
 import { FocusModeControls } from './components/workspace/FocusModeControls';
 import { trackEvent } from './utils/analytics';
-import { io as createSocket } from 'socket.io-client';
-import { fetchPackById, fetchSharedPack, listSavedPacks, remixPack as remixPackApi, savePack as savePackApi, sharePack as sharePackApi } from './services/packs';
-import { useAuth } from './context/AuthContext';
 import type {
   CreativeMode,
   ModeDefinition,
@@ -36,13 +33,10 @@ import type {
   CommunityPost,
   DailyChallenge,
   ChallengeActivity,
-  ChallengeAchievement,
-  ChallengeStats,
   WorkspaceQueueItem,
-        MemeTemplate,
-        RemixMeta
+	MemeTemplate,
+	RemixMeta
 } from './types';
-import { usePackStore } from './state/packStore';
 
 // Background helpers for mode/submode cards
 const MODE_BG_BY_ID: Record<CreativeMode, string> = {
@@ -113,58 +107,20 @@ const LYRICIST_GENRES = [
 ];
 
 const MODE_BACKGROUNDS: Record<CreativeMode, string> = {
-        lyricist: 'mode-lyricist',
-        producer: 'mode-producer',
-        editor: 'mode-editor'
+	lyricist: 'mode-lyricist',
+	producer: 'mode-producer',
+	editor: 'mode-editor'
 };
-
-type MoodKey = 'midnight' | 'sunrise' | 'neon-dusk';
-
-const DEFAULT_MOOD: MoodKey = 'midnight';
-const MOOD_PALETTES: Record<MoodKey, { label: string; helper: string; accent: string; surface: string; border: string; glow: string; contrast: string; toneAccents?: Partial<Record<RelevanceTone, string>> }> = {
-        midnight: {
-                label: 'Midnight',
-                helper: 'Violet + navy for deep focus',
-                accent: '#7c3aed',
-                surface: 'rgba(10,16,37,0.72)',
-                border: 'rgba(148,163,184,0.22)',
-                glow: 'rgba(124,58,237,0.4)',
-                contrast: '#e2e8f0',
-                toneAccents: { dark: '#f97316' }
-        },
-        sunrise: {
-                label: 'Sunrise',
-                helper: 'Amber warmth + optimism',
-                accent: '#f59e0b',
-                surface: 'rgba(39,26,14,0.72)',
-                border: 'rgba(248,180,54,0.38)',
-                glow: 'rgba(245,158,11,0.45)',
-                contrast: '#fff7ed',
-                toneAccents: { funny: '#38bdf8' }
-        },
-        'neon-dusk': {
-                label: 'Neon Dusk',
-                helper: 'Electric cyan + magenta',
-                accent: '#22d3ee',
-                surface: 'rgba(5,10,25,0.74)',
-                border: 'rgba(56,189,248,0.35)',
-                glow: 'rgba(236,72,153,0.42)',
-                contrast: '#e0f2fe',
-                toneAccents: { deep: '#a855f7' }
-        }
-};
-const MOOD_OPTIONS = Object.entries(MOOD_PALETTES).map(([id, data]) => ({ id: id as MoodKey, ...data }));
 
 const THEME_OPTIONS = [
-        { id: 'default', label: 'Aurora', emoji: '✨' },
-        { id: 'lofi', label: 'Lo-Fi', emoji: '🌙' },
-        { id: 'neon', label: 'Neon', emoji: '🌈' },
-        { id: 'vaporwave', label: 'Vaporwave', emoji: '🌅' },
-        { id: 'noir', label: 'Noir', emoji: '🖤' }
+	{ id: 'default', label: 'Aurora', emoji: '✨' },
+	{ id: 'lofi', label: 'Lo-Fi', emoji: '🌙' },
+	{ id: 'neon', label: 'Neon', emoji: '🌈' },
+	{ id: 'vaporwave', label: 'Vaporwave', emoji: '🌅' },
+	{ id: 'noir', label: 'Noir', emoji: '🖤' }
 ];
 
 const SHARE_PARAM = 'pack';
-const SHARE_TOKEN_PARAM = 'share';
 const STATS_KEY_PREFIX = 'inspire:creatorStats:';
 const FOCUS_CONTROLS_KEY = 'inspire:focusControls';
 const COLLAB_MODE_KEY = 'inspire:collaborationMode';
@@ -197,14 +153,13 @@ interface DeckCard {
 }
 
 interface LiveSession {
-  id: string;
-  mode: CreativeMode;
-  submode?: string;
-  owner: string;
-  title: string;
-  participants: number;
-  viewers?: number;
-  status: 'live' | 'open';
+	id: string;
+	mode: CreativeMode;
+	submode: string;
+	owner: string;
+	title: string;
+	participants: number;
+	status: 'live' | 'open';
 }
 
 interface YouTubeVideoPreview {
@@ -419,10 +374,10 @@ function computeDailyChallengeState(existing?: StoredDailyChallenge | null): { s
 }
 
 function initializeDailyChallenge(): { stored: StoredDailyChallenge; challenge: DailyChallenge } {
-        let stored: StoredDailyChallenge | null = null;
-        if (typeof window !== 'undefined') {
-                const raw = window.localStorage.getItem(DAILY_CHALLENGE_STORAGE_KEY);
-                if (raw) {
+	let stored: StoredDailyChallenge | null = null;
+	if (typeof window !== 'undefined') {
+		const raw = window.localStorage.getItem(DAILY_CHALLENGE_STORAGE_KEY);
+		if (raw) {
 			try {
 				stored = JSON.parse(raw) as StoredDailyChallenge;
 			} catch (err) {
@@ -430,21 +385,9 @@ function initializeDailyChallenge(): { stored: StoredDailyChallenge; challenge: 
 			}
 		}
 	}
-        const state = computeDailyChallengeState(stored);
-        persistDailyChallengeState(state.stored);
-        return state;
-}
-
-function isCompletionForChallengeDay(completedAt: string, challenge: DailyChallenge): boolean {
-        try {
-                const completedTs = new Date(completedAt).getTime();
-                const expiry = new Date(challenge.expiresAt).getTime();
-                const start = expiry - 86_400_000;
-                return completedTs >= start && completedTs < expiry;
-        } catch (err) {
-                console.warn('Unable to parse completion timestamp', err);
-                return false;
-        }
+	const state = computeDailyChallengeState(stored);
+	persistDailyChallengeState(state.stored);
+	return state;
 }
 
 function formatRelativeTime(timestamp: string): string {
@@ -616,13 +559,28 @@ function mergeUniqueBy<T>(items: T[], key: (item: T) => string, limit?: number):
 	return result;
 }
 
+function base64Encode(text: string): string {
+	if (typeof window === 'undefined') return '';
+	const utf8 = encodeURIComponent(text).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(Number.parseInt(p1, 16)));
+	return window.btoa(utf8);
+}
+
 function base64Decode(text: string): string {
-        if (typeof window === 'undefined') return '';
-        const binary = window.atob(text);
-        const percentEncoded = Array.from(binary)
-                .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
-                .join('');
-        return decodeURIComponent(percentEncoded);
+	if (typeof window === 'undefined') return '';
+	const binary = window.atob(text);
+	const percentEncoded = Array.from(binary)
+		.map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+		.join('');
+	return decodeURIComponent(percentEncoded);
+}
+
+function encodePack(pack: InspireAnyPack): string {
+	try {
+		return base64Encode(JSON.stringify(pack));
+	} catch (err) {
+		console.error('Unable to encode pack', err);
+		return '';
+	}
 }
 
 function decodePack(encoded: string): InspireAnyPack | null {
@@ -728,75 +686,60 @@ function formatShareText(pack: InspireAnyPack, userId: string) {
 }
 
 function createRemixPack(original: ModePack, fresh: ModePack): ModePack {
-        const remixEntry: RemixMeta = {
-                author: original.author ?? '@guest',
-                packId: original.id,
-                generation: (original.remixOf?.generation ?? 0) + 1
-        };
-        const remixLineage = [...(original.remixLineage ?? []), remixEntry];
-        if (original.mode !== fresh.mode) return { ...fresh, remixOf: remixEntry, remixLineage };
-        if (fresh.mode === 'lyricist' && original.mode === 'lyricist') {
-                const baseFresh = fresh as LyricistModePack;
-                const baseOriginal = original as LyricistModePack;
-                const mergedWords = mergeUniqueStrings([...baseOriginal.powerWords.slice(0, 3), ...baseFresh.powerWords], 6);
-                const mergedFlow = mergeUniqueStrings([...baseFresh.flowPrompts.slice(0, 3), ...baseOriginal.flowPrompts.slice(0, 2)], 5);
-                const mergedFragments = mergeUniqueStrings([...baseFresh.lyricFragments.slice(0, 3), ...baseOriginal.lyricFragments.slice(0, 2)], 6);
-                return {
-                        ...baseFresh,
-                        author: baseFresh.author ?? baseOriginal.author,
-                        remixOf: remixEntry,
-                        remixLineage,
-                        powerWords: mergedWords,
-                        flowPrompts: mergedFlow,
-                        lyricFragments: mergedFragments,
-                        storyArc: {
-                                start: baseOriginal.storyArc.start,
-                                middle: baseFresh.storyArc.middle,
-                                end: baseFresh.storyArc.end
-                        },
-                        memeSound: Math.random() > 0.5 ? baseOriginal.memeSound : baseFresh.memeSound,
-                        topicChallenge: Math.random() > 0.5 ? baseOriginal.topicChallenge : baseFresh.topicChallenge,
-                        summary: `${baseOriginal.summary.split('.').at(0) ?? baseOriginal.summary}. ${baseFresh.summary}`.trim()
-                };
-        }
+	if (original.mode !== fresh.mode) return fresh;
+	if (fresh.mode === 'lyricist' && original.mode === 'lyricist') {
+		const baseFresh = fresh as LyricistModePack;
+		const baseOriginal = original as LyricistModePack;
+		const mergedWords = mergeUniqueStrings([...baseOriginal.powerWords.slice(0, 3), ...baseFresh.powerWords], 6);
+		const mergedFlow = mergeUniqueStrings([...baseFresh.flowPrompts.slice(0, 3), ...baseOriginal.flowPrompts.slice(0, 2)], 5);
+		const mergedFragments = mergeUniqueStrings([...baseFresh.lyricFragments.slice(0, 3), ...baseOriginal.lyricFragments.slice(0, 2)], 6);
+		return {
+			...baseFresh,
+			powerWords: mergedWords,
+			flowPrompts: mergedFlow,
+			lyricFragments: mergedFragments,
+			storyArc: {
+				start: baseOriginal.storyArc.start,
+				middle: baseFresh.storyArc.middle,
+				end: baseFresh.storyArc.end
+			},
+			memeSound: Math.random() > 0.5 ? baseOriginal.memeSound : baseFresh.memeSound,
+			topicChallenge: Math.random() > 0.5 ? baseOriginal.topicChallenge : baseFresh.topicChallenge,
+			summary: `${baseOriginal.summary.split('.').at(0) ?? baseOriginal.summary}. ${baseFresh.summary}`.trim()
+		};
+	}
 
-        if (fresh.mode === 'producer' && original.mode === 'producer') {
-                const baseFresh = fresh as ProducerModePack;
-                const baseOriginal = original as ProducerModePack;
-                const mergedConstraints = mergeUniqueStrings([...baseFresh.constraints, ...baseOriginal.constraints.slice(0, 2)], 6);
-                const mergedFx = mergeUniqueStrings([...baseFresh.fxIdeas, ...baseOriginal.fxIdeas.slice(0, 2)], 6);
-                const mergedPalette = mergeUniqueStrings([...baseFresh.instrumentPalette, ...baseOriginal.instrumentPalette.slice(0, 3)], 6);
-                return {
-                        ...baseFresh,
-                        author: baseFresh.author ?? baseOriginal.author,
-                        remixOf: remixEntry,
-                        remixLineage,
-                        sample: Math.random() > 0.5 ? baseOriginal.sample : baseFresh.sample,
-                        secondarySample: Math.random() > 0.5 ? baseOriginal.secondarySample : baseFresh.secondarySample,
-                        constraints: mergedConstraints,
-                        fxIdeas: mergedFx,
-                        instrumentPalette: mergedPalette,
-                        challenge: `${baseOriginal.challenge.split('.')[0] ?? baseOriginal.challenge}. Remix: ${baseFresh.challenge}`.trim()
-                };
-        }
+	if (fresh.mode === 'producer' && original.mode === 'producer') {
+		const baseFresh = fresh as ProducerModePack;
+		const baseOriginal = original as ProducerModePack;
+		const mergedConstraints = mergeUniqueStrings([...baseFresh.constraints, ...baseOriginal.constraints.slice(0, 2)], 6);
+		const mergedFx = mergeUniqueStrings([...baseFresh.fxIdeas, ...baseOriginal.fxIdeas.slice(0, 2)], 6);
+		const mergedPalette = mergeUniqueStrings([...baseFresh.instrumentPalette, ...baseOriginal.instrumentPalette.slice(0, 3)], 6);
+		return {
+			...baseFresh,
+			sample: Math.random() > 0.5 ? baseOriginal.sample : baseFresh.sample,
+			secondarySample: Math.random() > 0.5 ? baseOriginal.secondarySample : baseFresh.secondarySample,
+			constraints: mergedConstraints,
+			fxIdeas: mergedFx,
+			instrumentPalette: mergedPalette,
+			challenge: `${baseOriginal.challenge.split('.')[0] ?? baseOriginal.challenge}. Remix: ${baseFresh.challenge}`.trim()
+		};
+	}
 
-        const baseFresh = fresh as EditorModePack;
-        const baseOriginal = original as EditorModePack;
-        const mergedMoodboard = mergeUniqueBy([...baseFresh.moodboard, ...baseOriginal.moodboard], (clip) => clip.title, 6);
-        const mergedAudio = mergeUniqueBy([...baseFresh.audioPrompts, ...baseOriginal.audioPrompts], (prompt) => prompt.name, 6);
-        const mergedTimeline = mergeUniqueStrings([...baseFresh.timelineBeats, ...baseOriginal.timelineBeats], 7);
-        const mergedConstraints = mergeUniqueStrings([...baseFresh.visualConstraints, ...baseOriginal.visualConstraints], 6);
-        return {
-                ...baseFresh,
-                author: baseFresh.author ?? baseOriginal.author,
-                remixOf: remixEntry,
-                remixLineage,
-                moodboard: mergedMoodboard,
-                audioPrompts: mergedAudio,
-                timelineBeats: mergedTimeline,
-                visualConstraints: mergedConstraints,
-                challenge: `${baseOriginal.challenge} | Remix: ${baseFresh.challenge}`.slice(0, 240)
-        };
+	const baseFresh = fresh as EditorModePack;
+	const baseOriginal = original as EditorModePack;
+	const mergedMoodboard = mergeUniqueBy([...baseFresh.moodboard, ...baseOriginal.moodboard], (clip) => clip.title, 6);
+	const mergedAudio = mergeUniqueBy([...baseFresh.audioPrompts, ...baseOriginal.audioPrompts], (prompt) => prompt.name, 6);
+	const mergedTimeline = mergeUniqueStrings([...baseFresh.timelineBeats, ...baseOriginal.timelineBeats], 7);
+	const mergedConstraints = mergeUniqueStrings([...baseFresh.visualConstraints, ...baseOriginal.visualConstraints], 6);
+	return {
+		...baseFresh,
+		moodboard: mergedMoodboard,
+		audioPrompts: mergedAudio,
+		timelineBeats: mergedTimeline,
+		visualConstraints: mergedConstraints,
+		challenge: `${baseOriginal.challenge} | Remix: ${baseFresh.challenge}`.slice(0, 240)
+	};
 }
 
 function isModePack(pack: InspireAnyPack | null): pack is ModePack {
@@ -830,16 +773,7 @@ function resolveChallengeText(pack: InspireAnyPack | null): string {
 function App() {
 	const initialUserId = typeof window === 'undefined' ? `creator-${Date.now().toString(36)}` : loadStoredUserId();
 	const [modeDefinitions, setModeDefinitions] = useState<ModeDefinition[]>(FALLBACK_MODE_DEFINITIONS);
-        const [mode, setMode] = useState<CreativeMode | null>(null);
-        const [submode, setSubmode] = useState<string | null>(null);
-        const [genre, setGenre] = useState<string>('r&b');
-        const [filters, setFilters] = useState<RelevanceFilter>(DEFAULT_FILTERS);
-        const [mood, setMood] = useState<MoodKey>(DEFAULT_MOOD);
-        const [fuelPack, setFuelPack] = useState<InspireAnyPack | null>(null);
-        const initialUserId = typeof window === 'undefined' ? `creator-${Date.now().toString(36)}` : loadStoredUserId();
-        const { user, loading: authLoading, error: authError, signIn, signUp, signOut } = useAuth();
-        const [modeDefinitions, setModeDefinitions] = useState<ModeDefinition[]>(FALLBACK_MODE_DEFINITIONS);
-        const [mode, setMode] = useState<CreativeMode | null>(null);
+	const [mode, setMode] = useState<CreativeMode | null>(null);
 	const [submode, setSubmode] = useState<string | null>(null);
 	const [genre, setGenre] = useState<string>('r&b');
 	const [filters, setFilters] = useState<RelevanceFilter>(DEFAULT_FILTERS);
@@ -895,51 +829,6 @@ function App() {
                 if (stored === 'live' || stored === 'collaborative') return stored;
                 return 'solo';
         });
-        const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
-        const [focusMode, setFocusMode] = useState(false);
-        const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
-        const [focusDensity, setFocusDensity] = useState<number>(8);
-        const [focusSpeed, setFocusSpeed] = useState<number>(1);
-        const [focusControlsOpen, setFocusControlsOpen] = useState(false);
-        const [collaborationMode, setCollaborationMode] = useState<'solo' | 'live' | 'collaborative'>('solo');
-        const [activeSessions, setActiveSessions] = useState<LiveSession[]>(LIVE_SESSION_PRESETS);
-        const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-        const [viewerMode, setViewerMode] = useState<'idle' | 'spectating' | 'joining'>('idle');
-        const [deckOrder, setDeckOrder] = useState<string[]>([]);
-        const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
-        const [combinedFocusCardIds, setCombinedFocusCardIds] = useState<string[]>([]);
-        const [customWordInput, setCustomWordInput] = useState('');
-        const [mixerHover, setMixerHover] = useState(false);
-        const [chipPicker, setChipPicker] = useState<{ type: 'powerWord' | 'instrument' | 'headline' | 'meme' | 'sample'; index?: number } | null>(null);
-        const dragSourceRef = useRef<string | null>(null);
-        const audioContextRef = useRef<AudioContext | null>(null);
-        const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>(COMMUNITY_POSTS);
-        const [workspaceQueue, setWorkspaceQueue] = useState<WorkspaceQueueItem[]>(INITIAL_WORKSPACE_QUEUE);
-        const [queueCollapsed, setQueueCollapsed] = useState(false);
-        const [youtubeVideos, setYoutubeVideos] = useState<Record<string, YouTubeVideoPreview>>({});
-        const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
-        const [newPostContent, setNewPostContent] = useState('');
-        const [presenceNotice, setPresenceNotice] = useState<string | null>(null);
-        const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
-        const [showAccountModal, setShowAccountModal] = useState(false);
-        const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-        const [authEmail, setAuthEmail] = useState('');
-        const [authPassword, setAuthPassword] = useState('');
-        const [authDisplayName, setAuthDisplayName] = useState('');
-        const [showCommunityOverlay, setShowCommunityOverlay] = useState(false);
-	const [controlsCollapsed, setControlsCollapsed] = useState<boolean>(() => {
-		if (typeof window === 'undefined') return true;
-		const stored = window.localStorage.getItem(CONTROLS_COLLAPSED_KEY);
-		if (stored === null) return true;
-		return stored === 'true';
-	});
-	const [autoRefreshMs, setAutoRefreshMs] = useState<number | null>(null);
-	const [focusMode, setFocusMode] = useState(false);
-	const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
-	const [focusDensity, setFocusDensity] = useState<number>(8);
-	const [focusSpeed, setFocusSpeed] = useState<number>(1);
-	const [focusControlsOpen, setFocusControlsOpen] = useState(false);
-	const [collaborationMode, setCollaborationMode] = useState<'solo' | 'live' | 'collaborative'>('solo');
 	const [activeSessions] = useState<LiveSession[]>(LIVE_SESSION_PRESETS);
 	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 	const [viewerMode, setViewerMode] = useState<'idle' | 'spectating' | 'joining'>('idle');
@@ -996,29 +885,14 @@ function App() {
 	const [showChallengeOverlay, setShowChallengeOverlay] = useState(false);
 	const [challengeCountdown, setChallengeCountdown] = useState<string>(() => formatChallengeCountdown(initialDailyChallenge.challenge.expiresAt));
 	const [challengeActivity, setChallengeActivity] = useState<ChallengeActivity[]>([]);
-	const [youtubePlaylists, setYoutubePlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
-	const youtubePlaylistsRef = useRef<Record<string, YouTubeVideoPreview[]>>({});
-	// Interactive playlist state: per-item selected main and custom overrides
-	const [youtubeMainByItem, setYoutubeMainByItem] = useState<Record<string, string>>({});
-        const [youtubeCustomPlaylists, setYoutubeCustomPlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
-        const [trackAddInputByItem, setTrackAddInputByItem] = useState<Record<string, string>>({});
-        const [youtubeError, setYoutubeError] = useState<string | null>(null);
-        const initialDailyChallenge = useMemo(() => initializeDailyChallenge(), []);
-        const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge>(initialDailyChallenge.challenge);
-        const [challengeCompletedToday, setChallengeCompletedToday] = useState<boolean>(initialDailyChallenge.stored.completed);
-        const [challengeStats, setChallengeStats] = useState<ChallengeStats | null>(null);
-        const [showChallengeOverlay, setShowChallengeOverlay] = useState(false);
-        const [challengeCountdown, setChallengeCountdown] = useState<string>(() => formatChallengeCountdown(initialDailyChallenge.challenge.expiresAt));
-        const [challengeActivity, setChallengeActivity] = useState<ChallengeActivity[]>([]);
 	const [challengeActivityError, setChallengeActivityError] = useState<string | null>(null);
 	const [showModePicker, setShowModePicker] = useState(false);
 
 	// Saved packs overlay
-        const [showSavedOverlay, setShowSavedOverlay] = useState(false);
-        const [savedPacks, setSavedPacks] = useState<InspireAnyPack[]>([]);
-        const [savedLoading, setSavedLoading] = useState(false);
-        const [savedError, setSavedError] = useState<string | null>(null);
-        const { setCurrentPack, setSavedPacks: syncSavedPacks, addSavedPack, recordRemix, setCombinedFocusIds: syncCombinedFocusIds } = usePackStore();
+	const [showSavedOverlay, setShowSavedOverlay] = useState(false);
+	const [savedPacks, setSavedPacks] = useState<InspireAnyPack[]>([]);
+	const [savedLoading, setSavedLoading] = useState(false);
+	const [savedError, setSavedError] = useState<string | null>(null);
 
 	// Word Explorer overlay
 	const [showWordExplorer, setShowWordExplorer] = useState(false);
@@ -1046,23 +920,11 @@ function App() {
 	const [memeStimuli, setMemeStimuli] = useState<MemeTemplate[]>([]);
 	const [memeStimuliError, setMemeStimuliError] = useState<string | null>(null);
 
-        useEffect(() => {
-                if (!focusMode) {
-                        setMixerHover(false);
-                }
-        }, [focusMode]);
-
-        useEffect(() => {
-                setCurrentPack(fuelPack);
-        }, [fuelPack, setCurrentPack]);
-
-        useEffect(() => {
-                syncSavedPacks(savedPacks);
-        }, [savedPacks, syncSavedPacks]);
-
-        useEffect(() => {
-                syncCombinedFocusIds(combinedFocusCardIds);
-        }, [combinedFocusCardIds, syncCombinedFocusIds]);
+	useEffect(() => {
+		if (!focusMode) {
+			setMixerHover(false);
+		}
+	}, [focusMode]);
 
 
 	useEffect(() => {
@@ -1182,102 +1044,17 @@ function App() {
 		return 'Solo Session';
 	}, [activeSession, collaborationMode, viewerMode]);
 
-        const challengeResetLabel = useMemo(() => {
-                try {
-                        const expiry = new Date(dailyChallenge.expiresAt);
-                        return expiry.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                } catch (err) {
-                        console.warn('Unable to parse challenge expiry', err);
-                        return 'midnight';
-                }
-        }, [dailyChallenge.expiresAt]);
-
-        const isAuthenticated = useMemo(() => Boolean(userId) && !userId.startsWith('creator-'), [userId]);
-
-        useEffect(() => {
-                const controller = new AbortController();
-
-                const loadRooms = async () => {
-                        try {
-                                const res = await fetch('/api/rooms', { signal: controller.signal });
-                                if (!res.ok) return;
-                                const data = await res.json();
-                                if (Array.isArray(data.rooms)) {
-                                        setActiveSessions(data.rooms);
-                                }
-                        } catch (err) {
-                                if (!controller.signal.aborted) {
-                                        console.warn('Unable to load rooms', err);
-                                }
-                        }
-                };
-
-                const loadFeed = async () => {
-                        try {
-                                const res = await fetch('/api/feed', { signal: controller.signal });
-                                if (!res.ok) return;
-                                const data = await res.json();
-                                if (Array.isArray(data.items)) {
-                                        setCommunityPosts(data.items);
-                                }
-                        } catch (err) {
-                                if (!controller.signal.aborted) {
-                                        console.warn('Unable to load feed', err);
-                                }
-                        }
-                };
-
-                void loadRooms();
-                void loadFeed();
-                return () => controller.abort();
-        }, []);
-
-        useEffect(() => {
-                const updateCountdown = () => setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
-                updateCountdown();
-                if (typeof window === 'undefined') return;
-                const intervalId = window.setInterval(updateCountdown, 1000);
-                return () => window.clearInterval(intervalId);
-        }, [dailyChallenge.expiresAt]);
-
-        useEffect(() => {
-                const socket = createSocket('/', { transports: ['websocket', 'polling'] });
-                socketRef.current = socket;
-
-                socket.on('feed:init', (items: CommunityPost[]) => {
-                        setCommunityPosts(items);
-                });
-                socket.on('feed:new', (post: CommunityPost) => {
-                        setCommunityPosts((prev) => [post, ...prev].slice(0, 60));
-                });
-                socket.on('rooms:update', (rooms: LiveSession[]) => {
-                        setActiveSessions(rooms);
-                });
-                socket.on('room:presence', ({ roomId, user, action }) => {
-                        setPresenceNotice(`${user ?? 'Someone'} ${action} ${roomId}`);
-                        window.setTimeout(() => setPresenceNotice(null), 2500);
-                });
-                socket.connect();
-                return () => {
-                        socket.disconnect();
-                        socketRef.current = null;
-                };
-        }, []);
+	const challengeResetLabel = useMemo(() => {
+		try {
+			const expiry = new Date(dailyChallenge.expiresAt);
+			return expiry.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+		} catch (err) {
 			console.warn('Unable to parse challenge expiry', err);
 			return 'midnight';
-                }
-        }, [dailyChallenge.expiresAt]);
+		}
+	}, [dailyChallenge.expiresAt]);
 
-        const streakProgress = useMemo(() => {
-                const current = challengeStats?.streak ?? dailyChallenge.streakCount ?? 0;
-                const nextTarget = current >= 7 ? 14 : current >= 3 ? 7 : 3;
-                const percent = Math.min(100, Math.round((current / nextTarget) * 100));
-                return { current, nextTarget, percent };
-        }, [challengeStats?.streak, dailyChallenge.streakCount]);
-
-        const unlockedAchievements = useMemo(() => challengeStats?.achievements ?? [], [challengeStats?.achievements]);
-
-        const isAuthenticated = useMemo(() => Boolean(user), [user]);
+	const isAuthenticated = useMemo(() => Boolean(userId) && !userId.startsWith('creator-'), [userId]);
 
 	useEffect(() => {
 		const updateCountdown = () => setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
@@ -1470,29 +1247,23 @@ function App() {
 		[ensureAudioContext]
 	);
 
-        const markDailyChallengeComplete = useCallback(async () => {
-                if (challengeCompletedToday || !dailyChallenge) return;
-                try {
-                        const res = await fetch('/api/challenges/complete', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ userId: userId || 'guest', challengeId: dailyChallenge.id })
-                        });
-                        if (!res.ok) throw new Error('Failed to submit challenge completion');
-                        const payload = (await res.json()) as ChallengeStats & { challenge?: DailyChallenge };
-                        setChallengeStats({ ...payload, completedToday: true });
-                        if (payload.challenge) {
-                                setDailyChallenge(payload.challenge);
-                        } else {
-                                setDailyChallenge((current) => ({ ...current, streakCount: payload.streak }));
-                        }
-                        setChallengeCompletedToday(true);
-                        setStatus('Daily challenge cleared ✅');
-                } catch (err) {
-                        console.warn('Unable to mark challenge complete', err);
-                        setStatus('Challenge completion failed. Try again.');
-                }
-        }, [challengeCompletedToday, dailyChallenge, userId, setStatus]);
+	const markDailyChallengeComplete = useCallback(() => {
+		if (challengeCompletedToday) return;
+		setChallengeCompletedToday(true);
+		setDailyChallengeStored((prev) => {
+			const updated: StoredDailyChallenge = {
+				...prev,
+				streak: prev.streak + 1,
+				completed: true
+			};
+			persistDailyChallengeState(updated);
+			setDailyChallenge((current) => ({
+				...current,
+				streakCount: updated.streak
+			}));
+			return updated;
+		});
+	}, [challengeCompletedToday]);
 
 
 	const handleDismissOnboarding = useCallback(() => {
@@ -1567,52 +1338,18 @@ function App() {
 		setCollaborationMode('solo');
 		setMode(targetSession.mode);
 		setSubmode(targetSession.submode);
-        const handleCollaborationModeToggle = useCallback(
-                (next: 'live' | 'collaborative') => {
-                        setCollaborationMode((current) => (current === next ? 'solo' : next));
-                        setViewerMode('idle');
-                        setSelectedSessionId(null);
-                },
-                []
-        );
-
-        const sendRoomPresence = useCallback(
-                async (sessionId: string, intent: 'join' | 'spectate') => {
-                        try {
-                                await fetch(`/api/rooms/${encodeURIComponent(sessionId)}/${intent === 'join' ? 'join' : 'spectate'}`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ user: userId || 'guest' })
-                                });
-                        } catch (err) {
-                                console.warn('Unable to signal room presence', err);
-                        }
-                },
-                [userId]
-        );
-
-        const handleSpectateSession = useCallback((sessionId: string) => {
-                const targetSession = activeSessions.find((session) => session.id === sessionId);
-                if (!targetSession) return;
-                void sendRoomPresence(sessionId, 'spectate');
-                setSelectedSessionId(sessionId);
-                setViewerMode('spectating');
-                setCollaborationMode('solo');
-                setMode(targetSession.mode);
-                setSubmode(targetSession.submode);
 		setFuelPack(null);
 		setExpandedCard(null);
 		setStatus(`Spectating ${targetSession.owner}'s ${targetSession.title}`);
 	}, [activeSessions]);
 
-        const handleJoinSession = useCallback((sessionId: string) => {
-                const targetSession = activeSessions.find((session) => session.id === sessionId);
-                if (!targetSession) return;
-                void sendRoomPresence(sessionId, 'join');
-                setSelectedSessionId(sessionId);
-                setViewerMode('joining');
-                setCollaborationMode('collaborative');
-                setMode(targetSession.mode);
+	const handleJoinSession = useCallback((sessionId: string) => {
+		const targetSession = activeSessions.find((session) => session.id === sessionId);
+		if (!targetSession) return;
+		setSelectedSessionId(sessionId);
+		setViewerMode('joining');
+		setCollaborationMode('collaborative');
+		setMode(targetSession.mode);
 		setSubmode(targetSession.submode);
 		setFuelPack(null);
 		setExpandedCard(null);
@@ -1692,27 +1429,19 @@ function App() {
 			const targetFilters = overrides?.filters ?? filters;
 			const targetGenre = overrides?.genre ?? genre;
 			if (!targetMode || !targetSubmode) throw new Error('Pick a studio and lane first.');
-                        const payload: ModePackRequest = {
-                                submode: targetSubmode,
-                                filters: targetFilters,
-                                tone: targetFilters.tone,
-                                timeframe: targetFilters.timeframe,
-                                semantic: targetFilters.semantic,
-                                relevance: targetFilters,
-                                mood
-                        };
-                        if (targetMode === 'lyricist') payload.genre = targetGenre;
-                        const res = await fetch(`/api/modes/${targetMode}/fuel-pack`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
+			const payload: ModePackRequest = { submode: targetSubmode, filters: targetFilters };
+			if (targetMode === 'lyricist') payload.genre = targetGenre;
+			const res = await fetch(`/api/modes/${targetMode}/fuel-pack`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(payload)
 			});
 			if (!res.ok) throw new Error('Generator not responding');
 			const data = await res.json();
 			return data.pack as ModePack;
 		},
-                [mode, submode, filters, genre, mood]
-        );
+		[mode, submode, filters, genre]
+	);
 
 	const registerPackGenerated = useCallback((pack: InspireAnyPack, activeFilters: RelevanceFilter) => {
 		if (!isModePack(pack)) return;
@@ -1827,20 +1556,18 @@ function App() {
 		}
 		setLoading('remix');
 		setError(null);
-                try {
-                        const fresh = await requestModePack();
-                        const remixed = createRemixPack(fuelPack as ModePack, fresh);
-                        setPack(remixed, 'Remix spark ready 🔁');
-                        registerPackGenerated(remixed, filters);
-                        recordRemix(remixed);
-                        void remixPackApi(fuelPack.id, userId || 'guest', remixed as ModePack).catch(() => undefined);
-                } catch (err) {
-                        console.error(err);
-                        setError(err instanceof Error ? err.message : 'Remix attempt failed');
-                } finally {
-                        setLoading(null);
-                }
-        }, [mode, submode, fuelPack, requestModePack, setPack, registerPackGenerated, filters, handleGeneratePack, recordRemix, userId]);
+		try {
+			const fresh = await requestModePack();
+			const remixed = createRemixPack(fuelPack as ModePack, fresh);
+			setPack(remixed, 'Remix spark ready 🔁');
+			registerPackGenerated(remixed, filters);
+		} catch (err) {
+			console.error(err);
+			setError(err instanceof Error ? err.message : 'Remix attempt failed');
+		} finally {
+			setLoading(null);
+		}
+	}, [mode, submode, fuelPack, requestModePack, setPack, registerPackGenerated, filters, handleGeneratePack]);
 
 	const handleAddWordToPack = useCallback((word: string) => {
 		const trimmed = word.trim();
@@ -1852,38 +1579,16 @@ function App() {
 		});
 	}, []);
 
-        const handleCustomWordSubmit = useCallback(() => {
-                if (!customWordInput.trim()) return;
-                handleAddWordToPack(customWordInput.trim());
-                setCustomWordInput('');
-        }, [customWordInput, handleAddWordToPack]);
+	const handleCustomWordSubmit = useCallback(() => {
+		if (!customWordInput.trim()) return;
+		handleAddWordToPack(customWordInput.trim());
+		setCustomWordInput('');
+	}, [customWordInput, handleAddWordToPack]);
 
-        const handleSubmitCommunityPost = useCallback(async () => {
-                const trimmed = newPostContent.trim();
-                if (!trimmed) return;
-                try {
-                        const res = await fetch('/api/feed', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ author: userId || 'guest', content: trimmed, contentType: 'text' })
-                        });
-                        if (!res.ok) throw new Error('post failed');
-                        const data = await res.json();
-                        if (data?.post) {
-                                setCommunityPosts((prev) => [data.post as CommunityPost, ...prev].slice(0, 60));
-                        }
-                        setNewPostContent('');
-                        setError(null);
-                } catch (err) {
-                        console.error(err);
-                        setError('Unable to share to the feed right now.');
-                }
-        }, [newPostContent, userId, setCommunityPosts, setError]);
-
-        const handleForkCommunityPost = useCallback(
-                (post: CommunityPost) => {
-                        const sourcePack = post.featuredPack;
-                        if (!sourcePack || !isModePack(sourcePack)) return;
+	const handleForkCommunityPost = useCallback(
+		(post: CommunityPost) => {
+			const sourcePack = post.featuredPack;
+			if (!sourcePack || !isModePack(sourcePack)) return;
 			const lineageEntry: RemixMeta = {
 				author: sourcePack.author ?? post.author,
 				packId: sourcePack.id,
@@ -1906,44 +1611,21 @@ function App() {
 		[userId, setPack, setMode, setSubmode, setGenre]
 	);
 
-        const handleDailyChallengeComplete = useCallback(() => {
-                if (challengeCompletedToday) return;
-                void markDailyChallengeComplete();
-        }, [challengeCompletedToday, markDailyChallengeComplete]);
+	const handleDailyChallengeComplete = useCallback(() => {
+		if (challengeCompletedToday) return;
+		markDailyChallengeComplete();
+		setStatus('Daily challenge cleared ✅');
+	}, [challengeCompletedToday, markDailyChallengeComplete]);
 
-        const handleChallengeCompleteAndClose = useCallback(() => {
-                handleDailyChallengeComplete();
-                setShowChallengeOverlay(false);
-        }, [handleDailyChallengeComplete]);
+	const handleChallengeCompleteAndClose = useCallback(() => {
+		handleDailyChallengeComplete();
+		setShowChallengeOverlay(false);
+	}, [handleDailyChallengeComplete]);
 
-        const refreshChallengeFromBackend = useCallback(async () => {
-                try {
-                        const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
-                        const res = await fetch(`/api/challenges/current${qs}`);
-                        if (!res.ok) throw new Error('Failed to load challenge');
-                        const payload = (await res.json()) as { challenge: DailyChallenge; stats?: ChallengeStats };
-                        if (payload.challenge) {
-                                setDailyChallenge(payload.challenge);
-                                setChallengeCountdown(formatChallengeCountdown(payload.challenge.expiresAt));
-                        }
-                        if (payload.stats) {
-                                setChallengeStats(payload.stats);
-                                const completed = payload.stats.completedToday
-                                        ?? (payload.challenge
-                                                ? payload.stats.completions.some((entry) => isCompletionForChallengeDay(entry.completedAt, payload.challenge))
-                                                : false);
-                                setChallengeCompletedToday(completed);
-                        }
-                } catch (err) {
-                        console.warn('Failed to refresh challenge', err);
-                        setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
-                }
-        }, [dailyChallenge.expiresAt, userId]);
-
-        const fetchChallengeActivity = useCallback(async () => {
-                try {
-                        const res = await fetch('/api/challenges/activity');
-                        if (!res.ok) throw new Error('Failed to load activity');
+	const fetchChallengeActivity = useCallback(async () => {
+		try {
+			const res = await fetch('/api/challenges/activity');
+			if (!res.ok) throw new Error('Failed to load activity');
 			const payload = (await res.json()) as { activity?: ChallengeActivity[] };
 			const items = Array.isArray(payload.activity) ? payload.activity : [];
 			setChallengeActivity(items);
@@ -1955,14 +1637,21 @@ function App() {
 		}
 	}, []);
 
-        useEffect(() => {
-                if (typeof window === 'undefined') return;
-                void refreshChallengeFromBackend();
-                const timer = window.setInterval(() => {
-                        void refreshChallengeFromBackend();
-                }, 60_000);
-                return () => window.clearInterval(timer);
-        }, [refreshChallengeFromBackend]);
+	useEffect(() => {
+		if (typeof window === 'undefined') return;
+		const timer = window.setInterval(() => {
+			const todayId = getTodayId();
+			setDailyChallengeStored((prev) => {
+				if (prev.dayId === todayId) return prev;
+				const nextState = computeDailyChallengeState(prev);
+				setDailyChallenge(nextState.challenge);
+				setChallengeCompletedToday(nextState.stored.completed);
+				persistDailyChallengeState(nextState.stored);
+				return nextState.stored;
+			});
+		}, 60_000);
+		return () => window.clearInterval(timer);
+	}, [setDailyChallengeStored, setDailyChallenge, setChallengeCompletedToday]);
 
 	useEffect(() => {
 		void fetchChallengeActivity();
@@ -2012,50 +1701,60 @@ function App() {
 		void fetchChallengeActivity();
 	}, [showChallengeOverlay, fetchChallengeActivity]);
 
-        const handleLoadById = useCallback(async () => {
-                const target = lookupId.trim();
-                if (!target) return;
-                setLoading('load');
-                setError(null);
-                try {
-                        const data = await fetchPackById(target);
-                        setPack(data, 'Loaded from the archive');
-                        if (isModePack(data)) {
-                                setMode(data.mode);
-                                setSubmode(data.submode);
-                                if (isLyricistPack(data)) setGenre(data.genre);
-                        }
-                } catch (err) {
-                        console.error(err);
-                        setError(err instanceof Error ? err.message : 'Unable to load that pack');
-                } finally {
-                        setLoading(null);
-                }
-        }, [lookupId, setPack]);
+	const handleLoadById = useCallback(async () => {
+		const target = lookupId.trim();
+		if (!target) return;
+		setLoading('load');
+		setError(null);
+		try {
+			const res = await fetch(`/api/packs/${encodeURIComponent(target)}`);
+			if (!res.ok) throw new Error('Pack not found');
+			const data = await res.json();
+			setPack(data, 'Loaded from the archive');
+			if (isModePack(data)) {
+				setMode(data.mode);
+				setSubmode(data.submode);
+				if (isLyricistPack(data)) setGenre(data.genre);
+			}
+		} catch (err) {
+			console.error(err);
+			setError(err instanceof Error ? err.message : 'Unable to load that pack');
+		} finally {
+			setLoading(null);
+		}
+	}, [lookupId, setPack]);
 
-        const handleSharePack = useCallback(
-                async (pack: InspireAnyPack | null) => {
-                        if (!pack) return;
-                        try {
-                                const { shareUrl } = await sharePackApi(getPackId(pack), userId);
-                                const shareText = `${formatShareText(pack, userId)}${shareUrl ? `\n${shareUrl}` : ''}`;
-                                if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
-                                        throw new Error('Clipboard not available');
-                                }
-                                await navigator.clipboard.writeText(shareText);
-                                playCue('save');
-                                setStatus('Share link copied 🔗');
-                        } catch (err) {
-                                console.error(err);
-                                setError('Clipboard permission denied. Try selecting manually.');
-                        }
-                },
-                [userId, playCue]
-        );
+	const handleSharePack = useCallback(
+		async (pack: InspireAnyPack | null) => {
+			if (!pack) return;
+			const encoded = encodePack(pack);
+			const shareUrl = typeof window !== 'undefined' && encoded ? `${window.location.origin}${window.location.pathname}?${SHARE_PARAM}=${encoded}` : '';
+			const shareText = shareUrl ? `${formatShareText(pack, userId)}\n${shareUrl}` : formatShareText(pack, userId);
+			if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+				setError('Clipboard not available. Try copying manually.');
+				return;
+			}
+			try {
+				await navigator.clipboard.writeText(shareText);
+				playCue('save');
+				setStatus('Share link copied 🔗');
+			} catch (err) {
+				console.error(err);
+				setError('Clipboard permission denied. Try selecting manually.');
+			}
+		},
+		[userId, playCue]
+	);
 
-        const handleUserHandleClick = useCallback(() => {
-                setShowAccountModal(true);
-        }, []);
+	const handleUserHandleClick = useCallback(() => {
+		if (isAuthenticated) {
+			if (typeof window !== 'undefined') {
+				window.location.assign('/dashboard');
+			}
+			return;
+		}
+		setShowAccountModal(true);
+	}, [isAuthenticated, setShowAccountModal]);
 
 	const handleUserIdChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
 		setUserId(event.target.value.slice(0, 32));
@@ -2069,34 +1768,16 @@ function App() {
 		});
 	}, []);
 
-        const handleUserIdKey = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-                if (event.key === 'Enter') {
-                        event.currentTarget.blur();
-                }
-        }, []);
+	const handleUserIdKey = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+		if (event.key === 'Enter') {
+			event.currentTarget.blur();
+		}
+	}, []);
 
-        const handleAuthSubmit = useCallback(
-                async (event: FormEvent<HTMLFormElement>) => {
-                        event.preventDefault();
-                        try {
-                                if (authMode === 'register') {
-                                        await signUp({ email: authEmail, password: authPassword, displayName: authDisplayName || userId });
-                                } else {
-                                        await signIn({ email: authEmail, password: authPassword });
-                                }
-                                setError(null);
-                                setShowAccountModal(false);
-                        } catch (err: any) {
-                                setError(err?.message || 'Unable to authenticate');
-                        }
-                },
-                [authMode, authDisplayName, authEmail, authPassword, signIn, signUp, userId]
-        );
-
-        const handleThemeChange = useCallback((value: string) => {
-                setTheme(value);
-                if (typeof window !== 'undefined') {
-                        window.localStorage.setItem(THEME_KEY, value);
+	const handleThemeChange = useCallback((value: string) => {
+		setTheme(value);
+		if (typeof window !== 'undefined') {
+			window.localStorage.setItem(THEME_KEY, value);
 		}
 	}, []);
 
@@ -2600,7 +2281,7 @@ function App() {
 		if (typeof window !== 'undefined') {
 			window.localStorage.setItem('inspire:userId', userId);
 		}
-        }, [isAuthenticated, user, userId]);
+	}, [userId]);
 
 	useEffect(() => {
 		persistCreatorStats(userId, creatorStats);
@@ -2646,42 +2327,9 @@ function App() {
 		void loadModes();
 	}, []);
 
-        useEffect(() => {
-                if (typeof window === 'undefined') return;
-                const params = new URLSearchParams(window.location.search);
-                const shareToken = params.get(SHARE_TOKEN_PARAM);
-                if (shareToken) {
-                        (async () => {
-                                try {
-                                        const shared = await fetchSharedPack(shareToken);
-                                        setPack(shared, 'Loaded shared pack 🔗');
-                                        if (isModePack(shared)) {
-                                                setMode(shared.mode);
-                                                setSubmode(shared.submode);
-                                                if (isLyricistPack(shared)) setGenre(shared.genre);
-                                        }
-                                } catch (err) {
-                                        setError('Shared pack not available');
-                                } finally {
-                                        params.delete(SHARE_TOKEN_PARAM);
-                                        const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash ?? ''}`;
-                                        window.history.replaceState({}, '', nextUrl);
-                                }
-                        })();
-                        return;
-                }
-                const encodedPack = params.get(SHARE_PARAM);
-                if (!encodedPack) return;
-                const shared = decodePack(encodedPack);
-                if (!shared) return;
-                setPack(shared, 'Loaded shared pack 🔗');
-                if (isModePack(shared)) {
-                        setMode(shared.mode);
-                        setSubmode(shared.submode);
-                        if (isLyricistPack(shared)) setGenre(shared.genre);
-                }
-                handleDismissOnboarding();
-                params.delete(SHARE_PARAM);
+	useEffect(() => {
+		if (typeof window === 'undefined') return;
+		const params = new URLSearchParams(window.location.search);
 		const encodedPack = params.get(SHARE_PARAM);
 		if (!encodedPack) return;
 		const shared = decodePack(encodedPack);
@@ -2694,94 +2342,38 @@ function App() {
 		}
 		handleDismissOnboarding();
 		params.delete(SHARE_PARAM);
-                const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash ?? ''}`;
-                window.history.replaceState({}, '', nextUrl);
-        }, [setPack, handleDismissOnboarding]);
+		const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash ?? ''}`;
+		window.history.replaceState({}, '', nextUrl);
+	}, [setPack, handleDismissOnboarding]);
 
-        useEffect(() => {
-                if (user?.displayName) {
-                        setUserId(user.displayName);
-                }
-        }, [user]);
-
-        const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
-        const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
-        const focusEnvironment = focusMode || wordFocusMode;
-        const moodPalette = useMemo(() => MOOD_PALETTES[mood], [mood]);
-        const moodAccent = useMemo(() => moodPalette.toneAccents?.[filters.tone] ?? moodPalette.accent, [moodPalette, filters.tone]);
-        const appStyle: CSSProperties = useMemo(
-                () => ({
-                        '--mood-accent': moodAccent,
-                        '--mood-surface': moodPalette.surface,
-                        '--mood-border': moodPalette.border,
-                        '--mood-contrast': moodPalette.contrast,
-                        '--mood-glow': moodPalette.glow
-                }),
-                [moodAccent, moodPalette]
-        );
-        const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusEnvironment ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
-        const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
-        const fatalError = error && !loading;
+	const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
 	const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
 	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
 	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
 	const fatalError = error && !loading;
 
-        const handleSaveCurrentPack = useCallback(async () => {
-                if (!fuelPack || !isModePack(fuelPack)) return;
-                const packId = fuelPack.id;
-                addSavedPack(fuelPack);
-                try {
-                        await savePackApi(packId, userId || 'guest');
-                        setStatus('Saved to your archive');
-                } catch (err) {
-                        setSavedPacks((prev) => prev.filter((entry) => getPackId(entry) !== packId));
-                        setError('Could not save pack');
-                }
-        }, [fuelPack, userId, addSavedPack, setSavedPacks]);
+	const handleSaveCurrentPack = useCallback(async () => {
+		if (!fuelPack || !isModePack(fuelPack)) return;
+		try {
+			const res = await fetch(`/api/packs/${encodeURIComponent(fuelPack.id)}/save`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ userId: userId || 'guest' })
+			});
+			if (!res.ok) throw new Error('Save failed');
+			setStatus('Saved to your archive');
+		} catch (err) {
+			setError('Could not save pack');
+		}
+	}, [fuelPack, userId]);
 
 	const openSavedOverlay = useCallback(async () => {
-                if (!isAuthenticated) {
-                        setError('Sign in to save packs.');
-                        setShowAccountModal(true);
-                        return;
-                }
-                try {
-                        const res = await fetch(`/api/packs/${encodeURIComponent(fuelPack.id)}/save`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                credentials: 'include',
-                                body: JSON.stringify({ userId: user?.id || userId || 'guest' })
-                        });
-                        if (!res.ok) throw new Error('Save failed');
-                        setStatus('Saved to your archive');
-                } catch (err) {
-                        setError('Could not save pack');
-                }
-        }, [fuelPack, isAuthenticated, user, userId]);
-
-        const openSavedOverlay = useCallback(async () => {
-                if (!isAuthenticated) {
-                        setError('Sign in to view saved packs.');
-                        setShowAccountModal(true);
-                        return;
-                }
-                setShowSavedOverlay(true);
-                setSavedLoading(true);
-                setSavedError(null);
-                try {
-                        const packs = await listSavedPacks(userId || 'guest');
-                        setSavedPacks(packs);
-                } catch (err) {
-                        setSavedPacks([]);
-                        setSavedError('Unable to load saved packs');
-                } finally {
-                        setSavedLoading(false);
-                }
-        }, [userId]);
-                        const ownerId = user?.id || userId || 'guest';
-                        const qs = new URLSearchParams({ userId: ownerId });
-                        const res = await fetch(`/api/packs/saved?${qs.toString()}`, { credentials: 'include' });
+		setShowSavedOverlay(true);
+		setSavedLoading(true);
+		setSavedError(null);
+		try {
+			const qs = new URLSearchParams({ userId: userId || 'guest' });
+			const res = await fetch(`/api/packs/saved?${qs.toString()}`);
 			if (!res.ok) throw new Error('Failed to load saved packs');
 			const data = await res.json();
 			setSavedPacks(Array.isArray(data.packs) ? data.packs : []);
@@ -2815,9 +2407,9 @@ function App() {
 		}
 	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
 
-        const workspaceMainClassName = `workspace-main${isModePack(fuelPack) && workspaceQueue.length > 0 && !focusEnvironment && !showingDetail ? ' with-queue' : ''}${focusEnvironment || showingDetail ? ' detail-expanded' : ''}${focusEnvironment ? ' focus-layout' : ''}`;
-        const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
-        const packStageClassName = `pack-stage glass${focusEnvironment ? ' focus-mode' : ''}`;
+	const workspaceMainClassName = `workspace-main${isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail ? ' with-queue' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`;
+	const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
+	const packStageClassName = `pack-stage glass${focusMode ? ' focus-mode' : ''}`;
 	const headerChips = useMemo(() => {
 		if (!fuelPack || !isModePack(fuelPack)) return [] as Array<{ label: string; type: 'headline' | 'powerWord' | 'instrument' | 'meme' | 'sample'; index?: number }>;
 		if (isLyricistPack(fuelPack)) {
@@ -3135,8 +2727,8 @@ function App() {
 		</>
 	);
 
-        return (
-                <div className={appClassName} style={appStyle}>
+	return (
+		<div className={appClassName}>
 			{!mode && <MouseParticles particleCount={500} repelDistance={300} colors={['#ec4899', '#22d3ee', '#a855f7', '#8b5cf6', '#06b6d4', '#f472b6']} particleSize={2} />}
 			<div className="ambient orb-left" aria-hidden="true" />
 			<div className="ambient orb-right" aria-hidden="true" />
@@ -3391,17 +2983,15 @@ function App() {
 				</>
 			)}
 
-                        {(loading || status || error) && (
-                                <div className="feedback-area" aria-live="polite">
-                                        {loading === 'generate' && <div className="feedback loading">Assembling your spark…</div>}
-                                        {loading === 'load' && <div className="feedback loading">Pulling from the archive…</div>}
-                                        {loading === 'remix' && <div className="feedback loading">Remixing your pack…</div>}
-                                        {status && <div className="feedback success">{status}</div>}
-                                        {error && <div className="feedback error">⚠️ {error}</div>}
-                                </div>
-                        )}
-
-                        {presenceNotice && <div className="feedback success" role="status" aria-live="polite">{presenceNotice}</div>}
+			{(loading || status || error) && (
+				<div className="feedback-area" aria-live="polite">
+					{loading === 'generate' && <div className="feedback loading">Assembling your spark…</div>}
+					{loading === 'load' && <div className="feedback loading">Pulling from the archive…</div>}
+					{loading === 'remix' && <div className="feedback loading">Remixing your pack…</div>}
+					{status && <div className="feedback success">{status}</div>}
+					{error && <div className="feedback error">⚠️ {error}</div>}
+				</div>
+			)}
 
 			{!mode && (
 				showModePicker ? (
@@ -3431,29 +3021,16 @@ function App() {
 
 			{showCommunityOverlay && (
 				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Community feed" onClick={() => setShowCommunityOverlay(false)}>
-                                        <div className="community-overlay glass" onClick={(event) => event.stopPropagation()}>
-                                                <div className="overlay-header">
-                                                        <h3>Community feed</h3>
-                                                        <button type="button" className="icon-button" aria-label="Close community feed" onClick={() => setShowCommunityOverlay(false)}>✕</button>
-                                                </div>
-                                                <div className="feed-compose">
-                                                        <textarea
-                                                                placeholder="Share a spark, lyric, or link for collaborators..."
-                                                                value={newPostContent}
-                                                                onChange={(event) => setNewPostContent(event.target.value)}
-                                                        />
-                                                        <div className="compose-actions">
-                                                                <button type="button" className="btn micro" onClick={handleSubmitCommunityPost} disabled={!newPostContent.trim()}>
-                                                                        Post update
-                                                                </button>
-                                                                <span className="compose-hint">Real-time updates broadcast to everyone spectating.</span>
-                                                        </div>
-                                                </div>
-                                                <div className="feed-scroll">
-                                                        {communityPosts.map((post) => (
-                                                                <article key={post.id} className="feed-card">
-                                                                        <div className="feed-meta">
-                                                                                <span className="feed-author">{post.author}</span>
+					<div className="community-overlay glass" onClick={(event) => event.stopPropagation()}>
+						<div className="overlay-header">
+							<h3>Community feed</h3>
+							<button type="button" className="icon-button" aria-label="Close community feed" onClick={() => setShowCommunityOverlay(false)}>✕</button>
+						</div>
+						<div className="feed-scroll">
+							{communityPosts.map((post) => (
+								<article key={post.id} className="feed-card">
+									<div className="feed-meta">
+										<span className="feed-author">{post.author}</span>
 										<span className="feed-timestamp">{formatRelativeTime(post.createdAt)}</span>
 									</div>
 									<p className="feed-content">{post.content}</p>
@@ -3511,37 +3088,22 @@ function App() {
 				</section>
 			)}
 
-                        {mode && submode && (
-                                <main className={workspaceClassName}>
-                                        {!controlsCollapsed && !focusEnvironment && !showingDetail && (
-                                                <div className="workspace-controls-overlay" role="dialog" aria-modal="true" aria-label="Workspace controls" onClick={toggleWorkspaceControls}>
-                                                        <div className="workspace-controls" id="workspaceControls" onClick={(event) => event.stopPropagation()}>
-                                                                <div className="controls-overlay-header">
+			{mode && submode && (
+				<main className={workspaceClassName}>
+					{!controlsCollapsed && !focusMode && !showingDetail && (
+						<div className="workspace-controls-overlay" role="dialog" aria-modal="true" aria-label="Workspace controls" onClick={toggleWorkspaceControls}>
+							<div className="workspace-controls" id="workspaceControls" onClick={(event) => event.stopPropagation()}>
+								<div className="controls-overlay-header">
 									<h3>Workspace Controls</h3>
 									<button type="button" className="btn ghost micro" onClick={toggleWorkspaceControls}>Close</button>
 								</div>
 								<div className="controls-columns">
 									{/* Left Column: Relevance Blend */}
-                                                                        <div className="controls-column left">
-                                                                                <CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
-                                                                                        <RelevanceSlider value={filters} onChange={setFilters} />
-                                                                                </CollapsibleSection>
-                                                                                <CollapsibleSection title="Mood Palette" icon="🎨" description="Paint the workspace to match the pack vibe." defaultOpen>
-                                                                                        <div className="option-group mood-options">
-                                                                                                {MOOD_OPTIONS.map((option) => (
-                                                                                                        <button
-                                                                                                                key={option.id}
-                                                                                                                type="button"
-                                                                                                                className={option.id === mood ? 'chip active' : 'chip'}
-                                                                                                                onClick={() => setMood(option.id)}
-                                                                                                        >
-                                                                                                                <strong>{option.label}</strong>
-                                                                                                                <small>{option.helper}</small>
-                                                                                                        </button>
-                                                                                                ))}
-                                                                                        </div>
-                                                                                </CollapsibleSection>
-                                                                        </div>
+									<div className="controls-column left">
+										<CollapsibleSection title="Relevance Blend" icon="🧭" description="Weight news, tone, and semantic distance." defaultOpen>
+											<RelevanceSlider value={filters} onChange={setFilters} />
+										</CollapsibleSection>
+									</div>
 
 									{/* Right Column: Genre Priority & Archive */}
 									<div className="controls-column right">
@@ -3952,44 +3514,20 @@ function App() {
 								<span>Resets {challengeResetLabel}</span>
 							</div>
 						</section>
-                                                <div className="challenge-columns">
-                                                        <section className="challenge-card">
-                                                                <h3>Constraints</h3>
-                                                                <ul className="challenge-list">
-                                                                        {dailyChallenge.constraints.map((constraint) => (
-                                                                                <li key={constraint}>{constraint}</li>
-                                                                        ))}
-                                                                </ul>
-                                                        </section>
-                                                        <section className="challenge-card">
-                                                                <h3>Streak + Badges</h3>
-                                                                <div className="streak-meter" aria-label="challenge streak progress">
-                                                                        <div className="streak-meter-bar">
-                                                                                <span style={{ width: `${streakProgress.percent}%` }} />
-                                                                        </div>
-                                                                        <div className="streak-meter-labels">
-                                                                                <span>{streakProgress.current} day streak</span>
-                                                                                <span>Next badge at {streakProgress.nextTarget} days</span>
-                                                                        </div>
-                                                                </div>
-                                                                <ul className="achievement-list">
-                                                                        {unlockedAchievements.length === 0 && <li className="achievement-empty">No badges yet. Finish today to unlock your first.</li>}
-                                                                        {unlockedAchievements.map((achievement) => (
-                                                                                <li key={achievement.id} className="achievement-item">
-                                                                                        <div>
-                                                                                                <strong>{achievement.title}</strong>
-                                                                                                <p>{achievement.description}</p>
-                                                                                        </div>
-                                                                                        <span className="badge-pill">{achievement.unlockedAt ? 'Unlocked' : 'Locked'}</span>
-                                                                                </li>
-                                                                        ))}
-                                                                </ul>
-                                                        </section>
-                                                        <section className="challenge-card">
-                                                                <h3>Recent activity</h3>
-                                                                <ul className="challenge-activity">
-                                                                        {challengeActivity.length > 0 ? (
-                                                                                challengeActivity.map((entry) => (
+						<div className="challenge-columns">
+							<section className="challenge-card">
+								<h3>Constraints</h3>
+								<ul className="challenge-list">
+									{dailyChallenge.constraints.map((constraint) => (
+										<li key={constraint}>{constraint}</li>
+									))}
+								</ul>
+							</section>
+							<section className="challenge-card">
+								<h3>Recent activity</h3>
+								<ul className="challenge-activity">
+									{challengeActivity.length > 0 ? (
+										challengeActivity.map((entry) => (
 											<li key={entry.id}>
 												<div className="activity-handle">{entry.handle}</div>
 												<div className="activity-status">{entry.status === 'submitted' ? 'Submitted' : 'Accepted'} · {formatRelativeTime(entry.timestamp)}</div>
@@ -4042,88 +3580,32 @@ function App() {
                                 />
                         )}
 
-                        {showAccountModal && (
-                                <FocusModeOverlay
-                                        isOpen={showAccountModal}
-                                        onClose={() => setShowAccountModal(false)}
-                                        title={isAuthenticated ? 'Profile' : 'Sign in to Inspire'}
-                                        ariaLabel="Authentication"
-                                >
-                                        <div className="auth-modal">
-                                                {isAuthenticated && user ? (
-                                                        <div className="profile-summary">
-                                                                <p className="overlay-copy">Signed in as {user.email}</p>
-                                                                <p className="overlay-copy subtle">Display name: {user.displayName}</p>
-                                                                <button
-                                                                        type="button"
-                                                                        className="btn ghost"
-                                                                        onClick={() => {
-                                                                                void signOut();
-                                                                                setShowAccountModal(false);
-                                                                        }}
-                                                                >
-                                                                        Log out
-                                                                </button>
-                                                        </div>
-                                                ) : (
-                                                        <form className="auth-form" onSubmit={handleAuthSubmit}>
-                                                                <div className="auth-toggle" role="tablist">
-                                                                        <button
-                                                                                type="button"
-                                                                                className={`nav-pill${authMode === 'login' ? ' active' : ''}`}
-                                                                                onClick={() => setAuthMode('login')}
-                                                                        >
-                                                                                Log in
-                                                                        </button>
-                                                                        <button
-                                                                                type="button"
-                                                                                className={`nav-pill${authMode === 'register' ? ' active' : ''}`}
-                                                                                onClick={() => setAuthMode('register')}
-                                                                        >
-                                                                                Sign up
-                                                                        </button>
-                                                                </div>
-                                                                <label className="handle-field" htmlFor="authEmail">
-                                                                        <span className="label">Email</span>
-                                                                        <input
-                                                                                id="authEmail"
-                                                                                type="email"
-                                                                                required
-                                                                                value={authEmail}
-                                                                                onChange={(event) => setAuthEmail(event.target.value)}
-                                                                        />
-                                                                </label>
-                                                                <label className="handle-field" htmlFor="authPassword">
-                                                                        <span className="label">Password</span>
-                                                                        <input
-                                                                                id="authPassword"
-                                                                                type="password"
-                                                                                required
-                                                                                minLength={6}
-                                                                                value={authPassword}
-                                                                                onChange={(event) => setAuthPassword(event.target.value)}
-                                                                        />
-                                                                </label>
-                                                                {authMode === 'register' && (
-                                                                        <label className="handle-field" htmlFor="authDisplayName">
-                                                                                <span className="label">Display name</span>
-                                                                                <input
-                                                                                        id="authDisplayName"
-                                                                                        value={authDisplayName}
-                                                                                        placeholder="Your creator handle"
-                                                                                        onChange={(event) => setAuthDisplayName(event.target.value)}
-                                                                                />
-                                                                        </label>
-                                                                )}
-                                                                {(authError || error) && <p className="error">{authError ?? error}</p>}
-                                                                <button type="submit" className="btn primary" disabled={authLoading}>
-                                                                        {authLoading ? 'Working…' : authMode === 'register' ? 'Create account' : 'Log in'}
-                                                                </button>
-                                                        </form>
-                                                )}
-                                        </div>
-                                </FocusModeOverlay>
-                        )}
+			{showAccountModal && (
+				<FocusModeOverlay
+					isOpen={showAccountModal}
+					onClose={() => setShowAccountModal(false)}
+					title="Sign in to Inspire"
+					ariaLabel="Creator handle sign in"
+				>
+					<div>
+						<p className="overlay-copy">Claim your creator handle to sync packs across sessions.</p>
+						<label className="handle-field" htmlFor="overlayUserId">
+							<span className="label">Creator handle</span>
+							<input
+								id="overlayUserId"
+								value={userId}
+								maxLength={32}
+								onChange={handleUserIdChange}
+								onBlur={handleUserIdBlur}
+								onKeyDown={handleUserIdKey}
+							/>
+						</label>
+						<button type="button" className="btn primary" onClick={() => setShowAccountModal(false)}>
+							Save handle
+						</button>
+					</div>
+				</FocusModeOverlay>
+			)}
 
 			{showSavedOverlay && (
 				<FocusModeOverlay
@@ -4172,13 +3654,12 @@ function App() {
 			)}
 
 			{showWordExplorer && (
-                                <FocusModeOverlay
-                                        isOpen={showWordExplorer}
-                                        onClose={() => setShowWordExplorer(false)}
-                                        title="Word Explorer"
-                                        ariaLabel="Word Explorer overlay"
-                                        extended={wordFocusMode}
-                                >
+				<FocusModeOverlay
+					isOpen={showWordExplorer}
+					onClose={() => setShowWordExplorer(false)}
+					title="Word Explorer"
+					ariaLabel="Word Explorer overlay"
+				>
 					<div className="settings-section">
 						<div className="detail-toolbox" style={{ marginBottom: 12 }}>
 							<button
