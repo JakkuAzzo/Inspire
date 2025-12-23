@@ -13,7 +13,16 @@
     "moduleResolution": "node",
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "types": [
+      "node",
+      "jest",
+      "pg",
+      "pg-mem",
+      "express-rate-limit",
+      "cookie-parser",
+      "bcryptjs"
+    ]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]

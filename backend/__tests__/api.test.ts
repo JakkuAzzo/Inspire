@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../src/index';
+import { app } from '../dist/index';
 
 describe('Inspire API basic routes', () => {
   test('GET /dev/api/health returns ok', async () => {

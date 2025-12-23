@@ -1,5 +1,5 @@
-import { YouTubeService } from '../src/services/youtubeService';
-import * as apiClientModule from '../src/services/apiClient';
+import { YouTubeService } from '../dist/services/youtubeService';
+import * as apiClientModule from '../dist/services/apiClient';
 
 describe('YouTubeService', () => {
   afterEach(() => {

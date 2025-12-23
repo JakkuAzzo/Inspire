@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app, { io, server } from '../src';
+import { app, io, server } from '../dist/index';
 
 describe('realtime + feed endpoints', () => {
   afterAll((done) => {

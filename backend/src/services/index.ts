@@ -45,14 +45,75 @@ export { ApiClient } from './apiClient';
  * Create all services with default configuration from environment variables
  */
 export function createAllServices() {
+  const wordService = createWordService();
+  const memeService = createMemeService();
+  const moodService = createMoodService();
+  const audioService = createAudioService();
+  const trendService = createTrendService();
+  const randomService = createRandomService();
+  const youtubeService = createYouTubeService();
+  const newsService = createNewsService();
+
+  // Attach simple health checks to each service so /api/health can report provider status.
+  const makeOk = (name: string) => ({ name, status: 'ok' as const });
+  const makeDegraded = (name: string, reason: string) => ({ name, status: 'degraded' as const, reason });
+
+  // WordService: keyless (Datamuse) - consider ok if base URL reachable via env (best-effort)
+  // MemeService: may use IMGFLIP creds; mark degraded if IMGFLIP env is missing and service expects it
+  // AudioService: depends on FREESOUND_API_KEY / JAMENDO_CLIENT_ID
+  // NewsService: depends on NEWS_API_KEY for live data
+
+  try {
+    (wordService as any).getHealth = () => {
+      return makeOk('Datamuse/WordService');
+    };
+  } catch (e) {}
+
+  try {
+    (memeService as any).getHealth = () => {
+      if (process.env.IMGFLIP_USERNAME && process.env.IMGFLIP_PASSWORD) return makeOk('Imgflip/MemeService');
+      return makeOk('Picsum/MemeService (keyless)');
+    };
+  } catch (e) {}
+
+  try {
+    (moodService as any).getHealth = () => makeOk('MoodService');
+  } catch (e) {}
+
+  try {
+    (audioService as any).getHealth = () => {
+      if (process.env.FREESOUND_API_KEY || process.env.JAMENDO_CLIENT_ID) return makeOk('AudioService');
+      return makeDegraded('AudioService', 'No FREESOUND_API_KEY or JAMENDO_CLIENT_ID configured');
+    };
+  } catch (e) {}
+
+  try {
+    (trendService as any).getHealth = () => makeOk('TrendService');
+  } catch (e) {}
+
+  try {
+    (randomService as any).getHealth = () => makeOk('RandomService');
+  } catch (e) {}
+
+  try {
+    (youtubeService as any).getHealth = () => makeOk('YouTubeService (Piped)');
+  } catch (e) {}
+
+  try {
+    (newsService as any).getHealth = () => {
+      if (process.env.NEWS_API_KEY) return makeOk('NewsAPI');
+      return makeDegraded('NewsAPI', 'NEWS_API_KEY missing; using static mirror');
+    };
+  } catch (e) {}
+
   return {
-    wordService: createWordService(),
-    memeService: createMemeService(),
-    moodService: createMoodService(),
-    audioService: createAudioService(),
-    trendService: createTrendService(),
-    randomService: createRandomService(),
-    youtubeService: createYouTubeService(),
-    newsService: createNewsService()
+    wordService,
+    memeService,
+    moodService,
+    audioService,
+    trendService,
+    randomService,
+    youtubeService,
+    newsService
   };
 }

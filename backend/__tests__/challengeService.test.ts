@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { ChallengeService } from '../src/services/challengeService';
+import { ChallengeService } from '../dist/services/challengeService';
 
 function createTempFile() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'challenge-db-'));

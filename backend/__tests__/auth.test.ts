@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../src';
+import { app } from '../dist/index';
 
 describe('auth flows', () => {
   const email = `user${Date.now()}@example.com`;

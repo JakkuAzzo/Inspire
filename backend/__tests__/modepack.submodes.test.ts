@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../src/index';
+import { app } from '../dist/index';
 
 const modeCases = [
   { mode: 'lyricist', submodes: ['rapper', 'singer'] },

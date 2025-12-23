@@ -1,0 +1,81 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e4]:
+  - button "Sign up or log in to Inspire" [ref=e5] [cursor=pointer]:
+    - generic [ref=e6]: Sign up / Log in
+    - generic [ref=e7]: ↗
+  - banner [ref=e8]:
+    - generic [ref=e9]:
+      - button "← Studios" [ref=e10] [cursor=pointer]
+      - generic [ref=e11]:
+        - heading "📝 Lyricist Studio" [level=2] [ref=e12]
+        - paragraph [ref=e13]: Punchlines, flow, rhyme families, topical flips.
+    - generic [ref=e14]:
+      - group "Workspace actions" [ref=e15]:
+        - button "Generate fuel pack" [ref=e16] [cursor=pointer]: ⚡
+        - button "Remix current pack" [ref=e17] [cursor=pointer]: ♻️
+        - button "Share pack link" [ref=e18] [cursor=pointer]: 🔗
+        - button "Save to archive" [ref=e19] [cursor=pointer]: 💾
+        - button "Open saved packs" [ref=e20] [cursor=pointer]: 📁
+        - button "Open Word Explorer" [ref=e21] [cursor=pointer]: 🔤
+        - button "Show Controls ▸" [ref=e22] [cursor=pointer]: 🎛️
+        - button "Focus animation mode" [ref=e23] [cursor=pointer]: 🌐
+      - button "Sign up or log in to Inspire" [ref=e24] [cursor=pointer]: Sign up / Log in
+      - button "Open creator settings" [ref=e25] [cursor=pointer]: ⚙️
+  - main [ref=e26]:
+    - generic [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - button "← Back to list" [ref=e31] [cursor=pointer]
+          - paragraph [ref=e32]: "#lyricist-1766384452564-b21r612"
+          - heading "Word Lab" [level=3] [ref=e33]
+          - paragraph [ref=e34]: "Pack: R&B spark session"
+        - generic [ref=e35]:
+          - button "Breakthrough battery tech promises 5-minute charging" [ref=e36] [cursor=pointer]
+          - button "neon confession" [ref=e37] [cursor=pointer]
+          - button "Two Buttons" [ref=e38] [cursor=pointer]
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - group "Auto refresh timer" [ref=e41]:
+            - generic [ref=e42]: Auto refresh
+            - button "2s" [ref=e43] [cursor=pointer]
+            - button "5s" [ref=e44] [cursor=pointer]
+            - button "30s" [ref=e45] [cursor=pointer]
+            - button "Off" [ref=e46] [cursor=pointer]
+          - button "Focus Mode" [ref=e47] [cursor=pointer]
+        - generic [ref=e48]:
+          - heading "Word Lab" [level=4] [ref=e49]
+          - generic [ref=e51]:
+            - generic [ref=e52]:
+              - button "neon confession" [ref=e53] [cursor=pointer]
+              - button "afterglow cadence" [ref=e54] [cursor=pointer]
+              - button "opal skyline" [ref=e55] [cursor=pointer]
+            - paragraph [ref=e56]: Tap a word to add it to your power words.
+        - generic [ref=e57]:
+          - generic [ref=e58]: Prompt Challenge
+          - paragraph [ref=e59]: Write 8 bars roasting a headline this week.
+        - generic [ref=e60]:
+          - generic [ref=e61]: Linked Headlines
+          - list [ref=e62]:
+            - listitem [ref=e63]:
+              - link "Apple’s latest 11-inch M1 iPad Pros now down to best prices of the year from $700 (Save $199) - 9to5Toys" [ref=e64] [cursor=pointer]:
+                - /url: https://9to5toys.com/2022/04/19/apple-11-ipad-pro-m1-spring-sale/
+              - generic [ref=e65]: · 9to5Toys
+            - listitem [ref=e66]:
+              - link "Galaxy S23 Addresses Galaxy S22's Biggest Issue - Droid Life" [ref=e67] [cursor=pointer]:
+                - /url: https://www.droid-life.com/2022/04/20/galaxy-s23-line-reported-to-utilize-ev-battery-tech-get-big-capacity-boosts/
+              - generic [ref=e68]: · Droid Life
+            - listitem [ref=e69]:
+              - link "European politicians on the cusp of requiring USB-C in all smartphones - AppleInsider" [ref=e70] [cursor=pointer]:
+                - /url: https://appleinsider.com/articles/22/04/20/european-politicians-on-the-cusp-of-requiring-usb-c-in-all-smartphones
+              - generic [ref=e71]: · AppleInsider
+            - listitem [ref=e72]:
+              - 'link "OnePlus announces the Nord N20: $282 price, 18-month-old OS - Ars Technica" [ref=e73] [cursor=pointer]':
+                - /url: https://arstechnica.com/gadgets/2022/04/oneplus-announces-the-nord-n20-282-price-18-month-old-os/
+              - generic [ref=e74]: · Ars Technica
+            - listitem [ref=e75]:
+              - 'link "The Morning After: Our verdict on Playdate, the console with a crank - Engadget" [ref=e76] [cursor=pointer]':
+                - /url: https://www.engadget.com/the-morning-after-playdate-console-with-crank-review-111546719.html
+              - generic [ref=e77]: · Engadget
+```
