@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../src/index';
+import { app } from '../dist/index';
 
 describe('Mode pack integration', () => {
   test('POST /api/modes/lyricist/fuel-pack returns a mode pack with expected fields', async () => {

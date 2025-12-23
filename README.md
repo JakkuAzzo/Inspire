@@ -199,6 +199,39 @@ You can run completely without API keys and still get a great experience.
 
 ## Functionality
 
+## Local fixes and test notes
+
+- Frontend: fixed a JSON syntax issue in `frontend/package.json` (missing comma after `socket.io-client`) and installed frontend deps. Run:
+
+```bash
+cd frontend
+npm install
+```
+
+- Backend: updated TypeScript test environment to include types for `pg`, `pg-mem`, `express-rate-limit`, `cookie-parser`, and `bcryptjs` in `backend/tsconfig.json` so `ts-jest` can resolve them during tests.
+
+- Tests: added focused integration specs under `backend/__tests__/integration/` for:
+   - auth flows (`auth.integration.test.ts`)
+   - pack persistence using `pg-mem` (`packs.integration.test.ts`)
+   - Socket.IO room join/presence (`socketRooms.integration.test.ts`)
+
+Run backend tests:
+
+```bash
+cd backend
+npm install
+npm test
+```
+
+If tests fail due to environment keys, run with `USE_MOCK_FALLBACK=true`.
+
+More CI and healthcheck changes are pending (coverage thresholds, smoke/startup jobs, and third-party contract recordings).
+
+CI and Healthchecks
+
+- A GitHub Actions workflow was added at `.github/workflows/ci.yml` to run unit tests, a smoke start (keyless fallbacks), and a seeded integration job (uses repository secrets).
+- The backend exposes `/api/health` that reports overall status plus per-provider status (ok/degraded) and a reason when degraded. The UI can use this endpoint to surface degraded providers and fall back gracefully.
+
 Current functionality status after merging the major feature branches (auth, persistence, real-time, pack lifecycle, and live data), verified December 21, 2025.
 
 ### ✅ What Works

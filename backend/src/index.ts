@@ -406,6 +406,7 @@ function incrementRoomCounts(roomId: string, participantsDelta: number, viewersD
   };
   liveRooms.set(roomId, next);
   return next;
+}
 const challengeService = new ChallengeService(CHALLENGE_STATE_FILE);
 async function getPackRepo() {
   if (!packRepoPromise) {
@@ -691,9 +692,7 @@ function buildApiRouter() {
   });
 
   // Packs persistence
-  router.get('/packs/saved', async (req: Request, res: Response) => {
-    const userId = (req.query.userId as string) || '';
-  router.get('/packs/saved', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  router.get('/packs/saved', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.userId || (req.query.userId as string) || '';
     if (!userId) return res.status(400).json({ error: 'userId query param required' });
     const repo = await getPackRepo();
@@ -716,8 +715,7 @@ function buildApiRouter() {
     res.json(pack);
   });
 
-  router.post('/packs/:id/save', async (req: Request, res: Response) => {
-  router.post('/packs/:id/save', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  router.post('/packs/:id/save', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     const packId = req.params.id;
     const userId = req.userId || (req.body || {}).userId;
     if (!packId) return res.status(400).json({ error: 'pack id required' });
@@ -802,6 +800,8 @@ function buildApiRouter() {
     if (!pack) return res.status(404).json({ error: 'Shared pack missing' });
 
     res.json({ token, packId: entry.packId, pack });
+  });
+
   router.post('/packs/:id/share', async (req: Request, res: Response) => {
     const packId = req.params.id;
     const { userId, visibility, expiresAt } = req.body || {};

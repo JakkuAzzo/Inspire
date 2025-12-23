@@ -189,6 +189,35 @@ User clicks "Back to studios" → resets all state → returns to hero
 - `src/services/newsService.ts`: Added local file-first loading
 - `src/index.ts`: Added `buildHeadlineQueryFromPack()` helper + new `GET /api/packs/:id/headlines` route
 
+### Recent Test & Local Fixes
+
+- Fixed `frontend/package.json` syntax and reinstalled frontend dependencies.
+- Added test types to `backend/tsconfig.json` to make ts-jest resolve `pg`, `pg-mem`, `express-rate-limit`, `cookie-parser`, and `bcryptjs` during test runs.
+- Added focused integration tests in `backend/__tests__/integration/`:
+  - `auth.integration.test.ts` — register/login flow and cookie/session verification
+  - `packs.integration.test.ts` — `pg-mem` backed pack persistence checks via `PackRepository`
+  - `socketRooms.integration.test.ts` — Socket.IO room join + presence integration (connects to a running server)
+
+### How to run auth + realtime locally
+
+1. Start the backend in development mode (uses keyless fallbacks):
+
+```bash
+cd backend
+USE_MOCK_FALLBACK=true npm run dev
+```
+
+2. In a separate terminal, run the backend Jest suite (includes the new integration tests):
+
+```bash
+cd backend
+npm test
+```
+
+3. To exercise Socket.IO manually, start the server then open a node REPL or small script that connects via `socket.io-client` to `http://localhost:3001` and emits `rooms:join` events.
+
+Note: If you want database-backed persistence, set `DATABASE_URL` to a local Postgres instance before starting the server; otherwise the tests and dev server use `pg-mem`.
+
 ### Frontend
 - `src/App.tsx`: 
   - Updated headline loading useEffect to use new pack-aware endpoint

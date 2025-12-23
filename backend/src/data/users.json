@@ -6,5 +6,29 @@
     "displayName": "tester",
     "avatarUrl": null,
     "createdAt": 1766334819574
+  },
+  {
+    "id": "96bd67cd-48c7-4892-a025-c2c9bdb859ba",
+    "email": "test+1766338902135@example.com",
+    "passwordHash": "$2b$10$ZY1W63eU23yE1gOCYiGO1OtYDT0q50w91fzv9erYiYZRFk1h8q4OC",
+    "displayName": "Testy",
+    "avatarUrl": null,
+    "createdAt": 1766338902195
+  },
+  {
+    "id": "e1ec7ed7-c21a-4b4c-9e42-d74c4de93044",
+    "email": "test+1766342095531@example.com",
+    "passwordHash": "$2b$10$wACUTeqpxrtGd42eFmn9IePcMwGElGiD0bUaVbZubWymYIZ3lVapO",
+    "displayName": "Testy",
+    "avatarUrl": null,
+    "createdAt": 1766342095590
+  },
+  {
+    "id": "ba8d2e9f-198c-45dc-be0c-5fba134214e6",
+    "email": "test+1766342525806@example.com",
+    "passwordHash": "$2b$10$rtDZJ2TnXGv/o74/9X/lKeUDVmXxgiIETFprCDi5Vo8ch4nhf3oTm",
+    "displayName": "Testy",
+    "avatarUrl": null,
+    "createdAt": 1766342525882
   }
 ]

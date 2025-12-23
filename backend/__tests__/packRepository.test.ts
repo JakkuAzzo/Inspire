@@ -1,6 +1,6 @@
-import { getPool, closePool } from '../src/db/connection';
-import { PackRepository } from '../src/repositories/packRepository';
-import { LyricistModePack } from '../src/types';
+import { getPool, closePool } from '../dist/db/connection';
+import { PackRepository } from '../dist/repositories/packRepository';
+import { LyricistModePack } from '../dist/types';
 
 describe('PackRepository', () => {
   afterEach(async () => {

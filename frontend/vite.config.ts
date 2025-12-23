@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -16,6 +17,7 @@ export default defineConfig({
       },
     },
   },
+  // @ts-expect-error Vitest config is supported by Vite when types are available
   test: {
     environment: 'jsdom',
     setupFiles: './src/setupTests.ts',

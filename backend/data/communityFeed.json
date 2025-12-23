@@ -1,0 +1,32 @@
+[
+  {
+    "id": "post-1766342526856-wrky5gr",
+    "author": "tester",
+    "content": "hello world",
+    "contentType": "text",
+    "createdAt": "2025-12-21T18:42:06.856Z",
+    "reactions": 0,
+    "comments": 0,
+    "remixCount": 0
+  },
+  {
+    "id": "post-1766342096140-ebr7wqc",
+    "author": "tester",
+    "content": "hello world",
+    "contentType": "text",
+    "createdAt": "2025-12-21T18:34:56.140Z",
+    "reactions": 0,
+    "comments": 0,
+    "remixCount": 0
+  },
+  {
+    "id": "post-1766338902398-pnhu61z",
+    "author": "tester",
+    "content": "hello world",
+    "contentType": "text",
+    "createdAt": "2025-12-21T17:41:42.398Z",
+    "reactions": 0,
+    "comments": 0,
+    "remixCount": 0
+  }
+]

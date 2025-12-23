@@ -1,11 +1,11 @@
-import { WordService, WordServiceConfig } from '../src/services/wordService';
-import { ApiClient } from '../src/services/apiClient';
+import { WordService, WordServiceConfig } from '../dist/services/wordService';
+import { ApiClient } from '../dist/services/apiClient';
 
 type MockGet = jest.MockedFunction<ApiClient['get']>;
 
 const mockGet: MockGet = jest.fn();
 
-jest.mock('../src/services/apiClient', () => ({
+jest.mock('../dist/services/apiClient', () => ({
   ApiClient: jest.fn().mockImplementation(() => ({
     get: mockGet
   }))
