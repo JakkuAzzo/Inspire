@@ -1361,8 +1361,9 @@ function App() {
 	}, []);
 
         const handleBackToPackList = useCallback(() => {
-                setExpandedCard(null);
                 setFocusMode(false);
+                setFocusModeType('single');
+                setExpandedCard(null);
         }, []);
 
         const handleSpectateSession = useCallback((sessionId: string) => {
@@ -2295,6 +2296,19 @@ function App() {
                 return true;
         }, [expandedCard, orderedPackDeck]);
 
+	const handleRemoveCombinedCard = useCallback((cardId: string) => {
+		setCombinedFocusCardIds((current) => current.filter((id) => id !== cardId));
+		trackEvent('combined_focus_remove_card', { cardId });
+	}, []);
+
+	const combinedCards = useMemo(() => {
+		return combinedFocusCardIds
+			.map((id) => {
+				const card = orderedPackDeck.find((c) => c.id === id);
+				return card ? { id: card.id, label: card.label } : null;
+			})
+			.filter(Boolean) as Array<{ id: string; label: string }>;
+	}, [combinedFocusCardIds, orderedPackDeck]);
 
 		useEffect(() => {
 			if (!focusMode) return;
@@ -3289,27 +3303,31 @@ function App() {
                                                                                                         className={mixerHover ? 'focus-mixer hover' : 'focus-mixer'}
                                                                                                         mixerHover={mixerHover}
                                                                                                         combinedCount={combinedFocusCardIds.length}
+                                                                                                        combinedCards={combinedCards}
                                                                                                         onDragOver={handleMixerDragOver}
                                                                                                         onDragLeave={handleMixerDragLeave}
                                                                                                         onDrop={handleMixerDrop}
                                                                                                         onClear={() => setCombinedFocusCardIds([])}
+                                                                                                        onRemoveCard={handleRemoveCombinedCard}
                                                                                                         onKeyboardAdd={handleMixerKeyboardAdd}
                                                                                                         stream={<FocusStream anchored forceActive />}
-                                                                                                        actions={(
-                                                                                                                <button
-                                                                                                                        type="button"
-                                                                                                                        className="btn secondary micro"
-                                                                                                                        title="Open the combined focus animation"
-                                                                                                                        onClick={() => {
-                                                                                                                                setFocusModeType('combined');
-                                                                                                                                setFocusMode(true);
-                                                                                                                                trackEvent('focus_mode_open', { type: 'combined' });
-                                                                                                                                if (!expandedCard && orderedPackDeck.length) setExpandedCard(orderedPackDeck[0].id);
-                                                                                                                        }}
-                                                                                                                >
-                                                                                                                        Open focus mode
-                                                                                                                </button>
-                                                                                                        )}
+                                                                                                        actions={
+                                                                                                                combinedFocusCardIds.length >= 2 ? (
+                                                                                                                        <button
+                                                                                                                                type="button"
+                                                                                                                                className="btn secondary micro"
+                                                                                                                                title="Open the combined focus animation"
+                                                                                                                                onClick={() => {
+                                                                                                                                        setFocusModeType('combined');
+                                                                                                                                        setFocusMode(true);
+                                                                                                                                        trackEvent('focus_mode_open', { type: 'combined' });
+                                                                                                                                        if (!expandedCard && orderedPackDeck.length) setExpandedCard(orderedPackDeck[0].id);
+                                                                                                                                }}
+                                                                                                                        >
+                                                                                                                                Open focus mode
+                                                                                                                        </button>
+                                                                                                                ) : null
+                                                                                                        }
                                                                                                 />
                                                                                         </section>
                                                                                 )}
@@ -3499,10 +3517,12 @@ function App() {
                                                 <CombinedFocusMode
                                                         mixerHover={mixerHover}
                                                         combinedCount={combinedFocusCardIds.length}
+                                                        combinedCards={combinedCards}
                                                         onDragOver={handleMixerDragOver}
                                                         onDragLeave={handleMixerDragLeave}
                                                         onDrop={handleMixerDrop}
                                                         onClear={() => setCombinedFocusCardIds([])}
+                                                        onRemoveCard={handleRemoveCombinedCard}
                                                         onKeyboardAdd={handleMixerKeyboardAdd}
                                                         stream={<FocusStream anchored forceActive />}
                                                 />

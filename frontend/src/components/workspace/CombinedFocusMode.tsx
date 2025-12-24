@@ -2,13 +2,20 @@ import React from 'react';
 
 import { trackEvent } from '../../utils/analytics';
 
+export interface CombinedCard {
+        id: string;
+        label: string;
+}
+
 export interface CombinedFocusModeProps {
         mixerHover: boolean;
         combinedCount: number;
+        combinedCards?: CombinedCard[];
         onDragOver: (event: React.DragEvent<HTMLDivElement>) => void;
         onDragLeave: () => void;
         onDrop: (event: React.DragEvent<HTMLDivElement>) => void;
         onClear: () => void;
+        onRemoveCard?: (cardId: string) => void;
         stream: React.ReactNode;
         actions?: React.ReactNode;
         onKeyboardAdd?: () => boolean | void;
@@ -18,10 +25,12 @@ export interface CombinedFocusModeProps {
 export function CombinedFocusMode({
         mixerHover,
         combinedCount,
+        combinedCards = [],
         onDragOver,
         onDragLeave,
         onDrop,
         onClear,
+        onRemoveCard,
         stream,
         actions,
         onKeyboardAdd,
@@ -85,7 +94,7 @@ export function CombinedFocusMode({
                                 </div>
                         </div>
                         <div
-                                className={`combined-drop${mixerHover ? ' hover' : ''}`}
+                                className={`combined-drop${mixerHover ? ' hover' : ''}${combinedCount > 0 ? ' has-cards' : ''}`}
                                 aria-label="Combined focus drop area"
                                 role="button"
                                 tabIndex={0}
@@ -95,10 +104,36 @@ export function CombinedFocusMode({
                                 onDragLeave={handleDragLeaveEvent}
                                 onDrop={handleDrop}
                         >
-                                <span className="drop-instruction">Drop pack cards here</span>
-                                <span className="drop-sub" aria-live="polite">
-                                        {combinedCount ? `${combinedCount} added` : 'Drag from the pack deck to build this mix.'}
-                                </span>
+                                {combinedCount === 0 ? (
+                                        <>
+                                                <span className="drop-instruction">Drop pack cards here</span>
+                                                <span className="drop-sub" aria-live="polite">
+                                                        Drag from the pack deck to build this mix.
+                                                </span>
+                                        </>
+                                ) : (
+                                        <div className="combined-cards-list">
+                                                {combinedCards.map((card) => (
+                                                        <div key={card.id} className="combined-card-chip">
+                                                                <span className="combined-card-label">{card.label}</span>
+                                                                {onRemoveCard && (
+                                                                        <button
+                                                                                type="button"
+                                                                                className="combined-card-remove"
+                                                                                onClick={() => {
+                                                                                        onRemoveCard(card.id);
+                                                                                        trackEvent('combined_focus_remove_card', { cardId: card.id });
+                                                                                }}
+                                                                                aria-label={`Remove ${card.label}`}
+                                                                                title={`Remove ${card.label}`}
+                                                                        >
+                                                                                ✕
+                                                                        </button>
+                                                                )}
+                                                        </div>
+                                                ))}
+                                        </div>
+                                )}
                         </div>
                 </div>
         );

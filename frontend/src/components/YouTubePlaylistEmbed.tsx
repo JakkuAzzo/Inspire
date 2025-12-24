@@ -11,13 +11,22 @@ interface Props {
 
 // Loads IFrame API once per page
 function useYouTubeApi() {
-  const [ready, setReady] = useState<boolean>(typeof (window as any).YT !== 'undefined' && (window as any).YT?.Player);
+  const [ready, setReady] = useState<boolean>(false);
+  const initializedRef = useRef(false);
+  
   useEffect(() => {
+    // Skip if already initialized to prevent multiple hook calls
+    if (initializedRef.current) {
+      return;
+    }
+    initializedRef.current = true;
+    
     const w = window as any;
     if (w.YT && w.YT.Player) {
       setReady(true);
       return;
     }
+    
     const existing = document.querySelector('script[src="https://www.youtube.com/iframe_api"]') as HTMLScriptElement | null;
     if (!existing) {
       const tag = document.createElement('script');
@@ -25,8 +34,20 @@ function useYouTubeApi() {
       tag.async = true;
       document.head.appendChild(tag);
     }
-    w.onYouTubeIframeAPIReady = () => setReady(true);
+    
+    // Store the callback with error handling
+    const originalReady = w.onYouTubeIframeAPIReady;
+    w.onYouTubeIframeAPIReady = () => {
+      try {
+        setReady(true);
+      } catch (error) {
+        console.warn('Error in onYouTubeIframeAPIReady:', error);
+      }
+      // Call the original callback if there was one
+      if (originalReady) originalReady();
+    };
   }, []);
+  
   return ready;
 }
 
