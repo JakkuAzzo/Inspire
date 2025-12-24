@@ -845,6 +845,8 @@ function App() {
 	const [communityPosts] = useState<CommunityPost[]>(COMMUNITY_POSTS);
 	const [workspaceQueue, setWorkspaceQueue] = useState<WorkspaceQueueItem[]>(INITIAL_WORKSPACE_QUEUE);
 	const [queueCollapsed, setQueueCollapsed] = useState(false);
+	const [packStageWidth, setPackStageWidth] = useState(60);
+	const [isResizing, setIsResizing] = useState(false);
 	const [youtubeVideos, setYoutubeVideos] = useState<Record<string, YouTubeVideoPreview>>({});
 	const youtubeVideosRef = useRef<Record<string, YouTubeVideoPreview>>({});
 
@@ -1313,6 +1315,37 @@ function App() {
 	const toggleQueueCollapsed = useCallback(() => {
 		setQueueCollapsed((prev) => !prev);
 	}, []);
+
+	const handleResizeMouseDown = useCallback(() => {
+		setIsResizing(true);
+	}, []);
+
+	const handleResizeMouseUp = useCallback(() => {
+		setIsResizing(false);
+	}, []);
+
+	const handleResizeMouseMove = useCallback(
+		(e: MouseEvent) => {
+			if (!isResizing) return;
+			const container = document.querySelector('.workspace-main');
+			if (!container) return;
+			const rect = container.getBoundingClientRect();
+			const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
+			// Constrain width between 40% and 80%
+			setPackStageWidth(Math.max(40, Math.min(80, newWidth)));
+		},
+		[isResizing]
+	);
+
+	useEffect(() => {
+		if (!isResizing) return;
+		document.addEventListener('mousemove', handleResizeMouseMove);
+		document.addEventListener('mouseup', handleResizeMouseUp);
+		return () => {
+			document.removeEventListener('mousemove', handleResizeMouseMove);
+			document.removeEventListener('mouseup', handleResizeMouseUp);
+		};
+	}, [isResizing, handleResizeMouseMove, handleResizeMouseUp]);
 
         const handleAutoRefreshSelect = useCallback((interval: number | null) => {
                 setAutoRefreshMs((current) => {
@@ -2411,7 +2444,11 @@ function App() {
 		}
 	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
 
-	const workspaceMainClassName = `workspace-main${isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail ? ' with-queue' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`;
+	const hasQueue = isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail;
+	const workspaceMainClassName = `workspace-main${hasQueue ? ' with-queue has-divider' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`;
+	const workspaceMainStyle = hasQueue
+		? { gridTemplateColumns: `minmax(0, ${packStageWidth}%) 8px minmax(280px, ${Math.max(20, 100 - packStageWidth)}%)` }
+		: undefined;
 	const controlsToggleLabel = controlsCollapsed ? 'Show Controls ▸' : 'Hide Controls ◂';
 	const packStageClassName = `pack-stage glass${focusMode ? ' focus-mode' : ''}`;
 	const headerChips = useMemo(() => {
@@ -3153,7 +3190,7 @@ function App() {
 						</div>
 					)}
 
-					<div className={workspaceMainClassName}>
+					<div className={workspaceMainClassName} style={workspaceMainStyle}>
 						<section key={packAnimationKey} className={packStageClassName}>
 							{fuelPack ? (
 							<>
@@ -3288,7 +3325,20 @@ function App() {
 						)}
 						</section>
 
-						{isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail && (
+						{hasQueue && (
+							<div
+								className="workspace-resize-divider"
+								onMouseDown={handleResizeMouseDown}
+								role="separator"
+								aria-label="Resize divider"
+								aria-orientation="vertical"
+								aria-valuemin={40}
+								aria-valuemax={80}
+								aria-valuenow={Math.round(packStageWidth)}
+							/>
+						)}
+
+						{hasQueue && (
 							<aside className={`workspace-queue glass${queueCollapsed ? ' collapsed' : ''}`} aria-label="Suggested inspiration queue">
 								<div className="queue-header">
 									<div className="queue-heading">

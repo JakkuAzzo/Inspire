@@ -43,11 +43,15 @@ export default function YouTubePlaylistEmbed({ videoId, playlist, title, width =
 
   // Update player ids when props change (e.g., user selects a new main track)
   useEffect(() => {
-    setIds([videoId, ...playlist].filter(Boolean));
-  }, [videoId, playlist]);
+		const newIds = [videoId, ...playlist].filter(Boolean);
+		// Only update if the IDs actually changed
+		if (newIds.length !== ids.length || newIds.some((id, i) => id !== ids[i])) {
+			setIds(newIds);
+		}
+	}, [videoId, playlist, ids]);
 
-  useEffect(() => {
-    if (!apiReady || !containerRef.current || !ids.length) return;
+	useEffect(() => {
+		if (!apiReady || !containerRef.current || !ids.length) return;
     const w = window as any;
 
     // Destroy existing player if any
