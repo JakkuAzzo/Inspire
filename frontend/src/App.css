@@ -411,6 +411,7 @@
   z-index: 40;
   backdrop-filter: blur(12px);
   overflow: auto;
+  overscroll-behavior: contain; /* Prevents the scroll from "bouncing" up to the parent page */
 }
 
 .settings-overlay,
@@ -1535,19 +1536,43 @@
 .workspace-resize-divider {
   width: 8px;
   cursor: col-resize;
-  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.3), transparent);
-  transition: background 0.2s ease;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.4), transparent);
+  transition: background 0.2s ease, width 0.2s ease;
   user-select: none;
   touch-action: none;
   border-radius: 8px;
+  position: relative;
+}
+
+.workspace-resize-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 40px;
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 2px;
+  transition: height 0.2s ease, background 0.2s ease;
 }
 
 .workspace-resize-divider:hover {
-  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.6), transparent);
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.7), transparent);
+  width: 12px;
+}
+
+.workspace-resize-divider:hover::before {
+  height: 60px;
+  background: rgba(148, 163, 184, 0.8);
 }
 
 .workspace-resize-divider:active {
   background: linear-gradient(90deg, transparent, rgba(88, 121, 255, 0.8), transparent);
+}
+
+.workspace-resize-divider:active::before {
+  background: rgba(88, 121, 255, 1);
 }
 
 .workspace-queue {
@@ -1563,6 +1588,7 @@
   max-height: calc(100vh - (var(--app-padding) * 2) - var(--nav-height) - 1rem);
   overflow: auto;
   margin-bottom: 0.5rem;
+  resize: horizontal;
 }
 .queue-header h3 {
   margin: 0;
@@ -2191,6 +2217,7 @@
   z-index: 40;
   backdrop-filter: blur(12px);
   overflow: auto;
+  overscroll-behavior: contain; /* Prevents the scroll from "bouncing" up to the parent page */
   animation: backdropEnter 0.35s ease;
 }
 
@@ -2208,6 +2235,7 @@
   animation: focusModeEnter 0.45s cubic-bezier(0.22, 1, 0.36, 1);
   max-height: calc(100vh - 3rem);
   overflow-y: auto;
+  overscroll-behavior: contain; /* Prevents the scroll from "bouncing" up to the parent page */
   margin: auto;
 }
 
