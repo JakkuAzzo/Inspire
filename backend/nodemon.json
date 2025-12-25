@@ -1,0 +1,12 @@
+{
+  "watch": ["src"],
+  "ext": "ts,json",
+  "ignore": [
+    "../frontend/dist/**",
+    "dist/**",
+    "node_modules/**",
+    "../frontend/node_modules/**",
+    "src/data/**"
+  ],
+  "exec": "ts-node src/index.ts"
+}

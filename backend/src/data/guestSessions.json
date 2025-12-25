@@ -1,0 +1,37 @@
+[
+  {
+    "id": "78b80867-75e7-462e-9f97-8c86c233ddb5",
+    "handle": "AwesomeWizard4300",
+    "sessionToken": "e039c27e-8e67-4bf1-acc8-4d912b8e5b6d",
+    "createdAt": 1766623253209,
+    "expiresAt": 1766709653209
+  },
+  {
+    "id": "e70aa398-ff42-4db9-802f-c647c84b3457",
+    "handle": "UltraPro410",
+    "sessionToken": "3152b5ce-a1f9-488e-b0c1-44efffe5080a",
+    "createdAt": 1766623284595,
+    "expiresAt": 1766709684595
+  },
+  {
+    "id": "56d7cc9a-d5d1-4cc6-a8d2-9e5d8973cc8d",
+    "handle": "SuperHero2664",
+    "sessionToken": "ab54e783-f3bc-402a-98db-6b49219fbf6d",
+    "createdAt": 1766623428582,
+    "expiresAt": 1766709828582
+  },
+  {
+    "id": "ab1c6d77-fc78-4fc9-b276-d1f97687a2d7",
+    "handle": "UltraPro6435",
+    "sessionToken": "375fe223-d3b7-4fa4-b331-93032d25fb28",
+    "createdAt": 1766624558922,
+    "expiresAt": 1766710958922
+  },
+  {
+    "id": "dd0c62ac-bc63-42af-b880-539f0070f47b",
+    "handle": "SuperPro9821",
+    "sessionToken": "57bfe978-5820-440c-927b-f5a81b41315a",
+    "createdAt": 1766624751911,
+    "expiresAt": 1766711151911
+  }
+]

@@ -408,7 +408,7 @@
   align-items: flex-start;
   justify-content: center;
   padding: clamp(1.5rem, 4vw, 3rem);
-  z-index: 40;
+  z-index: 100;
   backdrop-filter: blur(12px);
   overflow: auto;
   overscroll-behavior: contain; /* Prevents the scroll from "bouncing" up to the parent page */
@@ -2214,7 +2214,7 @@
   align-items: flex-start;
   justify-content: center;
   padding: clamp(1.5rem, 4vw, 3rem);
-  z-index: 40;
+  z-index: 100;
   backdrop-filter: blur(12px);
   overflow: auto;
   overscroll-behavior: contain; /* Prevents the scroll from "bouncing" up to the parent page */
