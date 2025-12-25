@@ -73,10 +73,6 @@ export function CombinedFocusMode({
                         <div className="combined-focus-header">
                                 <div>
                                         <p className="label">Combined focus</p>
-                                        <h3>Drop pack cards to mix</h3>
-                                        <p id={dropHelpId} className="hint">
-                                                Drag cards or focus this area and press Enter/Space to mix the selected card.
-                                        </p>
                                 </div>
                                 <div className="mixer-actions">
                                         {actions}

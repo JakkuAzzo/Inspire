@@ -1923,27 +1923,29 @@ function App() {
 							{/* Word Search Form */}
 							<div className="word-settings">
 								<div className="word-form">
-								<input type="text" placeholder="Starts with" value={wordStartsWith} onChange={(e) => setWordStartsWith(e.target.value)} />
-								<input type="text" placeholder="Rhyme with" value={wordRhymeWith} onChange={(e) => setWordRhymeWith(e.target.value)} />
-								<input type="text" placeholder="Syllables" value={wordSyllables} onChange={(e) => setWordSyllables(e.target.value)} />
-								<input type="text" placeholder="Max results" value={wordMaxResults} onChange={(e) => setWordMaxResults(e.target.value)} />
-								<input type="text" placeholder="Topic (eg: music)" value={wordTopic} onChange={(e) => setWordTopic(e.target.value)} />
-								<button 
-									className="btn secondary focus-toggle" 
-									type="button" 
-									onClick={async () => { 
-										await runWordSearch(); 
-										setWordFocusMode(true); 
-										setShowWordExplorer(true); 
-									}} 
-									disabled={wordLoading}
-								>
-									Focus Mode
-								</button>
+									<input placeholder="Starts with" value={wordStartsWith} onChange={(e) => setWordStartsWith(e.target.value)} />
+									<input placeholder="Rhyme with" value={wordRhymeWith} onChange={(e) => setWordRhymeWith(e.target.value)} />
+									<input placeholder="Syllables" value={wordSyllables} onChange={(e) => setWordSyllables(e.target.value)} />
+									<input placeholder="Max results" value={wordMaxResults} onChange={(e) => setWordMaxResults(e.target.value)} />
+									<input placeholder="Topic (eg: music)" value={wordTopic} onChange={(e) => setWordTopic(e.target.value)} />
+									<button 
+										className="btn secondary focus-toggle" 
+										type="button" 
+										onClick={async () => { 
+											await runWordSearch(); 
+											setWordFocusMode(true); 
+											setShowWordExplorer(true); 
+										}} 
+										disabled={wordLoading}
+									>
+										Focus Mode
+									</button>
+								</div>
+								{wordLoading && <p className="status-text loading">Searching…</p>}
+								{!wordLoading && wordError && <p className="status-text error">{wordError}</p>}
 							</div>
-							{wordLoading && <p className="status-text loading">Searching…</p>}
-							{!wordLoading && wordError && <p className="status-text error">{wordError}</p>}
-						</div>
+							
+							{/* Static Power Words Grid */}
 							<div className="word-grid">
 								{fuelPack.powerWords.map((word, index) => (
 									<button key={word} type="button" className="word-chip interactive" onClick={() => setChipPicker({ type: 'powerWord', index })}>
@@ -2546,6 +2548,8 @@ function App() {
 				switch (cardId) {
 					case 'word-explorer':
 						return [...pack.powerWords];
+					case 'word-lab':
+						return (pack.wordLab ?? []).map((w) => w.word);
 					case 'rhyme-families':
 						return [...(pack.rhymeFamilies ?? [])];
 					case 'story-arc':
