@@ -27,7 +27,6 @@ export function AuthModal({
   const [otpCode, setOtpCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
 
   if (!isOpen) return null;
 
@@ -38,7 +37,6 @@ export function AuthModal({
 
     try {
       await onSignup(email, password, displayName);
-      setOtpSent(true);
       setMode('verify-otp');
     } catch (err: any) {
       setError(err.message || 'Signup failed');
