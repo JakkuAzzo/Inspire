@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import './App.css';
 import inspireLogo from './assets/Inspire_transparent_white.png';
 import lyricistCardImage from './assets/images/Lyracist_Studio.jpeg';
@@ -1062,8 +1062,7 @@ function App() {
 		}
 	}, [dailyChallenge.expiresAt]);
 
-	const isAuthenticated = useMemo(() => Boolean(authUser) && !authUser.isGuest, [authUser]);
-	const isGuest = useMemo(() => Boolean(authUser?.isGuest), [authUser]);
+	const isAuthenticated = useMemo(() => Boolean(authUser && !authUser.isGuest), [authUser]);
 
 	// Auth handlers
 	const handleSignup = useCallback(async (email: string, password: string, displayName?: string) => {
@@ -1849,24 +1848,6 @@ function App() {
 		}
 		setShowAccountModal(true);
 	}, [isAuthenticated, setShowAccountModal]);
-
-	const handleUserIdChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-		setUserId(event.target.value.slice(0, 32));
-	}, []);
-
-	const handleUserIdBlur = useCallback(() => {
-		setUserId((current) => {
-			const trimmed = current.trim();
-			if (!trimmed) return loadStoredUserId();
-			return trimmed;
-		});
-	}, []);
-
-	const handleUserIdKey = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-		if (event.key === 'Enter') {
-			event.currentTarget.blur();
-		}
-	}, []);
 
 	const handleThemeChange = useCallback((value: string) => {
 		setTheme(value);
