@@ -13,10 +13,13 @@ import MouseParticles from './components/MouseParticles';
 import { FallingWordStream } from './components/FallingWordStream';
 import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
 import { FocusModeOverlay } from './components/FocusModeOverlay';
+import { AuthModal } from './components/AuthModal';
 import { CombinedFocusMode } from './components/workspace/CombinedFocusMode';
 import { CreatorSettingsModal } from './components/workspace/CreatorSettingsModal';
 import { FocusModeControls } from './components/workspace/FocusModeControls';
 import { trackEvent } from './utils/analytics';
+import * as authService from './services/authService';
+import type { AuthUser } from './services/authService';
 import type {
   CreativeMode,
   ModeDefinition,
@@ -782,6 +785,7 @@ function App() {
 	const [status, setStatus] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [userId, setUserId] = useState<string>(initialUserId);
+	const [authUser, setAuthUser] = useState<AuthUser | null>(null);
 	const [creatorStats, setCreatorStats] = useState<CreatorStats>(() => loadCreatorStats(initialUserId));
 	const [lookupId, setLookupId] = useState('');
 	const [packAnimationKey, setPackAnimationKey] = useState(0);
@@ -1058,7 +1062,61 @@ function App() {
 		}
 	}, [dailyChallenge.expiresAt]);
 
-	const isAuthenticated = useMemo(() => Boolean(userId) && !userId.startsWith('creator-'), [userId]);
+	const isAuthenticated = useMemo(() => Boolean(authUser) && !authUser.isGuest, [authUser]);
+	const isGuest = useMemo(() => Boolean(authUser?.isGuest), [authUser]);
+
+	// Auth handlers
+	const handleSignup = useCallback(async (email: string, password: string, displayName?: string) => {
+		try {
+			await authService.requestSignup(email, password, displayName);
+			// OTP sent - modal will switch to verification mode
+		} catch (err: any) {
+			throw new Error(err.message || 'Signup failed');
+		}
+	}, []);
+
+	const handleVerifyOtp = useCallback(async (email: string, otpCode: string) => {
+		try {
+			const user = await authService.verifyOtp(email, otpCode);
+			setAuthUser(user);
+			setUserId(user.displayName || user.id);
+			setShowAccountModal(false);
+		} catch (err: any) {
+			throw new Error(err.message || 'OTP verification failed');
+		}
+	}, []);
+
+	const handleLogin = useCallback(async (email: string, password: string) => {
+		try {
+			const user = await authService.login(email, password);
+			setAuthUser(user);
+			setUserId(user.displayName || user.id);
+			setShowAccountModal(false);
+		} catch (err: any) {
+			throw new Error(err.message || 'Login failed');
+		}
+	}, []);
+
+	const handleGuestMode = useCallback(async () => {
+		try {
+			const user = await authService.createGuestSession();
+			setAuthUser(user);
+			setUserId(user.displayName || user.id);
+			setShowAccountModal(false);
+		} catch (err: any) {
+			throw new Error(err.message || 'Guest mode failed');
+		}
+	}, []);
+
+	// Load current user on mount
+	useEffect(() => {
+		authService.getCurrentUser().then(user => {
+			if (user) {
+				setAuthUser(user);
+				setUserId(user.displayName || user.id);
+			}
+		});
+	}, []);
 
 	useEffect(() => {
 		const updateCountdown = () => setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
@@ -2395,7 +2453,13 @@ function App() {
 		window.history.replaceState({}, '', nextUrl);
 	}, [setPack, handleDismissOnboarding]);
 
-	const formattedHandle = isAuthenticated ? (userId.startsWith('@') ? userId : `@${userId}`) : 'Sign up / Log in';
+	const formattedHandle = useMemo(() => {
+		if (!authUser) return 'Sign up / Log in';
+		if (authUser.isGuest) return authUser.displayName || 'Guest';
+		const name = authUser.displayName || authUser.email || 'User';
+		return name.startsWith('@') ? name : `@${name}`;
+	}, [authUser]);
+	
 	const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
 	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
 	// Inline custom property for mood accent so tests can detect changes via getComputedStyle
@@ -2790,15 +2854,17 @@ function App() {
 			<div className="noise-overlay" aria-hidden="true" />
 
 			<div className="app-foreground">
-				<button
-					type="button"
-					className="user-handle"
-					onClick={handleUserHandleClick}
-					aria-label={handleTriggerLabel}
-				>
-					<span>{formattedHandle}</span>
-					<span className="handle-indicator" aria-hidden="true">↗</span>
-				</button>
+				{!mode && (
+					<button
+						type="button"
+						className="user-handle"
+						onClick={handleUserHandleClick}
+						aria-label={handleTriggerLabel}
+					>
+						<span>{formattedHandle}</span>
+						<span className="handle-indicator" aria-hidden="true">↗</span>
+					</button>
+				)}
 
 
 				{fatalError && (
@@ -3666,30 +3732,14 @@ function App() {
                         )}
 
 			{showAccountModal && (
-				<FocusModeOverlay
+				<AuthModal
 					isOpen={showAccountModal}
 					onClose={() => setShowAccountModal(false)}
-					title="Sign in to Inspire"
-					ariaLabel="Creator handle sign in"
-				>
-					<div>
-						<p className="overlay-copy">Claim your creator handle to sync packs across sessions.</p>
-						<label className="handle-field" htmlFor="overlayUserId">
-							<span className="label">Creator handle</span>
-							<input
-								id="overlayUserId"
-								value={userId}
-								maxLength={32}
-								onChange={handleUserIdChange}
-								onBlur={handleUserIdBlur}
-								onKeyDown={handleUserIdKey}
-							/>
-						</label>
-						<button type="button" className="btn primary" onClick={() => setShowAccountModal(false)}>
-							Save handle
-						</button>
-					</div>
-				</FocusModeOverlay>
+					onSignup={handleSignup}
+					onVerifyOtp={handleVerifyOtp}
+					onLogin={handleLogin}
+					onGuestMode={handleGuestMode}
+				/>
 			)}
 
 			{showSavedOverlay && (

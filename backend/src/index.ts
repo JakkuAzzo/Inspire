@@ -53,6 +53,7 @@ import { ChallengeService } from './services/challengeService';
 import { validateEnvironment } from './config/env';
 import { buildAuthRouter } from './auth/routes';
 import { requireAuth, AuthenticatedRequest } from './auth/middleware';
+import { startCleanupJob } from './auth/cleanup';
 
 const app = express();
 const server = http.createServer(app);
@@ -1237,6 +1238,9 @@ if (hasFrontendBuild) {
 // Start server only when this file is run directly. This lets tests import the app
 // without starting a real network listener.
 if (require.main === module) {
+  // Start cleanup job for expired pending users and guest sessions
+  startCleanupJob();
+  
   // Bind to all interfaces so localhost resolves to both IPv4 and IPv6 addresses
   server.listen(LISTEN_PORT, '0.0.0.0', () => {
     console.log(`🚀 Inspire API running on http://localhost:${LISTEN_PORT}`);
