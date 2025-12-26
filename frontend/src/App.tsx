@@ -840,6 +840,8 @@ function App() {
 	const [viewerMode, setViewerMode] = useState<'idle' | 'spectating' | 'joining'>('idle');
 	const [deckOrder, setDeckOrder] = useState<string[]>([]);
 	const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
+	const [spectateSearch, setSpectateSearch] = useState('');
+	const [communitySearch, setCommunitySearch] = useState('');
 	const [combinedFocusCardIds, setCombinedFocusCardIds] = useState<string[]>([]);
 	const [customWordInput, setCustomWordInput] = useState('');
 	const [mixerHover, setMixerHover] = useState(false);
@@ -913,6 +915,14 @@ function App() {
 	const [wordLoading, setWordLoading] = useState(false);
 	const [wordError, setWordError] = useState<string | null>(null);
 	const [wordFocusMode, setWordFocusMode] = useState(false);
+	// Rhyme Families overlay
+	const [showRhymeExplorer, setShowRhymeExplorer] = useState(false);
+	const [rhymeTarget, setRhymeTarget] = useState('');
+	const [rhymeMaxResults, setRhymeMaxResults] = useState('12');
+	const [rhymeResults, setRhymeResults] = useState<Array<{ word: string; score?: number; numSyllables?: number }>>([]);
+	const [rhymeLoading, setRhymeLoading] = useState(false);
+	const [rhymeError, setRhymeError] = useState<string | null>(null);
+	const [rhymeFocusMode, setRhymeFocusMode] = useState(false);
 	const [newsHeadlines, setNewsHeadlines] = useState<NewsHeadline[]>([]);
 	const [newsLoading, setNewsLoading] = useState(false);
 	const [newsError, setNewsError] = useState<string | null>(null);
@@ -1036,6 +1046,20 @@ function App() {
 		() => activeSessions.filter((session) => session.status === 'open'),
 		[activeSessions]
 	);
+	const filteredLiveSessions = useMemo(() => {
+		const term = spectateSearch.trim().toLowerCase();
+		if (!term) return liveSessions;
+		return liveSessions.filter((session) =>
+			session.title.toLowerCase().includes(term) || session.owner.toLowerCase().includes(term)
+		);
+	}, [liveSessions, spectateSearch]);
+	const filteredCommunityPosts = useMemo(() => {
+		const term = communitySearch.trim().toLowerCase();
+		if (!term) return communityPosts;
+		return communityPosts.filter((post) =>
+			post.author.toLowerCase().includes(term) || post.content.toLowerCase().includes(term)
+		);
+	}, [communityPosts, communitySearch]);
 	const collaborationStatusLabel = useMemo(() => {
 		if (viewerMode === 'spectating' && activeSession) {
 			return `Spectating ${activeSession.owner}`;
@@ -1967,15 +1991,71 @@ function App() {
 				{
 					id: 'rhyme-families',
 					label: 'Rhyme Families',
-					preview: fuelPack.rhymeFamilies?.slice(0, 2).join(' · ') || 'Rhyme patterns',
+					preview: (rhymeResults.length ? rhymeResults : fuelPack.rhymeFamilies)?.slice(0, 2).map((r: any) => (typeof r === 'string' ? r : r.word)).join(' · ') || 'Rhyme patterns',
 					detail: (
-						<ul className="tags">
-							{(fuelPack.rhymeFamilies ?? []).map((family) => (
-								<li key={family}>
-									<span className="tag">{family}</span>
-								</li>
-							))}
-						</ul>
+						<div className="word-explorer-panel">
+							<div className="word-settings">
+								<div className="word-form">
+									<input
+										type="text"
+										placeholder="Word to rhyme with"
+										value={rhymeTarget}
+										onChange={(e) => setRhymeTarget(e.target.value)}
+									/>
+									<input
+										type="text"
+										placeholder="Max results"
+										value={rhymeMaxResults}
+										onChange={(e) => setRhymeMaxResults(e.target.value)}
+									/>
+									<button type="button" className="btn micro" onClick={() => runRhymeSearch()} disabled={rhymeLoading}>
+										Search rhymes
+									</button>
+									<button type="button" className="btn ghost micro" onClick={handleRandomRhymes} disabled={rhymeLoading}>
+										Random word
+									</button>
+									<button
+										type="button"
+										className={`btn secondary focus-toggle${rhymeFocusMode ? ' active' : ''}`}
+										onClick={async () => {
+											await runRhymeSearch();
+											setRhymeFocusMode(true);
+											setShowRhymeExplorer(true);
+										}}
+										disabled={rhymeLoading}
+									>
+										Focus Mode
+									</button>
+								</div>
+								{rhymeLoading && <p className="status-text loading">Finding rhyme families…</p>}
+								{!rhymeLoading && rhymeError && <p className="status-text error">{rhymeError}</p>}
+							</div>
+							<div className="word-grid">
+								{(rhymeResults.length ? rhymeResults.map((r) => r.word) : fuelPack.rhymeFamilies ?? []).map((family) => (
+									<button
+										key={family}
+										type="button"
+										className="word-chip interactive"
+										onClick={() => handleApplyRhymeFamilies([family])}
+									>
+										{family}
+									</button>
+								))}
+								{!rhymeLoading && !rhymeError && !rhymeResults.length && !(fuelPack.rhymeFamilies?.length)
+									? <p className="status-text">No rhyme families yet</p>
+									: null}
+							</div>
+							<div className="word-explorer-actions">
+								<button
+									type="button"
+									className="btn micro"
+									onClick={() => handleApplyRhymeFamilies((rhymeResults.length ? rhymeResults : []).map((r) => r.word))}
+									disabled={!rhymeResults.length}
+								>
+									Add all to pack
+								</button>
+							</div>
+						</div>
 					)
 				} as DeckCard,
 				{
@@ -2503,6 +2583,60 @@ function App() {
 		}
 	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
 
+	const runRhymeSearch = useCallback(
+		async (targetOverride?: string) => {
+			const target = (targetOverride ?? rhymeTarget).trim();
+			if (!target) {
+				setRhymeError('Enter a word to find rhyme families');
+				setRhymeResults([]);
+				return;
+			}
+			setRhymeLoading(true);
+			setRhymeError(null);
+			try {
+				const params = new URLSearchParams({ word: target });
+				if (rhymeMaxResults) params.set('maxResults', rhymeMaxResults);
+				const res = await fetch(`/api/words/rhymes?${params.toString()}`);
+				if (!res.ok) throw new Error('Search failed');
+				const data = await res.json();
+				setRhymeResults(Array.isArray(data.items) ? data.items : []);
+				setRhymeTarget(target);
+			} catch (err) {
+				setRhymeError('Unable to load rhymes right now');
+				setRhymeResults([]);
+			} finally {
+				setRhymeLoading(false);
+			}
+		},
+		[rhymeTarget, rhymeMaxResults]
+	);
+
+	const handleApplyRhymeFamilies = useCallback((words: string[]) => {
+		setFuelPack((current) => {
+			if (!current || !isLyricistPack(current)) return current;
+			const existing = current.rhymeFamilies ?? [];
+			const merged = Array.from(new Set([...words, ...existing])).slice(0, 16);
+			return { ...current, rhymeFamilies: merged } as InspireAnyPack;
+		});
+	}, []);
+
+	const handleRandomRhymes = useCallback(async () => {
+		try {
+			const res = await fetch('/api/words/random?count=1');
+			if (!res.ok) throw new Error('random failed');
+			const data = await res.json();
+			const randomWord = Array.isArray(data.items) && data.items[0] ? data.items[0] : '';
+			if (!randomWord) {
+				setRhymeError('No random word available');
+				return;
+			}
+			setRhymeTarget(randomWord);
+			await runRhymeSearch(randomWord);
+		} catch (err) {
+			setRhymeError('Unable to fetch a random word');
+		}
+	}, [runRhymeSearch]);
+
 	const hasQueue = isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail;
 	const workspaceMainClassName = `workspace-main${hasQueue ? ' with-queue has-divider' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`;
 	const workspaceMainStyle = hasQueue
@@ -2546,8 +2680,10 @@ function App() {
 				switch (cardId) {
 					case 'word-explorer':
 						return [...pack.powerWords];
-					case 'rhyme-families':
-						return [...(pack.rhymeFamilies ?? [])];
+					case 'rhyme-families': {
+						const searched = rhymeResults.map((r) => r.word);
+						return searched.length ? searched : [...(pack.rhymeFamilies ?? [])];
+					}
 					case 'story-arc':
 						return [pack.storyArc.start, pack.storyArc.middle, pack.storyArc.end];
 					case 'headline':
@@ -2621,7 +2757,7 @@ function App() {
 		}
 
 		return [];
-	}, [combinedFocusCardIds, focusModeType, fuelPack, memeStimuli, selectedCard]);
+	}, [combinedFocusCardIds, focusModeType, fuelPack, memeStimuli, selectedCard, rhymeResults]);
 
 	const visibleFocusItems = useMemo(() => focusItems.slice(0, Math.max(focusDensity, 6)), [focusDensity, focusItems]);
 
@@ -2794,18 +2930,22 @@ function App() {
 				</div>
 			</div>
 			<div className="creator-metrics">
-				<div className="metric-card">
-					<span className="metric-label">Daily streak</span>
-					<span className="metric-value">{creatorStats.streak ?? 0}<span aria-hidden="true">🔥</span></span>
-				</div>
-				<div className="metric-card">
-					<span className="metric-label">Packs generated</span>
-					<span className="metric-value">{creatorStats.totalGenerated}</span>
-				</div>
-				<div className="metric-card">
-					<span className="metric-label">Favorite tone</span>
-					<span className="metric-value">{creatorStats.favoriteTone ?? '—'}</span>
-				</div>
+				{isAuthenticated && (
+					<>
+						<div className="metric-card">
+							<span className="metric-label">Daily streak</span>
+							<span className="metric-value">{creatorStats.streak ?? 0}<span aria-hidden="true">🔥</span></span>
+						</div>
+						<div className="metric-card">
+							<span className="metric-label">Packs generated</span>
+							<span className="metric-value">{creatorStats.totalGenerated}</span>
+						</div>
+						<div className="metric-card">
+							<span className="metric-label">Favorite tone</span>
+							<span className="metric-value">{creatorStats.favoriteTone ?? '—'}</span>
+						</div>
+					</>
+				)}
 				<button type="button" className="metric-card challenge-card" onClick={() => setShowChallengeOverlay(true)}>
 					<span className="metric-label">Daily challenge</span>
 					<span className="metric-value">{challengeCountdown}</span>
@@ -2813,15 +2953,17 @@ function App() {
 					<span className="metric-meta hint">View progress →</span>
 				</button>
 			</div>
-			<div className="achievements">
-				<span className="label">Achievements</span>
-				<div className="badge-row">
-					{creatorStats.achievements.length === 0 && <span className="badge placeholder">Create packs to unlock badges</span>}
-					{creatorStats.achievements.map((badge) => (
-						<span key={badge} className="badge">{badge}</span>
-					))}
+			{isAuthenticated && (
+				<div className="achievements">
+					<span className="label">Achievements</span>
+					<div className="badge-row">
+						{creatorStats.achievements.length === 0 && <span className="badge placeholder">Create packs to unlock badges</span>}
+						{creatorStats.achievements.map((badge) => (
+							<span key={badge} className="badge">{badge}</span>
+						))}
+					</div>
 				</div>
-			</div>
+			)}
 		</>
 	);
 
@@ -3007,8 +3149,19 @@ function App() {
 								<h3>Spectate live</h3>
 								<p>Jump into an active room.</p>
 							</div>
+							<div className="session-search">
+								<span aria-hidden="true">⌘</span>
+								<input
+									type="search"
+									value={spectateSearch}
+									onChange={(e) => setSpectateSearch(e.target.value)}
+									placeholder="Search live rooms"
+									aria-label="Search live sessions"
+								/>
+							</div>
 							<ul className="session-peak-list">
-								{liveSessions.map((session) => (
+								{filteredLiveSessions.length === 0 && <li className="session-empty">No live rooms match your search</li>}
+								{filteredLiveSessions.map((session) => (
 									<li key={session.id}>
 										<div className="session-meta">
 											<strong>{session.title}</strong>
@@ -3023,29 +3176,31 @@ function App() {
 						</section>
 
 						{/* Join Collab Peak */}
-						<section 
-							className={`session-peak glass ${expandedPeak === 'collab' ? 'expanded' : ''}`}
-							onMouseEnter={() => setExpandedPeak('collab')}
-							onMouseLeave={() => setExpandedPeak(null)}
-						>
-							<div className="session-peak-header">
-								<h3>Join a collab</h3>
-								<p>Build alongside other artists.</p>
-							</div>
-							<ul className="session-peak-list">
-								{collaborativeSessions.map((session) => (
-									<li key={session.id}>
-										<div className="session-meta">
-											<strong>{session.title}</strong>
-											<span>{session.owner} · {session.participants} creators</span>
-										</div>
-										<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
-											Join
-										</button>
-									</li>
-								))}
-							</ul>
-						</section>
+						{isAuthenticated && (
+							<section 
+								className={`session-peak glass ${expandedPeak === 'collab' ? 'expanded' : ''}`}
+								onMouseEnter={() => setExpandedPeak('collab')}
+								onMouseLeave={() => setExpandedPeak(null)}
+							>
+								<div className="session-peak-header">
+									<h3>Join a collab</h3>
+									<p>Build alongside other artists.</p>
+								</div>
+								<ul className="session-peak-list">
+									{collaborativeSessions.map((session) => (
+										<li key={session.id}>
+											<div className="session-meta">
+												<strong>{session.title}</strong>
+												<span>{session.owner} · {session.participants} creators</span>
+											</div>
+											<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
+												Join
+											</button>
+										</li>
+									))}
+								</ul>
+							</section>
+						)}
 
 						{/* Community Feed Peak */}
 						<section 
@@ -3057,8 +3212,19 @@ function App() {
 								<h3>Community feed</h3>
 								<p>Fresh remixes and drops.</p>
 							</div>
+							<div className="session-search">
+								<span aria-hidden="true">⌘</span>
+								<input
+									type="search"
+									value={communitySearch}
+									onChange={(e) => setCommunitySearch(e.target.value)}
+									placeholder="Search the feed"
+									aria-label="Search community feed"
+								/>
+							</div>
 							<ul className="session-peak-list">
-								{communityPosts.slice(0, 4).map((post) => (
+								{filteredCommunityPosts.slice(0, 4).length === 0 && <li className="session-empty">No posts match your search</li>}
+								{filteredCommunityPosts.slice(0, 4).map((post) => (
 									<li key={post.id}>
 										<div className="session-meta">
 											<strong>{post.author}</strong>
@@ -3806,6 +3972,57 @@ function App() {
 							<div style={{ position: 'relative', height: 360 }}>
 								<FallingWordStream
 									items={wordResults.map((w) => w.word)}
+									active
+									maxVisible={Math.max(18, focusDensity)}
+									spawnIntervalMs={Math.max(120, focusSpawnIntervalMs)}
+									fallDurationMs={Math.max(2500, focusFallDurationMs)}
+								/>
+							</div>
+						)}
+					</div>
+				</FocusModeOverlay>
+			)}
+
+
+			{showRhymeExplorer && (
+				<FocusModeOverlay
+					isOpen={showRhymeExplorer}
+					onClose={() => setShowRhymeExplorer(false)}
+					title="Rhyme Families"
+					ariaLabel="Rhyme Families overlay"
+				>
+					<div className="settings-section">
+						<div className="detail-toolbox" style={{ marginBottom: 12 }}>
+							<button
+								type="button"
+								className={`btn secondary focus-toggle${rhymeFocusMode ? ' active' : ''}`}
+								onClick={() => setRhymeFocusMode((prev) => !prev)}
+								disabled={rhymeLoading || rhymeResults.length === 0}
+							>
+								{rhymeFocusMode ? 'Exit Focus Mode' : 'Focus Mode'}
+							</button>
+						</div>
+						{rhymeLoading && <p>Finding rhyme families…</p>}
+						{!rhymeLoading && rhymeError && <p className="error">{rhymeError}</p>}
+						{!rhymeLoading && !rhymeError && !rhymeFocusMode && (
+							<div className="word-grid">
+								{rhymeResults.map((w) => (
+									<button
+										key={w.word}
+										type="button"
+										className="word-chip interactive"
+										title={`${w.numSyllables ?? ''} syllables`}
+										onClick={() => handleApplyRhymeFamilies([w.word])}
+									>
+										{w.word}
+									</button>
+								))}
+							</div>
+						)}
+						{!rhymeLoading && !rhymeError && rhymeFocusMode && rhymeResults.length > 0 && (
+							<div style={{ position: 'relative', height: 360 }}>
+								<FallingWordStream
+									items={rhymeResults.map((w) => w.word)}
 									active
 									maxVisible={Math.max(18, focusDensity)}
 									spawnIntervalMs={Math.max(120, focusSpawnIntervalMs)}
