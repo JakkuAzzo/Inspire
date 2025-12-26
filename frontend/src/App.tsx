@@ -1943,6 +1943,7 @@ function App() {
 		};
 
 		if (isLyricistPack(fuelPack)) {
+			const DEFAULT_FLOW_PROMPT = 'Switch cadence & bounce';
 			const lyricistCards = [
 				{
 					id: 'word-explorer',
@@ -2096,7 +2097,7 @@ function App() {
 				{
 					id: 'flow-prompts',
 					label: 'Flow Prompts',
-					preview: (fuelPack.flowPrompts ?? [])[0] ?? 'Switch cadence & bounce',
+					preview: (fuelPack.flowPrompts ?? [])[0] ?? DEFAULT_FLOW_PROMPT,
 					detail: (
 						<ul className="focus-list">
 							{(fuelPack.flowPrompts ?? []).map((prompt) => (
