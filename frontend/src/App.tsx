@@ -2096,10 +2096,10 @@ function App() {
 				{
 					id: 'flow-prompts',
 					label: 'Flow Prompts',
-					preview: fuelPack.flowPrompts[0] ?? 'Switch cadence & bounce',
+					preview: (fuelPack.flowPrompts ?? [])[0] ?? 'Switch cadence & bounce',
 					detail: (
 						<ul className="focus-list">
-							{fuelPack.flowPrompts.map((prompt) => (
+							{(fuelPack.flowPrompts ?? []).map((prompt) => (
 								<li key={prompt}>{renderInteractiveText(prompt)}</li>
 							))}
 						</ul>
@@ -2135,10 +2135,10 @@ function App() {
 				{
 					id: 'fragments',
 					label: 'Lyric Fragments',
-					preview: fuelPack.lyricFragments[0] ?? 'Sketch a new line',
+					preview: (fuelPack.lyricFragments ?? [])[0] ?? 'Sketch a new line',
 					detail: (
 						<ul className="focus-list">
-							{fuelPack.lyricFragments.map((fragment) => (
+							{(fuelPack.lyricFragments ?? []).map((fragment) => (
 								<li key={fragment}>{renderInteractiveText(fragment)}</li>
 							))}
 						</ul>
@@ -2855,10 +2855,18 @@ function App() {
 	const chipOptions = useMemo(() => {
 		if (!chipPicker) return [] as string[];
 		if (chipPicker.type === 'powerWord' && lyricistPack) {
-			return Array.from(new Set([...lyricistPack.powerWords, ...lyricistPack.flowPrompts, ...lyricistPack.lyricFragments]));
+			return Array.from(new Set([
+				...lyricistPack.powerWords,
+				...(lyricistPack.flowPrompts ?? []),
+				...(lyricistPack.lyricFragments ?? [])
+			]));
 		}
 		if (chipPicker.type === 'headline' && lyricistPack) {
-			return Array.from(new Set([lyricistPack.newsPrompt.headline, lyricistPack.topicChallenge, ...lyricistPack.lyricFragments]));
+			return Array.from(new Set([
+				lyricistPack.newsPrompt.headline,
+				lyricistPack.topicChallenge,
+				...(lyricistPack.lyricFragments ?? [])
+			]));
 		}
 		if (chipPicker.type === 'instrument' && producerPack) {
 			return Array.from(new Set([producerPack.sample?.title ?? producerPack.title, ...(producerPack.instrumentPalette ?? []), ...(producerPack.fxIdeas ?? [])]));

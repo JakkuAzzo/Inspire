@@ -743,6 +743,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  justify-content: center;
+  width: 100%;
+  text-align: center;
 }
 
 .achievements {
