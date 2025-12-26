@@ -1729,14 +1729,20 @@ function App() {
 	);
 
 	const handleDailyChallengeComplete = useCallback(() => {
-		if (challengeCompletedToday) return;
+		if (!isAuthenticated) {
+			setStatus('Sign in to complete daily challenges');
+			setShowAccountModal(true);
+			return false;
+		}
+		if (challengeCompletedToday) return false;
 		markDailyChallengeComplete();
 		setStatus('Daily challenge cleared ✅');
-	}, [challengeCompletedToday, markDailyChallengeComplete]);
+		return true;
+	}, [challengeCompletedToday, isAuthenticated, markDailyChallengeComplete, setShowAccountModal]);
 
 	const handleChallengeCompleteAndClose = useCallback(() => {
-		handleDailyChallengeComplete();
-		setShowChallengeOverlay(false);
+		const completed = handleDailyChallengeComplete();
+		if (completed) setShowChallengeOverlay(false);
 	}, [handleDailyChallengeComplete]);
 
 	const fetchChallengeActivity = useCallback(async () => {
@@ -2949,7 +2955,9 @@ function App() {
 				<button type="button" className="metric-card challenge-card" onClick={() => setShowChallengeOverlay(true)}>
 					<span className="metric-label">Daily challenge</span>
 					<span className="metric-value">{challengeCountdown}</span>
-					<span className="metric-meta">{challengeCompletedToday ? 'Completed ✅' : `Resets ${challengeResetLabel}`}</span>
+					<span className="metric-meta">{dailyChallenge.title}</span>
+					<span className="metric-meta hint">{dailyChallenge.description}</span>
+					<span className="metric-meta">{isAuthenticated ? (challengeCompletedToday ? 'Completed ✅' : `Resets ${challengeResetLabel}`) : 'Sign in to complete'}</span>
 					<span className="metric-meta hint">View progress →</span>
 				</button>
 			</div>
@@ -3846,11 +3854,12 @@ function App() {
 							</div>
 						</div>
 						<footer className="challenge-overlay-footer">
+							{!isAuthenticated && <p className="status-text hint" style={{ margin: 0 }}>Sign in to complete the daily challenge.</p>}
 							<button
 								type="button"
 								className="btn primary"
 								onClick={handleChallengeCompleteAndClose}
-								disabled={challengeCompletedToday}
+								disabled={!isAuthenticated || challengeCompletedToday}
 							>
 								{challengeCompletedToday ? 'Marked Complete' : 'Mark Complete'}
 							</button>
