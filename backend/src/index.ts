@@ -955,6 +955,35 @@ function buildApiRouter() {
     }
   });
 
+  // Rhymes search (rhyme families)
+  router.get('/words/rhymes', async (req: Request, res: Response) => {
+    try {
+      const wordRaw = Array.isArray(req.query.word) ? req.query.word[0] : req.query.word;
+      const word = String(wordRaw || '').trim();
+      const maxRaw = Array.isArray(req.query.maxResults) ? req.query.maxResults[0] : req.query.maxResults;
+      const maxResults = Math.min(20, Math.max(1, Number.parseInt(String(maxRaw || '12'), 10) || 12));
+      if (!word) return res.status(400).json({ error: 'word is required' });
+      const items = await services.wordService.getRhymes(word, maxResults);
+      res.json({ items });
+    } catch (err) {
+      console.error('words/rhymes failed', err);
+      res.status(500).json({ items: [] });
+    }
+  });
+
+  // Random words for inspiration or rhyme seed
+  router.get('/words/random', async (req: Request, res: Response) => {
+    try {
+      const countRaw = Array.isArray(req.query.count) ? req.query.count[0] : req.query.count;
+      const count = Math.min(5, Math.max(1, Number.parseInt(String(countRaw || '1'), 10) || 1));
+      const items = await services.wordService.getRandomWords(count);
+      res.json({ items });
+    } catch (err) {
+      console.error('words/random failed', err);
+      res.status(500).json({ items: [] });
+    }
+  });
+
   // New: meme templates and caption
   router.get('/memes/templates', async (_req: Request, res: Response) => {
     try {
