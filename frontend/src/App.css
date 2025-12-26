@@ -1063,11 +1063,13 @@
   align-items: flex-end;
   gap: 1.25rem;
   padding: 0 2rem 0rem;
-  z-index: 50;
+  z-index: 1200;
   pointer-events: none;
 }
 
 .session-peak {
+  position: relative;
+  z-index: 1210;
   flex: 1 1 0;
   min-width: 0;
   width: 100%;
