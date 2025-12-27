@@ -1943,11 +1943,12 @@ function App() {
 		};
 
 		if (isLyricistPack(fuelPack)) {
+			const DEFAULT_FLOW_PROMPT = 'Switch cadence & bounce';
 			const lyricistCards = [
 				{
 					id: 'word-explorer',
 					label: 'Word Explorer',
-					preview: fuelPack.powerWords.slice(0, 3).join(' · '),
+					preview: (fuelPack.powerWords ?? []).slice(0, 3).join(' · ') || 'Loading words…',
 					detail: (
 						<div className="word-explorer-panel">
 							{/* Word Search Form */}
@@ -1975,7 +1976,7 @@ function App() {
 							{!wordLoading && wordError && <p className="status-text error">{wordError}</p>}
 						</div>
 							<div className="word-grid">
-								{fuelPack.powerWords.map((word, index) => (
+								{(fuelPack.powerWords ?? []).map((word, index) => (
 									<button key={word} type="button" className="word-chip interactive" onClick={() => setChipPicker({ type: 'powerWord', index })}>
 										{word}
 									</button>
@@ -2067,36 +2068,36 @@ function App() {
 				{
 					id: 'story-arc',
 					label: 'Story Arc',
-					preview: `${fuelPack.storyArc.start} → ${fuelPack.storyArc.end}`,
+					preview: `${fuelPack.storyArc?.start ?? 'start'} → ${fuelPack.storyArc?.end ?? 'end'}`,
 					detail: (
 						<div className="arc-track">
-							<span>{fuelPack.storyArc.start}</span>
+							<span>{fuelPack.storyArc?.start ?? 'start'}</span>
 							<span className="arc-arrow">→</span>
-							<span>{fuelPack.storyArc.middle}</span>
+							<span>{fuelPack.storyArc?.middle ?? 'middle'}</span>
 							<span className="arc-arrow">→</span>
-							<span>{fuelPack.storyArc.end}</span>
+							<span>{fuelPack.storyArc?.end ?? 'end'}</span>
 						</div>
 					)
 				} as DeckCard,
 				{
 					id: 'headline',
 					label: 'Live Headline',
-					preview: fuelPack.newsPrompt.headline,
+					preview: fuelPack.newsPrompt?.headline ?? 'Loading headline…',
 					detail: (
 						<div className="card-detail-copy">
 							<div className="headline-row">
-								<p className="headline">{fuelPack.newsPrompt.headline}</p>
+								<p className="headline">{fuelPack.newsPrompt?.headline ?? 'No headline available'}</p>
 								<button type="button" className="btn micro tertiary" onClick={() => setChipPicker({ type: 'headline' })}>Swap</button>
 							</div>
-							<p>{fuelPack.newsPrompt.context}</p>
-							<small>{fuelPack.newsPrompt.source}</small>
+							<p>{fuelPack.newsPrompt?.context ?? ''}</p>
+							<small>{fuelPack.newsPrompt?.source ?? 'Unknown source'}</small>
 						</div>
 					)
 				} as DeckCard,
 				{
 					id: 'flow-prompts',
 					label: 'Flow Prompts',
-					preview: (fuelPack.flowPrompts ?? [])[0] ?? 'Switch cadence & bounce',
+					preview: (fuelPack.flowPrompts ?? [])[0] ?? DEFAULT_FLOW_PROMPT,
 					detail: (
 						<ul className="focus-list">
 							{(fuelPack.flowPrompts ?? []).map((prompt) => (
@@ -2108,11 +2109,11 @@ function App() {
 				{
 					id: 'challenge',
 					label: 'Prompt Challenge',
-					preview: fuelPack.topicChallenge,
+					preview: fuelPack.topicChallenge ?? 'Create something unexpected',
 					detail: (
 						<div className="card-detail-copy">
-							<p>{fuelPack.topicChallenge}</p>
-							<p className="chord">Chord mood: {fuelPack.chordMood}</p>
+							<p>{fuelPack.topicChallenge ?? 'Create something unexpected'}</p>
+							<p className="chord">Chord mood: {fuelPack.chordMood ?? 'Not specified'}</p>
 						</div>
 					)
 				} as DeckCard,
