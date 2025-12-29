@@ -200,6 +200,12 @@ npx playwright test     # Run E2E (builds + serves the app)
 - The fallback generation path currently returns identical text for every beat (see Playwright run: all nodes echoed the summary), so progression labels change but content does not diversify.
 - ONNX warnings spam the dev console when the model loads; they are non-blocking but noisy.
 
+**MoSCoW (Story Arc)**
+- Must: enforce unique, progressive beat text before returning (dedupe + rewrite where duplicates are detected).
+- Should: tune prompts/temperature/top-k to encourage variation and respect theme/genre/BPM; suppress noisy ONNX initializer warnings in dev logs.
+- Could: persist edited arcs with packs and export/share as structured text; add user-facing duplicate warnings with a one-click regenerate.
+- Won't (for now): add model fine-tuning or remote inference; complex branching narratives beyond linear 5–9 beat scaffolds.
+
 ## Contributing
 
 Issues and pull requests are welcome. If you are adding a new integration:
