@@ -54,6 +54,7 @@ import { validateEnvironment } from './config/env';
 import { buildAuthRouter } from './auth/routes';
 import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 import { startCleanupJob } from './auth/cleanup';
+import { generateStoryArcScaffold } from './services/storyArcService';
 
 const app = express();
 const server = http.createServer(app);
@@ -981,6 +982,24 @@ function buildApiRouter() {
     } catch (err) {
       console.error('words/random failed', err);
       res.status(500).json({ items: [] });
+    }
+  });
+
+  // Story Arc generator (Transformers-powered, with fallback)
+  router.post('/story-arc/generate', async (req: Request, res: Response) => {
+    try {
+      const { summary, theme, genre, bpm, nodeCount } = req.body || {};
+      const scaffold = await generateStoryArcScaffold({
+        summary: String(summary ?? ''),
+        theme: theme ? String(theme) : undefined,
+        genre: genre ? String(genre) : undefined,
+        bpm: typeof bpm === 'number' ? bpm : bpm ? Number(bpm) : undefined,
+        nodeCount: typeof nodeCount === 'number' ? nodeCount : nodeCount ? Number(nodeCount) : undefined
+      });
+      res.status(201).json({ scaffold });
+    } catch (err) {
+      console.error('story-arc/generate failed', err);
+      res.status(500).json({ error: 'Unable to generate story arc right now' });
     }
   });
 

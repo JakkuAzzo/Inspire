@@ -180,6 +180,26 @@ npx playwright test     # Run E2E (builds + serves the app)
 - Meme Caption: pick a keyless template (Picsum preview) and generate a caption image (dummyimage).
 - Inspiration Image: per‑pack Picsum visual spark, with a refresh button.
 
+## Story Arc Pack Card (current state)
+
+**How it works today**
+- In the Lyricist flow, the Story Arc card accepts summary, optional theme/genre/BPM, and a node-count selector (default 7 beats).
+- On Generate, the frontend POSTs to `/api/story-arc` with those fields; the backend tries a local ONNX `flan-t5-small` model first, then falls back to template text.
+- Returned beats are slotted into fixed progression labels (Set the scene, Trigger event, Complication, Reversal, Aftershock, Decision, Fallout) and rendered as editable text areas with drag-and-drop ordering.
+
+**What it is supposed to do**
+- Produce distinct beat text that evolves the idea across the arc (not just repeat the summary), flavored by theme/genre/BPM and node count.
+- Let users lightly edit/reorder beats, then reuse them alongside words/hooks in the pack.
+
+**What is missing**
+- No temperature/top-k tuning or prompt diversification to force variety across beats.
+- No server-side validation that each beat is unique or expands on the summary; UI currently only checks presence.
+- No persistence/export of edited arcs beyond the current pack object.
+
+**What is broken**
+- The fallback generation path currently returns identical text for every beat (see Playwright run: all nodes echoed the summary), so progression labels change but content does not diversify.
+- ONNX warnings spam the dev console when the model loads; they are non-blocking but noisy.
+
 ## Contributing
 
 Issues and pull requests are welcome. If you are adding a new integration:

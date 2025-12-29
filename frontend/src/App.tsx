@@ -1,3 +1,4 @@
+import type { StoryArcScaffold } from './types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import './App.css';
@@ -917,6 +918,14 @@ function App() {
 	const [wordFocusMode, setWordFocusMode] = useState(false);
 	// Rhyme Families overlay
 	const [showRhymeExplorer, setShowRhymeExplorer] = useState(false);
+	const [storyArcSummary, setStoryArcSummary] = useState('');
+	const [storyArcTheme, setStoryArcTheme] = useState('');
+	const [storyArcGenre, setStoryArcGenre] = useState('');
+	const [storyArcBpm, setStoryArcBpm] = useState('');
+	const [storyArcNodeCount, setStoryArcNodeCount] = useState(7);
+	const [storyArcLoading, setStoryArcLoading] = useState(false);
+	const [storyArcError, setStoryArcError] = useState<string | null>(null);
+	const [storyArcScaffold, setStoryArcScaffold] = useState<StoryArcScaffold | null>(null);
 	const [rhymeTarget, setRhymeTarget] = useState('');
 	const [rhymeMaxResults, setRhymeMaxResults] = useState('12');
 	const [rhymeResults, setRhymeResults] = useState<Array<{ word: string; score?: number; numSyllables?: number }>>([]);
@@ -1886,6 +1895,92 @@ function App() {
 		}
 	}, []);
 
+	const runRhymeSearch = useCallback(
+		async (targetOverride?: string) => {
+			const target = (targetOverride ?? rhymeTarget).trim();
+			if (!target) {
+				setRhymeError('Enter a word to find rhyme families');
+				setRhymeResults([]);
+				return;
+			}
+			setRhymeLoading(true);
+			setRhymeError(null);
+			try {
+				const params = new URLSearchParams({ word: target });
+				if (rhymeMaxResults) params.set('maxResults', rhymeMaxResults);
+				const res = await fetch(`/api/words/rhymes?${params.toString()}`);
+				if (!res.ok) throw new Error('Search failed');
+				const data = await res.json();
+				setRhymeResults(Array.isArray(data.items) ? data.items : []);
+				setRhymeTarget(target);
+			} catch (err) {
+				setRhymeError('Unable to load rhymes right now');
+				setRhymeResults([]);
+			} finally {
+				setRhymeLoading(false);
+			}
+		},
+		[rhymeTarget, rhymeMaxResults]
+	);
+
+	const handleApplyRhymeFamilies = useCallback((words: string[]) => {
+		setFuelPack((current) => {
+			if (!current || !isLyricistPack(current)) return current;
+			const existing = current.rhymeFamilies ?? [];
+			const merged = Array.from(new Set([...words, ...existing])).slice(0, 16);
+			return { ...current, rhymeFamilies: merged } as InspireAnyPack;
+		});
+	}, []);
+
+	const handleRandomRhymes = useCallback(async () => {
+		try {
+			const res = await fetch('/api/words/random?count=1');
+			if (!res.ok) throw new Error('random failed');
+			const data = await res.json();
+			const randomWord = Array.isArray(data.items) && data.items[0] ? data.items[0] : '';
+			if (!randomWord) {
+				setRhymeError('No random word available');
+				return;
+			}
+			setRhymeTarget(randomWord);
+			await runRhymeSearch(randomWord);
+		} catch (err) {
+			setRhymeError('Unable to fetch a random word');
+		}
+	}, [runRhymeSearch]);
+
+	const handleGenerateStoryArc = useCallback(async () => {
+		setStoryArcLoading(true);
+		setStoryArcError(null);
+		try {
+			const fallbackSummary = isLyricistPack(fuelPack)
+				? [fuelPack.newsPrompt?.headline, fuelPack.topicChallenge].filter(Boolean).join(' — ')
+				: '';
+			const summary = (storyArcSummary || fallbackSummary || 'A new story starts here.').trim();
+			const payload = {
+				summary,
+				theme: storyArcTheme.trim() || undefined,
+				genre: (storyArcGenre.trim() || (isLyricistPack(fuelPack) ? fuelPack.genre : '') || genre || '').trim() || undefined,
+				bpm: storyArcBpm.trim() ? Number.parseInt(storyArcBpm, 10) : undefined,
+				nodeCount: storyArcNodeCount
+			};
+
+			const res = await fetch('/api/story-arc/generate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+			if (!res.ok) throw new Error('Story arc generation failed');
+			const data = await res.json();
+			setStoryArcScaffold(data?.scaffold ?? null);
+		} catch (err) {
+			setStoryArcScaffold(null);
+			setStoryArcError('Unable to generate a story arc right now');
+		} finally {
+			setStoryArcLoading(false);
+		}
+	}, [fuelPack, genre, storyArcSummary, storyArcTheme, storyArcGenre, storyArcBpm, storyArcNodeCount]);
+
 	const packDeck = useMemo<DeckCard[]>(() => {
 		if (!fuelPack || !isModePack(fuelPack)) return [];
 		const renderInteractiveText = (text: string) => {
@@ -2070,12 +2165,149 @@ function App() {
 					label: 'Story Arc',
 					preview: `${fuelPack.storyArc?.start ?? 'start'} → ${fuelPack.storyArc?.end ?? 'end'}`,
 					detail: (
-						<div className="arc-track">
-							<span>{fuelPack.storyArc?.start ?? 'start'}</span>
-							<span className="arc-arrow">→</span>
-							<span>{fuelPack.storyArc?.middle ?? 'middle'}</span>
-							<span className="arc-arrow">→</span>
-							<span>{fuelPack.storyArc?.end ?? 'end'}</span>
+						<div className="word-explorer-panel">
+							<div className="arc-track" style={{ marginBottom: 10 }}>
+								<span>{fuelPack.storyArc?.start ?? 'start'}</span>
+								<span className="arc-arrow">→</span>
+								<span>{fuelPack.storyArc?.middle ?? 'middle'}</span>
+								<span className="arc-arrow">→</span>
+								<span>{fuelPack.storyArc?.end ?? 'end'}</span>
+							</div>
+
+							<div className="word-settings">
+								<div className="word-form">
+									<textarea
+										placeholder="Summary (what happens?)"
+										value={storyArcSummary}
+										onChange={(e) => setStoryArcSummary(e.target.value)}
+										rows={3}
+									/>
+									<input
+										type="text"
+										placeholder="Theme (optional)"
+										value={storyArcTheme}
+										onChange={(e) => setStoryArcTheme(e.target.value)}
+									/>
+									<input
+										type="text"
+										placeholder="Genre (optional)"
+										value={storyArcGenre}
+										onChange={(e) => setStoryArcGenre(e.target.value)}
+									/>
+									<input
+										type="text"
+										placeholder="BPM (optional)"
+										value={storyArcBpm}
+										onChange={(e) => setStoryArcBpm(e.target.value)}
+									/>
+								</div>
+
+								<div className="slider-row" style={{ marginTop: 10 }}>
+									<span className="label">Detail</span>
+									<div className="option-group">
+										{[3, 4, 5, 6, 7].map((count) => (
+											<button
+												key={count}
+												type="button"
+												className={count === storyArcNodeCount ? 'chip active' : 'chip'}
+												onClick={() => setStoryArcNodeCount(count)}
+											>
+												<strong>{count}</strong>
+												<small>nodes</small>
+											</button>
+										))}
+									</div>
+								</div>
+
+								<div className="word-explorer-actions" style={{ marginTop: 10 }}>
+									<button
+										type="button"
+										className="btn micro"
+										onClick={handleGenerateStoryArc}
+										disabled={storyArcLoading}
+									>
+										{storyArcLoading ? 'Generating…' : 'Generate scaffold'}
+									</button>
+								</div>
+
+								{storyArcError && <p className="status-text error">{storyArcError}</p>}
+							</div>
+
+							{storyArcScaffold ? (
+								<div style={{ marginTop: 12 }}>
+									<div className="card-detail-copy">
+										<p><strong>Theme:</strong> {storyArcScaffold.theme}</p>
+										<p><strong>POV:</strong> {storyArcScaffold.protagonistPOV}</p>
+										<p><strong>Hook idea:</strong> {storyArcScaffold.chorusThesis}</p>
+									</div>
+
+									<div className="focus-list" style={{ marginTop: 10 }}>
+										{storyArcScaffold.nodes.map((node, index) => (
+											<div key={node.id} className="focus-line" style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
+												<strong>{index + 1}. {node.label}</strong>
+												<textarea
+													value={node.text}
+													onChange={(e) => {
+														const nextText = e.target.value;
+														setStoryArcScaffold((current) => {
+															if (!current) return current;
+															const nodes = current.nodes.map((n) => (n.id === node.id ? { ...n, text: nextText } : n));
+															return { ...current, nodes };
+														});
+													}}
+													rows={2}
+												/>
+												<div style={{ display: 'flex', gap: 8 }}>
+													<button
+														type="button"
+														className="btn micro ghost"
+														disabled={index === 0}
+														onClick={() => {
+															setStoryArcScaffold((current) => {
+																if (!current) return current;
+																const nodes = [...current.nodes];
+																[nodes[index - 1], nodes[index]] = [nodes[index], nodes[index - 1]];
+																return { ...current, nodes };
+															});
+														}}
+													>
+														Up
+													</button>
+													<button
+														type="button"
+														className="btn micro ghost"
+														disabled={index === storyArcScaffold.nodes.length - 1}
+														onClick={() => {
+															setStoryArcScaffold((current) => {
+																if (!current) return current;
+																const nodes = [...current.nodes];
+																[nodes[index + 1], nodes[index]] = [nodes[index], nodes[index + 1]];
+																return { ...current, nodes };
+															});
+														}}
+													>
+														Down
+													</button>
+												</div>
+											</div>
+										))}
+									</div>
+
+									{storyArcScaffold.motifs?.length ? (
+										<div className="card-detail-copy" style={{ marginTop: 10 }}>
+											<p><strong>Motifs:</strong> {storyArcScaffold.motifs.join(' · ')}</p>
+										</div>
+									) : null}
+
+									{storyArcScaffold.punchyLines?.length ? (
+										<ul className="focus-list" style={{ marginTop: 10 }}>
+											{storyArcScaffold.punchyLines.slice(0, 10).map((line, idx) => (
+												<li key={`${idx}-${line}`}>{line}</li>
+											))}
+										</ul>
+									) : null}
+								</div>
+							) : null}
 						</div>
 					)
 				} as DeckCard,
@@ -2359,7 +2591,42 @@ function App() {
 		}
 
 		return [];
-	}, [fuelPack, focusMode, memeStimuli, memeStimuliError, inspirationImageUrl, inspirationImageLoading]);
+	}, [
+		fuelPack,
+		focusMode,
+		memeStimuli,
+		memeStimuliError,
+		inspirationImageUrl,
+		inspirationImageLoading,
+		refreshInspirationImage,
+		wordStartsWith,
+		wordRhymeWith,
+		wordSyllables,
+		wordMaxResults,
+		wordTopic,
+		wordLoading,
+		wordError,
+		customWordInput,
+		handleCustomWordSubmit,
+		rhymeTarget,
+		rhymeMaxResults,
+		rhymeLoading,
+		rhymeError,
+		rhymeResults,
+		rhymeFocusMode,
+		runRhymeSearch,
+		handleRandomRhymes,
+		handleApplyRhymeFamilies,
+		storyArcSummary,
+		storyArcTheme,
+		storyArcGenre,
+		storyArcBpm,
+		storyArcNodeCount,
+		storyArcLoading,
+		storyArcError,
+		storyArcScaffold,
+		handleGenerateStoryArc
+	]);
 
 	useEffect(() => {
 		if (!packDeck.length) {
@@ -2590,60 +2857,6 @@ function App() {
 		}
 	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
 
-	const runRhymeSearch = useCallback(
-		async (targetOverride?: string) => {
-			const target = (targetOverride ?? rhymeTarget).trim();
-			if (!target) {
-				setRhymeError('Enter a word to find rhyme families');
-				setRhymeResults([]);
-				return;
-			}
-			setRhymeLoading(true);
-			setRhymeError(null);
-			try {
-				const params = new URLSearchParams({ word: target });
-				if (rhymeMaxResults) params.set('maxResults', rhymeMaxResults);
-				const res = await fetch(`/api/words/rhymes?${params.toString()}`);
-				if (!res.ok) throw new Error('Search failed');
-				const data = await res.json();
-				setRhymeResults(Array.isArray(data.items) ? data.items : []);
-				setRhymeTarget(target);
-			} catch (err) {
-				setRhymeError('Unable to load rhymes right now');
-				setRhymeResults([]);
-			} finally {
-				setRhymeLoading(false);
-			}
-		},
-		[rhymeTarget, rhymeMaxResults]
-	);
-
-	const handleApplyRhymeFamilies = useCallback((words: string[]) => {
-		setFuelPack((current) => {
-			if (!current || !isLyricistPack(current)) return current;
-			const existing = current.rhymeFamilies ?? [];
-			const merged = Array.from(new Set([...words, ...existing])).slice(0, 16);
-			return { ...current, rhymeFamilies: merged } as InspireAnyPack;
-		});
-	}, []);
-
-	const handleRandomRhymes = useCallback(async () => {
-		try {
-			const res = await fetch('/api/words/random?count=1');
-			if (!res.ok) throw new Error('random failed');
-			const data = await res.json();
-			const randomWord = Array.isArray(data.items) && data.items[0] ? data.items[0] : '';
-			if (!randomWord) {
-				setRhymeError('No random word available');
-				return;
-			}
-			setRhymeTarget(randomWord);
-			await runRhymeSearch(randomWord);
-		} catch (err) {
-			setRhymeError('Unable to fetch a random word');
-		}
-	}, [runRhymeSearch]);
-
 	const hasQueue = isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail;
 	const workspaceMainClassName = `workspace-main${hasQueue ? ' with-queue has-divider' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`;
 	const workspaceMainStyle = hasQueue
@@ -2692,7 +2905,10 @@ function App() {
 						return searched.length ? searched : [...(pack.rhymeFamilies ?? [])];
 					}
 					case 'story-arc':
-						return [pack.storyArc.start, pack.storyArc.middle, pack.storyArc.end];
+							if (storyArcScaffold?.nodes?.length) {
+								return storyArcScaffold.nodes.map((n) => `${n.label}: ${n.text}`).filter(Boolean);
+							}
+							return [pack.storyArc.start, pack.storyArc.middle, pack.storyArc.end];
 					case 'headline':
 						return [pack.newsPrompt.headline, pack.newsPrompt.context, pack.newsPrompt.source];
 					case 'flow-prompts':
@@ -2764,7 +2980,7 @@ function App() {
 		}
 
 		return [];
-	}, [combinedFocusCardIds, focusModeType, fuelPack, memeStimuli, selectedCard, rhymeResults]);
+	}, [combinedFocusCardIds, focusModeType, fuelPack, memeStimuli, selectedCard, rhymeResults, storyArcScaffold]);
 
 	const visibleFocusItems = useMemo(() => focusItems.slice(0, Math.max(focusDensity, 6)), [focusDensity, focusItems]);
 

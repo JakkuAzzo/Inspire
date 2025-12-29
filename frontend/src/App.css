@@ -2262,7 +2262,7 @@
   align-items: flex-start;
   justify-content: center;
   padding: clamp(1.5rem, 4vw, 3rem);
-  z-index: 100;
+  z-index: 1300;
   backdrop-filter: blur(12px);
   overflow: auto;
   overscroll-behavior: contain; /* Prevents the scroll from "bouncing" up to the parent page */

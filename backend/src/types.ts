@@ -227,3 +227,33 @@ export interface ChallengeStats {
   achievements: ChallengeAchievement[];
   completions: ChallengeCompletion[];
 }
+
+export interface StoryArcNode {
+  id: string;
+  label: string;
+  text: string;
+}
+
+export interface StoryArcScaffold {
+  theme: string;
+  protagonistPOV: string;
+  incitingMoment: string;
+  risingTension: string;
+  turningPoint: string;
+  chorusThesis: string;
+  bridgeTwist: string;
+  resolution: string;
+  motifs: string[];
+  punchyLines: string[];
+  nodes: StoryArcNode[];
+  model: string;
+  rawText?: string;
+}
+
+export interface StoryArcGenerateRequest {
+  summary: string;
+  theme?: string;
+  genre?: string;
+  bpm?: number;
+  nodeCount?: number;
+}
