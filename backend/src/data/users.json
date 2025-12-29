@@ -62,5 +62,13 @@
     "displayName": "Testy",
     "avatarUrl": null,
     "createdAt": 1766768178195
+  },
+  {
+    "id": "4faebf11-35b2-4088-8a9b-7c6fabe6b8c1",
+    "email": "test+1767012874488@example.com",
+    "passwordHash": "$2b$10$8vhjhgvo6/OhcpQFgld8eOns1zm9dmqTtSVv27Fl/UrSC2wLBbCQe",
+    "displayName": "Testy",
+    "avatarUrl": null,
+    "createdAt": 1767012874549
   }
 ]
