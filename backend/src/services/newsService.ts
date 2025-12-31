@@ -10,6 +10,17 @@ export interface NewsHeadline {
   publishedAt?: string;
 }
 
+export interface HeadlineSearchOptions {
+  query?: string;
+  keywords?: string;
+  limit?: number;
+  from?: string;
+  to?: string;
+  random?: boolean;
+  timeframe?: 'fresh' | 'recent' | 'timeless';
+  seed?: string | number;
+}
+
 type SimpleFetch = (input: string, init?: any) => Promise<any>;
 
 interface NewsApiArticle {
@@ -47,14 +58,29 @@ export class NewsService {
     this.localDataDir = path.resolve(__dirname, '..', '..', 'data', 'top-headlines', 'category');
   }
 
-  async searchHeadlines(query: string, limit: number = 5): Promise<NewsHeadline[]> {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return [];
+  async searchHeadlines(input: string | HeadlineSearchOptions, limit: number = 5): Promise<NewsHeadline[]> {
+    const options: HeadlineSearchOptions = typeof input === 'string' ? { query: input, limit } : input;
+    const requestedLimit = Math.min(20, Math.max(1, options.limit ?? limit ?? 5));
+    const normalizedQuery = (options.query ?? '').trim().toLowerCase();
+    const keywordTerms = (options.keywords ?? '')
+      .split(',')
+      .flatMap((entry) => entry.split(/\s+/))
+      .map((term) => term.trim().toLowerCase())
+      .filter(Boolean);
+    const terms = [
+      ...normalizedQuery.split(/\s+/).filter(Boolean),
+      ...keywordTerms
+    ];
+    const random = Boolean(options.random);
+    const fromDate = this.parseDate(options.from) ?? this.mapTimeframeToDate(options.timeframe);
+    const toDate = this.parseDate(options.to);
+    const cacheKey = `${terms.join(' ')}:${requestedLimit}:${fromDate?.toISOString() ?? ''}:${toDate?.toISOString() ?? ''}:${random ? 'random' : 'scored'}:${options.seed ?? ''}`;
 
-    const cacheKey = `${normalizedQuery}:${limit}`;
-    const cached = this.cache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.items.slice(0, limit);
+    if (!random) {
+      const cached = this.cache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.items.slice(0, requestedLimit);
+      }
     }
 
     const articles: NewsApiArticle[] = [];
@@ -67,19 +93,30 @@ export class NewsService {
 
     const filtered = articles
       .filter((article) => article.title && article.url)
-      .map((article) => this.toHeadline(article));
+      .map((article) => this.toHeadline(article))
+      .filter((headline) => this.isWithinRange(headline.publishedAt, fromDate, toDate));
+
+    if (!filtered.length) return [];
+
+    if (random && !terms.length) {
+      const randomized = this.shuffle(filtered, options.seed).slice(0, requestedLimit);
+      return randomized;
+    }
 
     const scored = filtered
-      .map((headline) => ({
+      .map((headline, index) => ({
         headline,
-        score: this.scoreHeadline(headline, normalizedQuery)
+        score: this.scoreHeadline(headline, terms) + (random ? this.randomJitter(options.seed, index) : 0)
       }))
       .sort((a, b) => b.score - a.score)
-      .map((entry) => entry.headline);
+      .map((entry) => entry.headline)
+      .slice(0, requestedLimit);
 
-    const results = scored.slice(0, limit);
-    this.cache.set(cacheKey, { items: results, expiresAt: Date.now() + this.ttlMs });
-    return results;
+    if (!random) {
+      this.cache.set(cacheKey, { items: scored, expiresAt: Date.now() + this.ttlMs });
+    }
+
+    return scored;
   }
 
   private async fetchCategory(category: string): Promise<NewsApiArticle[]> {
@@ -138,16 +175,74 @@ export class NewsService {
     };
   }
 
-  private scoreHeadline(headline: NewsHeadline, query: string): number {
+  private scoreHeadline(headline: NewsHeadline, terms: string[]): number {
     const text = `${headline.title} ${headline.description ?? ''}`.toLowerCase();
+    if (!terms.length) return 1;
     let score = 0;
-    const terms = query.split(/\s+/).filter(Boolean);
     for (const term of terms) {
       if (text.includes(term)) score += 2;
       if (headline.title.toLowerCase().startsWith(term)) score += 1;
     }
-    if (!terms.length) score = 1;
     return score;
+  }
+
+  private isWithinRange(publishedAt?: string, fromDate?: Date | null, toDate?: Date | null): boolean {
+    if (!fromDate && !toDate) return true;
+    if (!publishedAt) return false;
+    const published = new Date(publishedAt);
+    if (Number.isNaN(published.getTime())) return false;
+    if (fromDate && published < fromDate) return false;
+    if (toDate && published > toDate) return false;
+    return true;
+  }
+
+  private parseDate(value?: string | null): Date | null {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  }
+
+  private mapTimeframeToDate(timeframe?: string): Date | null {
+    if (!timeframe) return null;
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    if (timeframe === 'fresh') return new Date(now - 7 * DAY);
+    if (timeframe === 'recent') return new Date(now - 30 * DAY);
+    return null;
+  }
+
+  private shuffle(headlines: NewsHeadline[], seed?: string | number): NewsHeadline[] {
+    const copy = [...headlines];
+    if (seed === undefined) {
+      for (let i = copy.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+    let state = this.seedToNumber(seed);
+    for (let i = copy.length - 1; i > 0; i -= 1) {
+      state = (state * 1664525 + 1013904223) % 0xffffffff;
+      const j = state % (i + 1);
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  private randomJitter(seed: string | number | undefined, salt: number): number {
+    if (seed === undefined) return Math.random() * 0.5;
+    const value = this.seedToNumber(`${seed}-${salt}`);
+    return ((value % 1000) / 1000) * 0.5;
+  }
+
+  private seedToNumber(seed: string | number): number {
+    const str = String(seed);
+    let hash = 0;
+    for (let i = 0; i < str.length; i += 1) {
+      hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    }
+    return hash || 1;
   }
 }
 

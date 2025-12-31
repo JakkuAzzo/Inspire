@@ -888,12 +888,25 @@ function buildApiRouter() {
   // News headlines search (uses SauravKanchan/NewsAPI static feeds)
   router.get('/news/search', async (req: Request, res: Response) => {
     try {
-      const q = String(req.query.q || req.query.query || '').trim();
+      const topic = String(req.query.topic ?? '').trim();
+      const keywords = String(req.query.keywords ?? '').trim();
+      const from = String(req.query.from ?? '').trim();
+      const to = String(req.query.to ?? '').trim();
+      const random = String(req.query.random ?? '').toLowerCase() === 'true';
+      const q = String(req.query.q || req.query.query || topic || '').trim();
       const limitRaw = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
       const limit = Math.min(8, Math.max(1, Number.parseInt(String(limitRaw || '5'), 10) || 5));
-      if (!q) return res.status(400).json({ error: 'q is required' });
-      const items = await services.newsService.searchHeadlines(q, limit);
-      res.json({ items });
+      if (!q && !keywords && !random) return res.status(400).json({ error: 'q or keywords are required' });
+      const items = await services.newsService.searchHeadlines({
+        query: q,
+        keywords,
+        from: from || undefined,
+        to: to || undefined,
+        random,
+        limit,
+        seed: req.query.seed as string | undefined
+      });
+      res.json({ items, query: q, keywords, from, to, random });
     } catch (err) {
       console.error('news/search failed', err);
       res.status(500).json({ items: [] });
@@ -921,6 +934,12 @@ function buildApiRouter() {
       const id = req.params.id;
       const limitRaw = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
       const limit = Math.min(8, Math.max(1, Number.parseInt(String(limitRaw || '5'), 10) || 5));
+      const topic = String(req.query.topic ?? '').trim();
+      const keywords = String(req.query.keywords ?? '').trim();
+      const from = String(req.query.from ?? '').trim();
+      const to = String(req.query.to ?? '').trim();
+      const random = String(req.query.random ?? '').toLowerCase() === 'true';
+      const timeframeParam = req.query.timeframe as RelevanceTimeframe | undefined;
       let pack = packs.get(id);
       if (!pack) {
         const savedState = readSavedState();
@@ -929,9 +948,18 @@ function buildApiRouter() {
       }
       if (!pack) return res.status(404).json({ error: 'Pack not found' });
 
-      const query = buildHeadlineQueryFromPack(pack);
-      const items = query ? await services.newsService.searchHeadlines(query, limit) : [];
-      res.json({ packId: id, query, items });
+      const query = topic || buildHeadlineQueryFromPack(pack);
+      const items = await services.newsService.searchHeadlines({
+        query,
+        keywords,
+        from: from || undefined,
+        to: to || undefined,
+        limit,
+        random,
+        timeframe: timeframeParam ?? (pack as any).filters?.timeframe,
+        seed: req.query.seed as string | undefined
+      });
+      res.json({ packId: id, query, items, random, keywords, from, to });
     } catch (err) {
       console.error('packs/:id/headlines failed', err);
       res.status(500).json({ packId: req.params.id, items: [] });

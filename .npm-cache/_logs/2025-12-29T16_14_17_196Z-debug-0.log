@@ -11,3 +11,14 @@
 10 verbose logfile /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2025-12-29T16_14_17_196Z-debug-0.log
 11 silly logfile done cleaning log files
 12 http fetch GET 200 https://registry.npmjs.org/npm 151ms
+13 verbose cwd /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire
+14 verbose os Darwin 25.3.0
+15 verbose node v20.19.2
+16 verbose npm  v10.8.2
+17 notice
+17 notice New major version of npm available! 10.8.2 -> 11.7.0
+17 notice Changelog: https://github.com/npm/cli/releases/tag/v11.7.0
+17 notice To update run: npm install -g npm@11.7.0
+17 notice  { force: true, [Symbol(proc-log.meta)]: true }
+18 verbose exit 143
+19 verbose code 143
