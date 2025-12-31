@@ -51,7 +51,7 @@ export const LiveHeadlineDetail: React.FC<LiveHeadlineProps> = ({
 	onSwap
 }) => {
 	return (
-		<div>
+		<div className="word-explorer-panel" style={{ pointerEvents: 'auto' }}>
 			{/* Headline display section */}
 			<div className="card-detail-copy">
 				<div className="headline-row">
@@ -110,7 +110,7 @@ export const LiveHeadlineDetail: React.FC<LiveHeadlineProps> = ({
 			{/* Loading/Error/Results section */}
 			{newsLoading && <p style={{ color: 'rgba(148, 163, 184, 0.7)' }}>Loading headlines...</p>}
 			{newsError && <p style={{ color: 'rgba(239, 68, 68, 0.8)' }}>Error: {newsError}</p>}
-			{newsHeadlines.length > 0 && (
+			{newsHeadlines.length > 0 ? (
 				<div className="news-headlines">
 					<strong style={{ fontSize: '0.95em', marginBottom: '0.5rem', display: 'block' }}>Related Headlines:</strong>
 					<ul>
@@ -125,7 +125,11 @@ export const LiveHeadlineDetail: React.FC<LiveHeadlineProps> = ({
 						))}
 					</ul>
 				</div>
-			)}
+			) : !newsLoading && !newsError ? (
+				<p className="hint" style={{ marginTop: '0.5rem', color: 'rgba(148, 163, 184, 0.75)' }}>
+					No headlines yet. Try Update or Random.
+				</p>
+			) : null}
 		</div>
 	);
 };
