@@ -15,6 +15,10 @@ import { FallingWordStream } from './components/FallingWordStream';
 import YouTubePlaylistEmbed from './components/YouTubePlaylistEmbed';
 import { FocusModeOverlay } from './components/FocusModeOverlay';
 import { AuthModal } from './components/AuthModal';
+import { LiveHeadlineDetail } from './components/LiveHeadline';
+import { WordExplorerDetail } from './components/WordExplorer';
+import { RhymeFamiliesDetail } from './components/RhymeFamilies';
+import { StoryArcDetail } from './components/StoryArc';
 import { CombinedFocusMode } from './components/workspace/CombinedFocusMode';
 import { CreatorSettingsModal } from './components/workspace/CreatorSettingsModal';
 import { FocusModeControls } from './components/workspace/FocusModeControls';
@@ -180,6 +184,7 @@ interface NewsHeadline {
 	source?: string;
 	description?: string;
 	publishedAt?: string;
+	imageUrl?: string;
 }
 
 const LIVE_SESSION_PRESETS: LiveSession[] = [
@@ -935,6 +940,18 @@ function App() {
 	const [newsHeadlines, setNewsHeadlines] = useState<NewsHeadline[]>([]);
 	const [newsLoading, setNewsLoading] = useState(false);
 	const [newsError, setNewsError] = useState<string | null>(null);
+	const [headlineTopic, setHeadlineTopic] = useState('');
+	const [headlineKeywords, setHeadlineKeywords] = useState('');
+	const [headlineDateFrom, setHeadlineDateFrom] = useState('');
+	const [headlineDateTo, setHeadlineDateTo] = useState('');
+	const [headlineSearchVersion, setHeadlineSearchVersion] = useState(0);
+	const [headlineSearchParams, setHeadlineSearchParams] = useState({
+		topic: '',
+		keywords: '',
+		from: '',
+		to: '',
+		randomSeed: null as number | null
+	});
 
 	// Session peak expand states
 	const [expandedPeak, setExpandedPeak] = useState<string | null>(null);
@@ -1260,6 +1277,27 @@ function App() {
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [fuelPack, workspaceQueue]);
 
+	const applyHeadlineFilters = useCallback(() => {
+		setHeadlineSearchParams({
+			topic: headlineTopic.trim(),
+			keywords: headlineKeywords.trim(),
+			from: headlineDateFrom,
+			to: headlineDateTo,
+			randomSeed: null
+		});
+		setHeadlineSearchVersion((prev) => prev + 1);
+	}, [headlineDateFrom, headlineDateTo, headlineKeywords, headlineTopic]);
+
+	const randomizeHeadlines = useCallback(() => {
+		const seed = Math.random();
+		setHeadlineTopic('');
+		setHeadlineKeywords('');
+		setHeadlineDateFrom('');
+		setHeadlineDateTo('');
+		setHeadlineSearchParams({ topic: '', keywords: '', from: '', to: '', randomSeed: seed });
+		setHeadlineSearchVersion((prev) => prev + 1);
+	}, []);
+
 	useEffect(() => {
 		if (!isModePack(fuelPack)) {
 			setNewsHeadlines([]);
@@ -1271,11 +1309,21 @@ function App() {
 		const controller = new AbortController();
 		setNewsLoading(true);
 		setNewsError(null);
+		setNewsHeadlines([]);
 
 		const loadHeadlines = async () => {
 			try {
-				// Use the new pack-aware headlines endpoint for smarter content
-				const res = await fetch(`/api/packs/${encodeURIComponent(fuelPack.id)}/headlines?limit=5`, { signal: controller.signal });
+				const params = new URLSearchParams({ limit: '5' });
+				if (headlineSearchParams.topic) params.set('topic', headlineSearchParams.topic);
+				if (headlineSearchParams.keywords) params.set('keywords', headlineSearchParams.keywords);
+				if (headlineSearchParams.from) params.set('from', headlineSearchParams.from);
+				if (headlineSearchParams.to) params.set('to', headlineSearchParams.to);
+				if (headlineSearchParams.randomSeed !== null) {
+					params.set('random', 'true');
+					params.set('seed', String(headlineSearchParams.randomSeed));
+				}
+
+				const res = await fetch(`/api/packs/${encodeURIComponent(fuelPack.id)}/headlines?${params.toString()}`, { signal: controller.signal });
 				if (!res.ok) throw new Error('Failed to load headlines');
 				const data = (await res.json()) as { items?: NewsHeadline[] };
 				const items = Array.isArray(data.items) ? data.items : [];
@@ -1292,7 +1340,7 @@ function App() {
 
 		void loadHeadlines();
 		return () => controller.abort();
-	}, [fuelPack]);
+	}, [fuelPack, headlineSearchParams, headlineSearchVersion]);
 
 	const ensureAudioContext = useCallback(() => {
 		if (typeof window === 'undefined') return null;
@@ -1981,6 +2029,28 @@ function App() {
 		}
 	}, [fuelPack, genre, storyArcSummary, storyArcTheme, storyArcGenre, storyArcBpm, storyArcNodeCount]);
 
+	const runWordSearch = useCallback(async () => {
+		setWordLoading(true);
+		setWordError(null);
+		try {
+			const params = new URLSearchParams();
+			if (wordStartsWith) params.set('startsWith', wordStartsWith);
+			if (wordRhymeWith) params.set('rhymeWith', wordRhymeWith);
+			if (wordSyllables) params.set('syllables', wordSyllables);
+			if (wordMaxResults) params.set('maxResults', wordMaxResults);
+			if (wordTopic) params.set('topic', wordTopic);
+			const res = await fetch(`/api/words/search?${params.toString()}`);
+			if (!res.ok) throw new Error('Search failed');
+			const data = await res.json();
+			setWordResults(Array.isArray(data.items) ? data.items : []);
+		} catch (err) {
+			setWordError('Unable to search words right now');
+			setWordResults([]);
+		} finally {
+			setWordLoading(false);
+		}
+	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
+
 	const packDeck = useMemo<DeckCard[]>(() => {
 		if (!fuelPack || !isModePack(fuelPack)) return [];
 		const renderInteractiveText = (text: string) => {
@@ -2045,49 +2115,30 @@ function App() {
 					label: 'Word Explorer',
 					preview: (fuelPack.powerWords ?? []).slice(0, 3).join(' · ') || 'Loading words…',
 					detail: (
-						<div className="word-explorer-panel">
-							{/* Word Search Form */}
-							<div className="word-settings">
-								<div className="word-form">
-								<input type="text" placeholder="Starts with" value={wordStartsWith} onChange={(e) => setWordStartsWith(e.target.value)} />
-								<input type="text" placeholder="Rhyme with" value={wordRhymeWith} onChange={(e) => setWordRhymeWith(e.target.value)} />
-								<input type="text" placeholder="Syllables" value={wordSyllables} onChange={(e) => setWordSyllables(e.target.value)} />
-								<input type="text" placeholder="Max results" value={wordMaxResults} onChange={(e) => setWordMaxResults(e.target.value)} />
-								<input type="text" placeholder="Topic (eg: music)" value={wordTopic} onChange={(e) => setWordTopic(e.target.value)} />
-								<button 
-									className="btn secondary focus-toggle" 
-									type="button" 
-									onClick={async () => { 
-										await runWordSearch(); 
-										setWordFocusMode(true); 
-										setShowWordExplorer(true); 
-									}} 
-									disabled={wordLoading}
-								>
-									Focus Mode
-								</button>
-							</div>
-							{wordLoading && <p className="status-text loading">Searching…</p>}
-							{!wordLoading && wordError && <p className="status-text error">{wordError}</p>}
-						</div>
-							<div className="word-grid">
-								{(fuelPack.powerWords ?? []).map((word, index) => (
-									<button key={word} type="button" className="word-chip interactive" onClick={() => setChipPicker({ type: 'powerWord', index })}>
-										{word}
-									</button>
-								))}
-							</div>
-							<div className="word-explorer-actions">
-								<input
-									type="text"
-									placeholder="Add custom word"
-									value={customWordInput}
-									onChange={(e) => setCustomWordInput(e.target.value)}
-									onKeyDown={(e) => { if (e.key === 'Enter') handleCustomWordSubmit(); }}
-								/>
-								<button type="button" className="btn micro" onClick={handleCustomWordSubmit}>Add</button>
-							</div>
-						</div>
+						<WordExplorerDetail
+							powerWords={fuelPack.powerWords ?? []}
+							wordStartsWith={wordStartsWith}
+							wordRhymeWith={wordRhymeWith}
+							wordSyllables={wordSyllables}
+							wordMaxResults={wordMaxResults}
+							wordTopic={wordTopic}
+							customWordInput={customWordInput}
+							wordLoading={wordLoading}
+							wordError={wordError}
+							onWordStartsWith={setWordStartsWith}
+							onWordRhymeWith={setWordRhymeWith}
+							onWordSyllables={setWordSyllables}
+							onWordMaxResults={setWordMaxResults}
+							onWordTopic={setWordTopic}
+							onCustomWordInput={setCustomWordInput}
+							onFocusMode={async () => {
+								await runWordSearch();
+								setWordFocusMode(true);
+								setShowWordExplorer(true);
+							}}
+							onCustomWordSubmit={handleCustomWordSubmit}
+							onWordChipClick={(index) => setChipPicker({ type: 'powerWord', index })}
+						/>
 					)
 				} as DeckCard,
 				{
@@ -2095,69 +2146,26 @@ function App() {
 					label: 'Rhyme Families',
 					preview: (rhymeResults.length ? rhymeResults : fuelPack.rhymeFamilies)?.slice(0, 2).map((r: any) => (typeof r === 'string' ? r : r.word)).join(' · ') || 'Rhyme patterns',
 					detail: (
-						<div className="word-explorer-panel">
-							<div className="word-settings">
-								<div className="word-form">
-									<input
-										type="text"
-										placeholder="Word to rhyme with"
-										value={rhymeTarget}
-										onChange={(e) => setRhymeTarget(e.target.value)}
-									/>
-									<input
-										type="text"
-										placeholder="Max results"
-										value={rhymeMaxResults}
-										onChange={(e) => setRhymeMaxResults(e.target.value)}
-									/>
-									<button type="button" className="btn micro" onClick={() => runRhymeSearch()} disabled={rhymeLoading}>
-										Search rhymes
-									</button>
-									<button type="button" className="btn ghost micro" onClick={handleRandomRhymes} disabled={rhymeLoading}>
-										Random word
-									</button>
-									<button
-										type="button"
-										className={`btn secondary focus-toggle${rhymeFocusMode ? ' active' : ''}`}
-										onClick={async () => {
-											await runRhymeSearch();
-											setRhymeFocusMode(true);
-											setShowRhymeExplorer(true);
-										}}
-										disabled={rhymeLoading}
-									>
-										Focus Mode
-									</button>
-								</div>
-								{rhymeLoading && <p className="status-text loading">Finding rhyme families…</p>}
-								{!rhymeLoading && rhymeError && <p className="status-text error">{rhymeError}</p>}
-							</div>
-							<div className="word-grid">
-								{(rhymeResults.length ? rhymeResults.map((r) => r.word) : fuelPack.rhymeFamilies ?? []).map((family) => (
-									<button
-										key={family}
-										type="button"
-										className="word-chip interactive"
-										onClick={() => handleApplyRhymeFamilies([family])}
-									>
-										{family}
-									</button>
-								))}
-								{!rhymeLoading && !rhymeError && !rhymeResults.length && !(fuelPack.rhymeFamilies?.length)
-									? <p className="status-text">No rhyme families yet</p>
-									: null}
-							</div>
-							<div className="word-explorer-actions">
-								<button
-									type="button"
-									className="btn micro"
-									onClick={() => handleApplyRhymeFamilies((rhymeResults.length ? rhymeResults : []).map((r) => r.word))}
-									disabled={!rhymeResults.length}
-								>
-									Add all to pack
-								</button>
-							</div>
-						</div>
+						<RhymeFamiliesDetail
+							rhymeFamilies={fuelPack.rhymeFamilies ?? []}
+							rhymeResults={rhymeResults}
+							rhymeTarget={rhymeTarget}
+							rhymeMaxResults={rhymeMaxResults}
+							rhymeFocusMode={rhymeFocusMode}
+							rhymeLoading={rhymeLoading}
+							rhymeError={rhymeError}
+							onRhymeTarget={setRhymeTarget}
+							onRhymeMaxResults={setRhymeMaxResults}
+							onSearchRhymes={() => runRhymeSearch()}
+							onRandomRhymes={handleRandomRhymes}
+							onFocusMode={async () => {
+								await runRhymeSearch();
+								setRhymeFocusMode(true);
+								setShowRhymeExplorer(true);
+							}}
+							onFamilyChipClick={(family) => handleApplyRhymeFamilies([family])}
+							onAddAllRhymes={() => handleApplyRhymeFamilies((rhymeResults.length ? rhymeResults : []).map((r) => r.word))}
+						/>
 					)
 				} as DeckCard,
 				{
@@ -2165,150 +2173,24 @@ function App() {
 					label: 'Story Arc',
 					preview: `${fuelPack.storyArc?.start ?? 'start'} → ${fuelPack.storyArc?.end ?? 'end'}`,
 					detail: (
-						<div className="word-explorer-panel">
-							<div className="arc-track" style={{ marginBottom: 10 }}>
-								<span>{fuelPack.storyArc?.start ?? 'start'}</span>
-								<span className="arc-arrow">→</span>
-								<span>{fuelPack.storyArc?.middle ?? 'middle'}</span>
-								<span className="arc-arrow">→</span>
-								<span>{fuelPack.storyArc?.end ?? 'end'}</span>
-							</div>
-
-							<div className="word-settings">
-								<div className="word-form">
-									<textarea
-										placeholder="Summary (what happens?)"
-										value={storyArcSummary}
-										onChange={(e) => setStoryArcSummary(e.target.value)}
-										rows={3}
-									/>
-									<input
-										type="text"
-										placeholder="Theme (optional)"
-										value={storyArcTheme}
-										onChange={(e) => setStoryArcTheme(e.target.value)}
-									/>
-									<input
-										type="text"
-										placeholder="Genre (optional)"
-										value={storyArcGenre}
-										onChange={(e) => setStoryArcGenre(e.target.value)}
-									/>
-									<input
-										type="text"
-										placeholder="BPM (optional)"
-										value={storyArcBpm}
-										onChange={(e) => setStoryArcBpm(e.target.value)}
-									/>
-								</div>
-
-								<div className="slider-row" style={{ marginTop: 10 }}>
-									<span className="label">Detail</span>
-									<div className="option-group">
-										{[3, 4, 5, 6, 7].map((count) => (
-											<button
-												key={count}
-												type="button"
-												className={count === storyArcNodeCount ? 'chip active' : 'chip'}
-												onClick={() => setStoryArcNodeCount(count)}
-											>
-												<strong>{count}</strong>
-												<small>nodes</small>
-											</button>
-										))}
-									</div>
-								</div>
-
-								<div className="word-explorer-actions" style={{ marginTop: 10 }}>
-									<button
-										type="button"
-										className="btn micro"
-										onClick={handleGenerateStoryArc}
-										disabled={storyArcLoading}
-									>
-										{storyArcLoading ? 'Generating…' : 'Generate scaffold'}
-									</button>
-								</div>
-
-								{storyArcError && <p className="status-text error">{storyArcError}</p>}
-							</div>
-
-							{storyArcScaffold ? (
-								<div style={{ marginTop: 12 }}>
-									<div className="card-detail-copy">
-										<p><strong>Theme:</strong> {storyArcScaffold.theme}</p>
-										<p><strong>POV:</strong> {storyArcScaffold.protagonistPOV}</p>
-										<p><strong>Hook idea:</strong> {storyArcScaffold.chorusThesis}</p>
-									</div>
-
-									<div className="focus-list" style={{ marginTop: 10 }}>
-										{storyArcScaffold.nodes.map((node, index) => (
-											<div key={node.id} className="focus-line" style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
-												<strong>{index + 1}. {node.label}</strong>
-												<textarea
-													value={node.text}
-													onChange={(e) => {
-														const nextText = e.target.value;
-														setStoryArcScaffold((current) => {
-															if (!current) return current;
-															const nodes = current.nodes.map((n) => (n.id === node.id ? { ...n, text: nextText } : n));
-															return { ...current, nodes };
-														});
-													}}
-													rows={2}
-												/>
-												<div style={{ display: 'flex', gap: 8 }}>
-													<button
-														type="button"
-														className="btn micro ghost"
-														disabled={index === 0}
-														onClick={() => {
-															setStoryArcScaffold((current) => {
-																if (!current) return current;
-																const nodes = [...current.nodes];
-																[nodes[index - 1], nodes[index]] = [nodes[index], nodes[index - 1]];
-																return { ...current, nodes };
-															});
-														}}
-													>
-														Up
-													</button>
-													<button
-														type="button"
-														className="btn micro ghost"
-														disabled={index === storyArcScaffold.nodes.length - 1}
-														onClick={() => {
-															setStoryArcScaffold((current) => {
-																if (!current) return current;
-																const nodes = [...current.nodes];
-																[nodes[index + 1], nodes[index]] = [nodes[index], nodes[index + 1]];
-																return { ...current, nodes };
-															});
-														}}
-													>
-														Down
-													</button>
-												</div>
-											</div>
-										))}
-									</div>
-
-									{storyArcScaffold.motifs?.length ? (
-										<div className="card-detail-copy" style={{ marginTop: 10 }}>
-											<p><strong>Motifs:</strong> {storyArcScaffold.motifs.join(' · ')}</p>
-										</div>
-									) : null}
-
-									{storyArcScaffold.punchyLines?.length ? (
-										<ul className="focus-list" style={{ marginTop: 10 }}>
-											{storyArcScaffold.punchyLines.slice(0, 10).map((line, idx) => (
-												<li key={`${idx}-${line}`}>{line}</li>
-											))}
-										</ul>
-									) : null}
-								</div>
-							) : null}
-						</div>
+						<StoryArcDetail
+							storyArc={fuelPack.storyArc}
+							storyArcSummary={storyArcSummary}
+							storyArcTheme={storyArcTheme}
+							storyArcGenre={storyArcGenre}
+							storyArcBpm={storyArcBpm}
+							storyArcNodeCount={storyArcNodeCount}
+							storyArcLoading={storyArcLoading}
+							storyArcError={storyArcError}
+							storyArcScaffold={storyArcScaffold ?? undefined}
+							onStoryArcSummary={setStoryArcSummary}
+							onStoryArcTheme={setStoryArcTheme}
+							onStoryArcGenre={setStoryArcGenre}
+							onStoryArcBpm={setStoryArcBpm}
+							onStoryArcNodeCount={setStoryArcNodeCount}
+							onGenerateStoryArc={handleGenerateStoryArc}
+							onStoryArcScaffoldChange={setStoryArcScaffold}
+						/>
 					)
 				} as DeckCard,
 				{
@@ -2316,14 +2198,23 @@ function App() {
 					label: 'Live Headline',
 					preview: fuelPack.newsPrompt?.headline ?? 'Loading headline…',
 					detail: (
-						<div className="card-detail-copy">
-							<div className="headline-row">
-								<p className="headline">{fuelPack.newsPrompt?.headline ?? 'No headline available'}</p>
-								<button type="button" className="btn micro tertiary" onClick={() => setChipPicker({ type: 'headline' })}>Swap</button>
-							</div>
-							<p>{fuelPack.newsPrompt?.context ?? ''}</p>
-							<small>{fuelPack.newsPrompt?.source ?? 'Unknown source'}</small>
-						</div>
+						<LiveHeadlineDetail
+							newsPrompt={fuelPack.newsPrompt}
+							headlineTopic={headlineTopic}
+							headlineKeywords={headlineKeywords}
+							headlineDateFrom={headlineDateFrom}
+							headlineDateTo={headlineDateTo}
+							newsHeadlines={newsHeadlines}
+							newsLoading={newsLoading}
+							newsError={newsError}
+							onHeadlineTopic={setHeadlineTopic}
+							onHeadlineKeywords={setHeadlineKeywords}
+							onHeadlineDateFrom={setHeadlineDateFrom}
+							onHeadlineDateTo={setHeadlineDateTo}
+							onApplyFilters={applyHeadlineFilters}
+							onRandomize={randomizeHeadlines}
+							onSwap={() => setChipPicker({ type: 'headline' })}
+						/>
 					)
 				} as DeckCard,
 				{
@@ -2835,28 +2726,6 @@ function App() {
 		}
 	}, [userId]);
 
-	const runWordSearch = useCallback(async () => {
-		setWordLoading(true);
-		setWordError(null);
-		try {
-			const params = new URLSearchParams();
-			if (wordStartsWith) params.set('startsWith', wordStartsWith);
-			if (wordRhymeWith) params.set('rhymeWith', wordRhymeWith);
-			if (wordSyllables) params.set('syllables', wordSyllables);
-			if (wordMaxResults) params.set('maxResults', wordMaxResults);
-			if (wordTopic) params.set('topic', wordTopic);
-			const res = await fetch(`/api/words/search?${params.toString()}`);
-			if (!res.ok) throw new Error('Search failed');
-			const data = await res.json();
-			setWordResults(Array.isArray(data.items) ? data.items : []);
-		} catch (err) {
-			setWordError('Unable to search words right now');
-			setWordResults([]);
-		} finally {
-			setWordLoading(false);
-		}
-	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
-
 	const hasQueue = isModePack(fuelPack) && workspaceQueue.length > 0 && !focusMode && !showingDetail;
 	const workspaceMainClassName = `workspace-main${hasQueue ? ' with-queue has-divider' : ''}${focusMode || showingDetail ? ' detail-expanded' : ''}`;
 	const workspaceMainStyle = hasQueue
@@ -3049,6 +2918,15 @@ function App() {
 						</div>
 						<div className="news-headlines">
 							<span className="label">Linked Headlines</span>
+							{headlineSearchParams.randomSeed !== null && <p className="hint">Random mode on — showing anything timely.</p>}
+							{(headlineSearchParams.topic || headlineSearchParams.keywords || headlineSearchParams.from || headlineSearchParams.to) && (
+								<p className="hint">
+									Filters:
+									{headlineSearchParams.topic ? ` topic “${headlineSearchParams.topic}”` : ''}
+									{headlineSearchParams.keywords ? ` keywords ${headlineSearchParams.keywords}` : ''}
+									{headlineSearchParams.from || headlineSearchParams.to ? ` dates ${headlineSearchParams.from || 'any'} → ${headlineSearchParams.to || 'now'}` : ''}
+								</p>
+							)}
 							{newsLoading && <p className="hint">Loading headlines…</p>}
 							{!newsLoading && newsError && <p className="error">{newsError}</p>}
 							{!newsLoading && !newsError && newsHeadlines.length > 0 && (

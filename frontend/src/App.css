@@ -3866,6 +3866,58 @@
   background: rgba(96, 165, 250, 0.1);
 }
 
+/* Force all inputs in word-form to accept text input */
+.word-form input {
+  padding: 0.6rem 0.8rem !important;
+  background: rgba(0, 0, 0, 0.3) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 0.4rem !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+  font-size: 0.9rem !important;
+  transition: all 0.2s ease !important;
+  width: 100% !important;
+  font-family: inherit !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  cursor: text !important;
+}
+
+.word-form input[type="text"]::-webkit-outer-spin-button,
+.word-form input[type="text"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.word-form input[type="date"],
+.word-form input[type="datetime-local"],
+.word-form input[type="month"],
+.word-form input[type="time"],
+.word-form input[type="week"] {
+  cursor: pointer !important;
+  font-family: inherit !important;
+}
+
+.word-form input[type="date"]:focus,
+.word-form input[type="datetime-local"]:focus,
+.word-form input[type="month"]:focus,
+.word-form input[type="time"]:focus,
+.word-form input[type="week"]:focus {
+  outline: none !important;
+  border-color: rgba(96, 165, 250, 0.5) !important;
+  background: rgba(96, 165, 250, 0.1) !important;
+}
+
+.word-form input[type="date"]::-webkit-calendar-picker-indicator,
+.word-form input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.word-form input[type="month"]::-webkit-calendar-picker-indicator,
+.word-form input[type="time"]::-webkit-calendar-picker-indicator,
+.word-form input[type="week"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.8);
+  padding: 0 !important;
+}
+
 .word-results-preview {
   padding: 0.8rem;
   background: rgba(0, 0, 0, 0.2);
