@@ -937,13 +937,17 @@ function App() {
 	const [rhymeLoading, setRhymeLoading] = useState(false);
 	const [rhymeError, setRhymeError] = useState<string | null>(null);
 	const [rhymeFocusMode, setRhymeFocusMode] = useState(false);
+	const [headlineFocusMode, setHeadlineFocusMode] = useState(false);
 	const [newsHeadlines, setNewsHeadlines] = useState<NewsHeadline[]>([]);
 	const [newsLoading, setNewsLoading] = useState(false);
 	const [newsError, setNewsError] = useState<string | null>(null);
 	const [headlineTopic, setHeadlineTopic] = useState('');
 	const [headlineKeywords, setHeadlineKeywords] = useState('');
-	const [headlineDateFrom, setHeadlineDateFrom] = useState('');
-	const [headlineDateTo, setHeadlineDateTo] = useState('');
+	// Default date range: 50 years ago to today
+	const fiftyYearsAgo = new Date();
+	fiftyYearsAgo.setFullYear(fiftyYearsAgo.getFullYear() - 50);
+	const [headlineDateFrom, setHeadlineDateFrom] = useState(fiftyYearsAgo.toISOString().split('T')[0]);
+	const [headlineDateTo, setHeadlineDateTo] = useState(new Date().toISOString().split('T')[0]);
 	const [headlineSearchVersion, setHeadlineSearchVersion] = useState(0);
 	const [headlineSearchParams, setHeadlineSearchParams] = useState({
 		topic: '',
@@ -2214,6 +2218,8 @@ function App() {
 							onApplyFilters={applyHeadlineFilters}
 							onRandomize={randomizeHeadlines}
 							onSwap={() => setChipPicker({ type: 'headline' })}
+							focusMode={headlineFocusMode}
+							onFocusMode={() => setHeadlineFocusMode(!headlineFocusMode)}
 						/>
 					)
 				} as DeckCard,

@@ -32,6 +32,7 @@ interface LiveHeadlineProps {
 	onRandomize: () => void;
 	onSwap: () => void;
 	focusMode?: boolean;
+	onFocusMode?: () => void;
 }
 
 export const LiveHeadlineDetail: React.FC<LiveHeadlineProps> = ({
@@ -50,13 +51,26 @@ export const LiveHeadlineDetail: React.FC<LiveHeadlineProps> = ({
 	onApplyFilters,
 	onRandomize,
 	onSwap,
-	focusMode = false
+	focusMode = false,
+	onFocusMode
 }) => {
 	// Focus mode: Show only headlines summary, hide all controls
 	if (focusMode) {
 		return (
-			<div className="word-explorer-panel" style={{ pointerEvents: 'auto', padding: '1rem' }}>
-				<h4 style={{ margin: '0 0 0.75rem 0', fontSize: '1.1em', fontWeight: 600 }}>Live Headlines</h4>
+			<div className="word-explorer-panel" style={{ padding: '1rem' }}>
+				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+					<h4 style={{ margin: 0, fontSize: '1.1em', fontWeight: 600 }}>Live Headlines</h4>
+					{onFocusMode && (
+						<button
+							type="button"
+							className="btn secondary micro"
+							onClick={onFocusMode}
+							style={{ fontSize: '0.85em' }}
+						>
+							Exit Focus
+						</button>
+					)}
+				</div>
 				
 				{/* Current headline summary */}
 				{newsPrompt && (
@@ -124,7 +138,7 @@ export const LiveHeadlineDetail: React.FC<LiveHeadlineProps> = ({
 
 	// Regular mode: Show all controls
 	return (
-		<div className="word-explorer-panel" style={{ pointerEvents: 'auto' }}>
+		<div className="word-explorer-panel">
 			{/* Headline display section */}
 			<div className="card-detail-copy">
 				<div className="headline-row">
@@ -142,28 +156,28 @@ export const LiveHeadlineDetail: React.FC<LiveHeadlineProps> = ({
 				<div className="word-form">
 					<input
 						type="text"
+						placeholder="Topic (e.g. tour announcements, AI collabs)"
 						value={headlineTopic}
 						onChange={(e) => onHeadlineTopic(e.target.value)}
-						placeholder="Topic (e.g. tour announcements, AI collabs)"
 					/>
 					<input
 						type="text"
+						placeholder="Keywords (comma-separated, e.g. producer, remix)"
 						value={headlineKeywords}
 						onChange={(e) => onHeadlineKeywords(e.target.value)}
-						placeholder="Keywords (comma-separated, e.g. producer, remix)"
 					/>
 					<div style={{ display: 'grid', gap: 0.6, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
 						<input
 							type="date"
+							title="From date"
 							value={headlineDateFrom}
 							onChange={(e) => onHeadlineDateFrom(e.target.value)}
-							title="From date"
 						/>
 						<input
 							type="date"
+							title="To date"
 							value={headlineDateTo}
 							onChange={(e) => onHeadlineDateTo(e.target.value)}
-							title="To date"
 						/>
 					</div>
 				</div>
@@ -174,6 +188,11 @@ export const LiveHeadlineDetail: React.FC<LiveHeadlineProps> = ({
 					<button type="button" className="btn micro ghost" onClick={onRandomize}>
 						Random
 					</button>
+					{onFocusMode && (
+						<button type="button" className="btn secondary micro" onClick={onFocusMode}>
+							Focus Mode
+						</button>
+					)}
 				</div>
 				<p className="hint" style={{ margin: 0, fontSize: '0.85em', color: 'rgba(148, 163, 184, 0.7)' }}>
 					Leave blank to use pack context. Random pulls timely content.
