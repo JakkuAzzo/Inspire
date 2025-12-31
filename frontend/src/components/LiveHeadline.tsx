@@ -31,6 +31,7 @@ interface LiveHeadlineProps {
 	onApplyFilters: () => void;
 	onRandomize: () => void;
 	onSwap: () => void;
+	focusMode?: boolean;
 }
 
 export const LiveHeadlineDetail: React.FC<LiveHeadlineProps> = ({
@@ -48,8 +49,80 @@ export const LiveHeadlineDetail: React.FC<LiveHeadlineProps> = ({
 	onHeadlineDateTo,
 	onApplyFilters,
 	onRandomize,
-	onSwap
+	onSwap,
+	focusMode = false
 }) => {
+	// Focus mode: Show only headlines summary, hide all controls
+	if (focusMode) {
+		return (
+			<div className="word-explorer-panel" style={{ pointerEvents: 'auto', padding: '1rem' }}>
+				<h4 style={{ margin: '0 0 0.75rem 0', fontSize: '1.1em', fontWeight: 600 }}>Live Headlines</h4>
+				
+				{/* Current headline summary */}
+				{newsPrompt && (
+					<div style={{ 
+						padding: '0.75rem', 
+						background: 'rgba(148, 163, 184, 0.08)', 
+						borderRadius: '4px',
+						marginBottom: '1rem' 
+					}}>
+						<p style={{ fontSize: '0.95em', fontWeight: 500, margin: '0 0 0.25rem 0' }}>
+							{newsPrompt.headline}
+						</p>
+						<p style={{ fontSize: '0.85em', color: 'rgba(148, 163, 184, 0.75)', margin: '0' }}>
+							{newsPrompt.context}
+						</p>
+						<small style={{ color: 'rgba(148, 163, 184, 0.6)' }}>{newsPrompt.source}</small>
+					</div>
+				)}
+				
+				{/* Headlines list */}
+				{newsLoading && <p style={{ color: 'rgba(148, 163, 184, 0.7)' }}>Loading headlines...</p>}
+				{newsError && <p style={{ color: 'rgba(239, 68, 68, 0.8)' }}>Error: {newsError}</p>}
+				{newsHeadlines.length > 0 ? (
+					<div className="news-headlines">
+						<strong style={{ fontSize: '0.9em', marginBottom: '0.5rem', display: 'block', color: 'rgba(148, 163, 184, 0.85)' }}>
+							Related Headlines ({newsHeadlines.length}):
+						</strong>
+						<ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+							{newsHeadlines.map((hl) => (
+								<li key={hl.url} style={{ 
+									marginBottom: '0.75rem', 
+									paddingBottom: '0.75rem',
+									borderBottom: '1px solid rgba(148, 163, 184, 0.1)'
+								}}>
+									<strong style={{ fontSize: '0.9em', display: 'block', marginBottom: '0.25rem' }}>
+										{hl.title}
+									</strong>
+									{hl.description && (
+										<p style={{ 
+											margin: '0.25rem 0', 
+											color: 'rgba(148, 163, 184, 0.75)', 
+											fontSize: '0.8em',
+											lineHeight: 1.4
+										}}>
+											{hl.description}
+										</p>
+									)}
+									{hl.source && (
+										<small style={{ color: 'rgba(148, 163, 184, 0.6)', fontSize: '0.75em' }}>
+											— {hl.source}
+										</small>
+									)}
+								</li>
+							))}
+						</ul>
+					</div>
+				) : !newsLoading && !newsError ? (
+					<p style={{ color: 'rgba(148, 163, 184, 0.6)', fontSize: '0.85em', textAlign: 'center', margin: '2rem 0' }}>
+						No headlines loaded
+					</p>
+				) : null}
+			</div>
+		);
+	}
+
+	// Regular mode: Show all controls
 	return (
 		<div className="word-explorer-panel" style={{ pointerEvents: 'auto' }}>
 			{/* Headline display section */}
