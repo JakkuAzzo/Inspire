@@ -150,6 +150,33 @@ function buildPrompt(input: StoryArcGenerateRequest, nodeLabels: string[]): stri
     .join('\n');
 }
 
+function synthesizeBeat(label: string, input: StoryArcGenerateRequest): string {
+  const base = String(input.summary || '').slice(0, 140);
+  const style = input.genre ? `${input.genre} vibe` : input.theme ? String(input.theme).toLowerCase() : '';
+  const tempo = typeof input.bpm === 'number' && Number.isFinite(input.bpm) ? `${input.bpm} BPM` : '';
+  const styleSuffix = [style, tempo].filter(Boolean).length ? ` (${[style, tempo].filter(Boolean).join(' · ')})` : '';
+
+  const lower = label.toLowerCase();
+  switch (lower) {
+    case 'start':
+      return `Set the scene: ${base}. We arrive hungry and unproven${styleSuffix}.`;
+    case 'inciting incident':
+      return `Trigger: a door opens and shakes the routine — ${base}. A reason to move now${styleSuffix}.`;
+    case 'obstacle':
+      return `Complication: old obligations push back; time and money get tight. The cost of chasing this grows.`;
+    case 'midpoint turn':
+      return `Reversal: a small win exposes a bigger risk. The path forward isn’t what it looked like on day one.`;
+    case 'second obstacle':
+      return `Aftershock: pressure escalates; help falls through. Doubt creeps in as the city tests resolve${styleSuffix}.`;
+    case 'climax':
+      return `Decision: pick a side at full volume — commit to the dream or go home. No turning back after this drop.`;
+    case 'resolution':
+      return `Fallout: quieter streets, new rules. We carry a changed voice into the next chorus, even if the echo hurts.`;
+    default:
+      return `${label}: ${base}${styleSuffix}`;
+  }
+}
+
 function buildFallbackScaffold(input: StoryArcGenerateRequest, nodeLabels: string[]): StoryArcScaffold {
   const theme = input.theme || input.genre || 'Momentum and transformation';
   const protagonistPOV = 'First-person (confessional)';
@@ -173,29 +200,8 @@ function buildFallbackScaffold(input: StoryArcGenerateRequest, nodeLabels: strin
     'I bend the timeline until the drop says mercy.'
   ];
   const punchyLines = punchTemplates.map((tpl, i) => `${i + 1}. ${tpl.replace('{theme}', theme)}`);
-
-  const progressionText = (label: string) => {
-    const base = input.summary.slice(0, 140);
-    switch (label.toLowerCase()) {
-      case 'start':
-        return `Set the scene: ${base}`;
-      case 'inciting incident':
-        return `Trigger: ${base}`;
-      case 'obstacle':
-        return `What blocks us: ${base}`;
-      case 'midpoint turn':
-        return `The flip: ${base}`;
-      case 'second obstacle':
-        return `Aftershock: ${base}`;
-      case 'climax':
-        return `Decision point: ${base}`;
-      case 'resolution':
-        return `Fallout: ${base}`;
-      default:
-        return `${label}: ${base}`;
-    }
-  };
-  const nodes = nodeLabels.map((label, index) => ({ id: `arc-${index + 1}`, label, text: progressionText(label) }));
+  const synth = (label: string) => synthesizeBeat(label, input);
+  const nodes = nodeLabels.map((label, index) => ({ id: `arc-${index + 1}`, label, text: synth(label) }));
 
   return {
     theme,
@@ -223,27 +229,8 @@ function ensureProgression(scaffold: StoryArcScaffold, summary: string, nodeLabe
     let text = (node.text || '').trim();
     const normalized = text.toLowerCase();
     if (!text || normalized === summarySnippet.toLowerCase() || seen.has(normalized)) {
-      const mapped = (() => {
-        switch (label.toLowerCase()) {
-          case 'start':
-            return `Set the scene: ${summarySnippet}`;
-          case 'inciting incident':
-            return `Trigger event: ${summarySnippet}`;
-          case 'obstacle':
-            return `Complication hits: ${summarySnippet}`;
-          case 'midpoint turn':
-            return `Reversal or reveal: ${summarySnippet}`;
-          case 'second obstacle':
-            return `Aftershock/pressure: ${summarySnippet}`;
-          case 'climax':
-            return `Decision moment: ${summarySnippet}`;
-          case 'resolution':
-            return `Fallout and new normal: ${summarySnippet}`;
-          default:
-            return `${label}: ${summarySnippet}`;
-        }
-      })();
-      text = mapped;
+      // Generate a richer, label-aware fallback using the input context if available
+      text = synthesizeBeat(label, { summary: summarySnippet, theme: scaffold.theme } as StoryArcGenerateRequest);
     }
     seen.add(text.toLowerCase());
     return { ...node, label, text };
