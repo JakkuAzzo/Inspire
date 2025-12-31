@@ -72,7 +72,9 @@ export class NewsService {
       ...keywordTerms
     ];
     const random = Boolean(options.random);
-    const fromDate = this.parseDate(options.from) ?? this.mapTimeframeToDate(options.timeframe);
+    // Only apply date range if explicitly requested or if both from/to are provided
+    // Otherwise allow all articles regardless of age (useful for local static datasets)
+    const fromDate = this.parseDate(options.from) ?? (options.from || options.to ? this.mapTimeframeToDate(options.timeframe) : null);
     const toDate = this.parseDate(options.to);
     const cacheKey = `${terms.join(' ')}:${requestedLimit}:${fromDate?.toISOString() ?? ''}:${toDate?.toISOString() ?? ''}:${random ? 'random' : 'scored'}:${options.seed ?? ''}`;
 
