@@ -74,7 +74,7 @@ kill_port 3001
 kill_port 8080
 
 echo "Starting Inspire backend on :3001"
-npm run dev --prefix backend &
+NODE_ENV=development npm run dev --prefix backend &
 PIDS+=($!)
 
 # Give the backend a short moment to boot before starting the frontend proxy

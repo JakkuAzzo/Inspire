@@ -297,7 +297,9 @@ const REPORT_FILE = process.env.REPORT_FILE || path.join(DATA_DIR, 'reportedCont
 const CHALLENGE_STATE_FILE = process.env.CHALLENGE_STATE_FILE || path.join(DATA_DIR, 'challengeState.json');
 const FRONTEND_DIST = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
 const FRONTEND_INDEX = path.join(FRONTEND_DIST, 'index.html');
-const hasFrontendBuild = fs.existsSync(FRONTEND_INDEX);
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const SERVE_FRONTEND = process.env.SERVE_FRONTEND !== 'false' && NODE_ENV !== 'development';
+const hasFrontendBuild = fs.existsSync(FRONTEND_INDEX) && SERVE_FRONTEND;
 const EMPTY_SAVED_STATE: SavedState = { users: {}, snapshots: {} };
 const liveRooms = new Map<string, LiveRoomState>();
 const rateLimitEvents = new Map<string, number[]>();
@@ -1274,6 +1276,9 @@ io.on('connection', (socket) => {
 
 if (hasFrontendBuild) {
   app.use(express.static(FRONTEND_DIST));
+  console.log('[Inspire] Serving frontend build from:', FRONTEND_DIST);
+} else if (NODE_ENV === 'development') {
+  console.log('[Inspire] Frontend static serving disabled in development mode (using Vite on 8080)');
 }
 
 // Build main API router and mount under /api and /dev/api (back-compat)
@@ -1301,8 +1306,8 @@ if (hasFrontendBuild) {
         <head><meta charset="utf-8" /><title>Inspire — Backend</title></head>
         <body style="font-family:system-ui;background:#050b16;color:#e6eef8;padding:32px">
           <h1>Inspire API</h1>
-          <p>The frontend build has not been generated yet.</p>
-          <p>Run <code>npm install && npm run build</code> inside <code>frontend/</code>, then restart the server.</p>
+          <p>${NODE_ENV === 'development' ? 'Frontend is served from Vite on port 8080' : 'The frontend build has not been generated yet.'}</p>
+          ${NODE_ENV !== 'development' ? '<p>Run <code>npm install && npm run build</code> inside <code>frontend/</code>, then restart the server.</p>' : ''}
           <p>Developer console: <a href="/dev" style="color:#60a5fa">/dev</a></p>
         </body>
       </html>

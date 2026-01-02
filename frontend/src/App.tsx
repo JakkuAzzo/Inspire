@@ -917,9 +917,9 @@ function App() {
 	const [wordSyllables, setWordSyllables] = useState('');
 	const [wordMaxResults, setWordMaxResults] = useState('18');
 	const [wordTopic, setWordTopic] = useState('');
-	const [wordResults, setWordResults] = useState<Array<{ word: string; score?: number; numSyllables?: number }>>([]);
-	const [wordLoading, setWordLoading] = useState(false);
-	const [wordError, setWordError] = useState<string | null>(null);
+	const [wordResults, _setWordResults] = useState<Array<{ word: string; score?: number; numSyllables?: number }>>([]);
+	const [wordLoading, _setWordLoading] = useState(false);
+	const [wordError, _setWordError] = useState<string | null>(null);
 	const [wordFocusMode, setWordFocusMode] = useState(false);
 	// Rhyme Families overlay
 	const [showRhymeExplorer, setShowRhymeExplorer] = useState(false);
@@ -937,7 +937,6 @@ function App() {
 	const [rhymeLoading, setRhymeLoading] = useState(false);
 	const [rhymeError, setRhymeError] = useState<string | null>(null);
 	const [rhymeFocusMode, setRhymeFocusMode] = useState(false);
-	const [headlineFocusMode, setHeadlineFocusMode] = useState(false);
 	const [newsHeadlines, setNewsHeadlines] = useState<NewsHeadline[]>([]);
 	const [newsLoading, setNewsLoading] = useState(false);
 	const [newsError, setNewsError] = useState<string | null>(null);
@@ -2033,28 +2032,6 @@ function App() {
 		}
 	}, [fuelPack, genre, storyArcSummary, storyArcTheme, storyArcGenre, storyArcBpm, storyArcNodeCount]);
 
-	const runWordSearch = useCallback(async () => {
-		setWordLoading(true);
-		setWordError(null);
-		try {
-			const params = new URLSearchParams();
-			if (wordStartsWith) params.set('startsWith', wordStartsWith);
-			if (wordRhymeWith) params.set('rhymeWith', wordRhymeWith);
-			if (wordSyllables) params.set('syllables', wordSyllables);
-			if (wordMaxResults) params.set('maxResults', wordMaxResults);
-			if (wordTopic) params.set('topic', wordTopic);
-			const res = await fetch(`/api/words/search?${params.toString()}`);
-			if (!res.ok) throw new Error('Search failed');
-			const data = await res.json();
-			setWordResults(Array.isArray(data.items) ? data.items : []);
-		} catch (err) {
-			setWordError('Unable to search words right now');
-			setWordResults([]);
-		} finally {
-			setWordLoading(false);
-		}
-	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
-
 	const packDeck = useMemo<DeckCard[]>(() => {
 		if (!fuelPack || !isModePack(fuelPack)) return [];
 		const renderInteractiveText = (text: string) => {
@@ -2135,11 +2112,6 @@ function App() {
 							onWordMaxResults={setWordMaxResults}
 							onWordTopic={setWordTopic}
 							onCustomWordInput={setCustomWordInput}
-							onFocusMode={async () => {
-								await runWordSearch();
-								setWordFocusMode(true);
-								setShowWordExplorer(true);
-							}}
 							onCustomWordSubmit={handleCustomWordSubmit}
 							onWordChipClick={(index) => setChipPicker({ type: 'powerWord', index })}
 						/>
@@ -2155,18 +2127,12 @@ function App() {
 							rhymeResults={rhymeResults}
 							rhymeTarget={rhymeTarget}
 							rhymeMaxResults={rhymeMaxResults}
-							rhymeFocusMode={rhymeFocusMode}
-							rhymeLoading={rhymeLoading}
+									rhymeLoading={rhymeLoading}
 							rhymeError={rhymeError}
 							onRhymeTarget={setRhymeTarget}
 							onRhymeMaxResults={setRhymeMaxResults}
 							onSearchRhymes={() => runRhymeSearch()}
 							onRandomRhymes={handleRandomRhymes}
-							onFocusMode={async () => {
-								await runRhymeSearch();
-								setRhymeFocusMode(true);
-								setShowRhymeExplorer(true);
-							}}
 							onFamilyChipClick={(family) => handleApplyRhymeFamilies([family])}
 							onAddAllRhymes={() => handleApplyRhymeFamilies((rhymeResults.length ? rhymeResults : []).map((r) => r.word))}
 						/>
@@ -2218,8 +2184,6 @@ function App() {
 							onApplyFilters={applyHeadlineFilters}
 							onRandomize={randomizeHeadlines}
 							onSwap={() => setChipPicker({ type: 'headline' })}
-							focusMode={headlineFocusMode}
-							onFocusMode={() => setHeadlineFocusMode(!headlineFocusMode)}
 						/>
 					)
 				} as DeckCard,

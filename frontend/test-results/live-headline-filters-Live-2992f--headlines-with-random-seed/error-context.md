@@ -1,0 +1,104 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e4]:
+  - button "Sign up or log in to Inspire" [active] [ref=e5] [cursor=pointer]:
+    - generic [ref=e6]: Sign up / Log in
+    - generic [ref=e7]: ↗
+  - banner [ref=e8]:
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - img "Inspire" [ref=e11]
+        - heading "Make Something" [level=1] [ref=e12]
+      - paragraph [ref=e13]: Choose your creative studio and spin a fresh challenge.
+    - generic [ref=e14] [cursor=pointer]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: Mood themes
+        - generic:
+          - button "Aurora" [ref=e17]:
+            - generic [ref=e18]: ✨
+            - text: Aurora
+          - button "Lo-Fi" [ref=e19]:
+            - generic [ref=e20]: 🌙
+            - text: Lo-Fi
+          - button "Neon" [ref=e21]:
+            - generic [ref=e22]: 🌈
+            - text: Neon
+          - button "Vaporwave" [ref=e23]:
+            - generic [ref=e24]: 🌅
+            - text: Vaporwave
+          - button "Noir" [ref=e25]:
+            - generic [ref=e26]: 🖤
+            - text: Noir
+      - button "Daily challenge 19h 26m 57s City Lights Cypher Write or score something that captures the glow of the nighttime commute. Sign in to complete View progress →" [ref=e28]:
+        - generic [ref=e29]: Daily challenge
+        - generic [ref=e30]: 19h 26m 57s
+        - generic [ref=e31]: City Lights Cypher
+        - generic [ref=e32]: Write or score something that captures the glow of the nighttime commute.
+        - generic [ref=e33]: Sign in to complete
+        - generic [ref=e34]: View progress →
+  - button "Get Started - Pick a Lab" [ref=e36] [cursor=pointer]
+  - generic:
+    - generic [ref=e37] [cursor=pointer]:
+      - generic [ref=e38]:
+        - heading "Spectate live" [level=3] [ref=e39]
+        - paragraph: Jump into an active room.
+      - generic [ref=e40]:
+        - generic [ref=e41]: ⌘
+        - searchbox "Search live sessions" [ref=e42]
+      - list [ref=e43]:
+        - listitem [ref=e44]:
+          - generic [ref=e45]:
+            - strong [ref=e46]: Hook Draft Lab
+            - generic [ref=e47]: "@auroraflow · 128 viewers"
+          - button "Spectate" [ref=e48]
+        - listitem [ref=e49]:
+          - generic [ref=e50]:
+            - strong [ref=e51]: Reel Speedrun
+            - generic [ref=e52]: "@cutcraft · 64 viewers"
+          - button "Spectate" [ref=e53]
+    - generic [ref=e54] [cursor=pointer]:
+      - generic [ref=e55]:
+        - heading "Community feed" [level=3] [ref=e56]
+        - paragraph: Fresh remixes and drops.
+      - generic [ref=e57]:
+        - generic [ref=e58]: ⌘
+        - searchbox "Search community feed" [ref=e59]
+      - list [ref=e60]:
+        - listitem [ref=e61]:
+          - generic [ref=e62]:
+            - strong [ref=e63]: "@auroraflow"
+            - generic [ref=e64]: 45m ago
+          - paragraph [ref=e65]: Hook sketch recorded on last night’s stream. The crowd lost it on the second drop.
+          - button "Fork" [ref=e66]
+        - listitem [ref=e67]:
+          - generic [ref=e68]:
+            - strong [ref=e69]: "@midnightloops"
+            - generic [ref=e70]: 1h ago
+          - paragraph [ref=e71]: Texture flip built from kitchen percussion + subway rumble. Ready for someone to add vocals.
+          - button "Fork" [ref=e72]
+  - generic [ref=e74]:
+    - button "✕" [ref=e75] [cursor=pointer]
+    - generic [ref=e76]:
+      - heading "Welcome to Inspire" [level=2] [ref=e77]
+      - paragraph [ref=e78]: Choose how you want to continue
+    - generic [ref=e79]:
+      - button "Sign Up" [ref=e80] [cursor=pointer]
+      - button "Login" [ref=e81] [cursor=pointer]
+      - button "Guest Mode" [ref=e82] [cursor=pointer]
+    - generic [ref=e84]:
+      - generic [ref=e85]:
+        - generic [ref=e86]: Email
+        - textbox "Email" [ref=e87]:
+          - /placeholder: your@email.com
+      - generic [ref=e88]:
+        - generic [ref=e89]: Display Name (optional)
+        - textbox "Display Name (optional)" [ref=e90]:
+          - /placeholder: Cool Creator
+      - generic [ref=e91]:
+        - generic [ref=e92]: Password
+        - textbox "Password" [ref=e93]:
+          - /placeholder: At least 6 characters
+      - button "Sign Up" [ref=e94] [cursor=pointer]
+      - paragraph [ref=e95]: You'll receive a verification code via email
+```

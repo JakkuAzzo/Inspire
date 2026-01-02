@@ -1,16 +1,1 @@
-[
-  {
-    "id": "bd25af27-27b0-4330-a4ab-d1b14f127473",
-    "handle": "SuperMaster1751",
-    "sessionToken": "8173ecd7-7d0d-4515-a61f-609cea0b9af7",
-    "createdAt": 1767211324372,
-    "expiresAt": 1767297724372
-  },
-  {
-    "id": "94315097-26a7-4c5c-9ab0-d7e546341ff3",
-    "handle": "MegaStar9640",
-    "sessionToken": "67fae4db-a49b-4d9b-a3f5-24cbcfefdf14",
-    "createdAt": 1767218311099,
-    "expiresAt": 1767304711099
-  }
-]
+[]

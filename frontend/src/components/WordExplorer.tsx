@@ -16,7 +16,6 @@ interface WordExplorerProps {
 	onWordMaxResults: (value: string) => void;
 	onWordTopic: (value: string) => void;
 	onCustomWordInput: (value: string) => void;
-	onFocusMode: () => void;
 	onCustomWordSubmit: () => void;
 	onWordChipClick: (index: number) => void;
 }
@@ -37,7 +36,6 @@ export const WordExplorerDetail: React.FC<WordExplorerProps> = ({
 	onWordMaxResults,
 	onWordTopic,
 	onCustomWordInput,
-	onFocusMode,
 	onCustomWordSubmit,
 	onWordChipClick
 }) => {
@@ -76,14 +74,6 @@ export const WordExplorerDetail: React.FC<WordExplorerProps> = ({
 						value={wordTopic}
 						onChange={(e) => onWordTopic(e.target.value)}
 					/>
-					<button
-						className="btn secondary focus-toggle"
-						type="button"
-						onClick={onFocusMode}
-						disabled={wordLoading}
-					>
-						Focus Mode
-					</button>
 				</div>
 				{wordLoading && <p className="status-text loading">Searching…</p>}
 				{!wordLoading && wordError && <p className="status-text error">{wordError}</p>}
