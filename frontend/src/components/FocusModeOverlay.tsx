@@ -9,6 +9,7 @@ export interface FocusModeOverlayProps {
 	ariaLabel?: string;
 	ariaLabelledBy?: string;
 	extended?: boolean;
+	variant?: 'default' | 'extended' | 'fullscreen';
 }
 
 /**
@@ -33,7 +34,8 @@ export function FocusModeOverlay({
 	showCloseButton = true,
 	ariaLabel,
 	ariaLabelledBy,
-	extended = false
+	extended = false,
+	variant = 'default'
 }: FocusModeOverlayProps) {
 	React.useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -50,6 +52,8 @@ export function FocusModeOverlay({
 
 	if (!isOpen) return null;
 
+	const resolvedVariant = variant === 'default' && extended ? 'extended' : variant;
+
 	const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
 		if (e.target === e.currentTarget) {
 			onClose();
@@ -65,7 +69,7 @@ export function FocusModeOverlay({
 			aria-labelledby={ariaLabelledBy}
 			onClick={handleBackdropClick}
 		>
-			<div className={`focus-mode-overlay glass${extended ? ' extended' : ''}`}>
+			<div className={`focus-mode-overlay glass${resolvedVariant === 'extended' ? ' extended' : ''}${resolvedVariant === 'fullscreen' ? ' fullscreen' : ''}`}>
 				{(title || showCloseButton) && (
 					<div className="overlay-header">
 						{title && <h2>{title}</h2>}
