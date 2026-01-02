@@ -10,14 +10,12 @@ interface RhymeFamiliesProps {
 	rhymeResults: RhymeResult[];
 	rhymeTarget: string;
 	rhymeMaxResults: string;
-	rhymeFocusMode: boolean;
 	rhymeLoading: boolean;
 	rhymeError: string | null;
 	onRhymeTarget: (value: string) => void;
 	onRhymeMaxResults: (value: string) => void;
 	onSearchRhymes: () => void;
 	onRandomRhymes: () => void;
-	onFocusMode: () => void;
 	onFamilyChipClick: (family: string) => void;
 	onAddAllRhymes: () => void;
 }
@@ -27,14 +25,12 @@ export const RhymeFamiliesDetail: React.FC<RhymeFamiliesProps> = ({
 	rhymeResults,
 	rhymeTarget,
 	rhymeMaxResults,
-	rhymeFocusMode,
 	rhymeLoading,
 	rhymeError,
 	onRhymeTarget,
 	onRhymeMaxResults,
 	onSearchRhymes,
 	onRandomRhymes,
-	onFocusMode,
 	onFamilyChipClick,
 	onAddAllRhymes
 }) => {
@@ -61,14 +57,6 @@ export const RhymeFamiliesDetail: React.FC<RhymeFamiliesProps> = ({
 					</button>
 					<button type="button" className="btn ghost micro" onClick={onRandomRhymes} disabled={rhymeLoading}>
 						Random word
-					</button>
-					<button
-						type="button"
-						className={`btn secondary focus-toggle${rhymeFocusMode ? ' active' : ''}`}
-						onClick={onFocusMode}
-						disabled={rhymeLoading}
-					>
-						Focus Mode
 					</button>
 				</div>
 				{rhymeLoading && <p className="status-text loading">Finding rhyme families…</p>}
