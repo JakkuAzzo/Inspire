@@ -19,6 +19,8 @@ import { LiveHeadlineDetail } from './components/LiveHeadline';
 import { WordExplorerDetail } from './components/WordExplorer';
 import { RhymeFamiliesDetail } from './components/RhymeFamilies';
 import { StoryArcDetail } from './components/StoryArc';
+import { FlowBeatGenerator } from './components/FlowBeatGenerator';
+import { FlowPrompts } from './components/FlowPrompts';
 import { CombinedFocusMode } from './components/workspace/CombinedFocusMode';
 import { CreatorSettingsModal } from './components/workspace/CreatorSettingsModal';
 import { FocusModeControls } from './components/workspace/FocusModeControls';
@@ -767,18 +769,6 @@ function isEditorPack(pack: InspireAnyPack | null): pack is EditorModePack {
 	return isModePack(pack) && pack.mode === 'editor';
 }
 
-function resolveChallengeText(pack: InspireAnyPack | null): string {
-	if (!pack) return 'Spin up a fresh pack to unlock a challenge.';
-	if (!isModePack(pack)) {
-		const legacy = pack as FuelPack;
-		return legacy.prompt ?? 'Use this classic prompt to get started.';
-	}
-	if (isLyricistPack(pack)) return pack.topicChallenge ?? 'Write something unexpected from the headline.';
-	if (isProducerPack(pack)) return pack.challenge ?? 'Flip the palette into something new.';
-	if (isEditorPack(pack)) return pack.challenge ?? 'Cut a sequence that bends expectations.';
-	return 'Keep experimenting with new ideas.';
-}
-
 function App() {
 	const initialUserId = typeof window === 'undefined' ? `creator-${Date.now().toString(36)}` : loadStoredUserId();
 	const [modeDefinitions, setModeDefinitions] = useState<ModeDefinition[]>(FALLBACK_MODE_DEFINITIONS);
@@ -923,6 +913,8 @@ function App() {
 	const [wordFocusMode, setWordFocusMode] = useState(false);
 	// Rhyme Families overlay
 	const [showRhymeExplorer, setShowRhymeExplorer] = useState(false);
+	// Flow Beat Generator overlay
+	const [showFlowBeatGenerator, setShowFlowBeatGenerator] = useState(false);
 	const [storyArcSummary, setStoryArcSummary] = useState('');
 	const [storyArcTheme, setStoryArcTheme] = useState('');
 	const [storyArcGenre, setStoryArcGenre] = useState('');
@@ -2192,22 +2184,12 @@ function App() {
 					label: 'Flow Prompts',
 					preview: (fuelPack.flowPrompts ?? [])[0] ?? DEFAULT_FLOW_PROMPT,
 					detail: (
-						<ul className="focus-list">
-							{(fuelPack.flowPrompts ?? []).map((prompt) => (
-								<li key={prompt}>{renderInteractiveText(prompt)}</li>
-							))}
-						</ul>
-					)
-				} as DeckCard,
-				{
-					id: 'challenge',
-					label: 'Prompt Challenge',
-					preview: fuelPack.topicChallenge ?? 'Create something unexpected',
-					detail: (
-						<div className="card-detail-copy">
-							<p>{fuelPack.topicChallenge ?? 'Create something unexpected'}</p>
-							<p className="chord">Chord mood: {fuelPack.chordMood ?? 'Not specified'}</p>
-						</div>
+						<FlowPrompts
+							prompts={fuelPack.flowPrompts ?? []}
+							defaultPrompt={DEFAULT_FLOW_PROMPT}
+							renderInteractiveText={renderInteractiveText}
+							onGenerateFlowBeats={() => setShowFlowBeatGenerator(true)}
+						/>
 					)
 				} as DeckCard,
 				{
@@ -2724,7 +2706,6 @@ function App() {
 		}
 		return [] as Array<{ label: string; type: 'headline' | 'powerWord' | 'instrument' | 'meme' | 'sample'; index?: number }>;
 	}, [fuelPack, memeStimuli]);
-	const challengeText = useMemo(() => resolveChallengeText(fuelPack), [fuelPack]);
 	const lyricistPack = isLyricistPack(fuelPack) ? fuelPack : null;
 	const producerPack = isProducerPack(fuelPack) ? fuelPack : null;
 	const focusFallDurationMs = useMemo(() => Math.round(Math.max(2500, Math.min(20000, 12000 / Math.max(0.35, focusSpeed)))), [focusSpeed]);
@@ -2752,8 +2733,6 @@ function App() {
 						return [pack.newsPrompt.headline, pack.newsPrompt.context, pack.newsPrompt.source];
 					case 'flow-prompts':
 						return [...(pack.flowPrompts ?? [])];
-					case 'challenge':
-						return [pack.topicChallenge, pack.chordMood];
 					case 'meme-sound':
 						return [pack.memeSound?.name, pack.memeSound?.description].filter(Boolean) as string[];
 					case 'fragments':
@@ -2882,10 +2861,6 @@ function App() {
 				{fuelPack && (
 					<>
 						<FocusStream anchored forceActive={inFocusOverlay} />
-						<div className="detail-challenge">
-							<span className="label">Prompt Challenge</span>
-							<p>{challengeText}</p>
-						</div>
 						<div className="news-headlines">
 							<span className="label">Linked Headlines</span>
 							{headlineSearchParams.randomSeed !== null && <p className="hint">Random mode on — showing anything timely.</p>}
@@ -4116,6 +4091,18 @@ function App() {
 				</FocusModeOverlay>
 			)}
 
+
+			{showFlowBeatGenerator && (
+				<FocusModeOverlay
+					isOpen={showFlowBeatGenerator}
+					onClose={() => setShowFlowBeatGenerator(false)}
+					title="Flow Beat Generator"
+					ariaLabel="Flow Beat Generator overlay"
+					variant="fullscreen"
+				>
+					<FlowBeatGenerator onClose={() => setShowFlowBeatGenerator(false)} />
+				</FocusModeOverlay>
+			)}
 
 			{showOnboarding && (
 				<div className="onboarding-backdrop" role="dialog" aria-modal="true">
