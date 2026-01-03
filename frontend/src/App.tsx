@@ -21,6 +21,7 @@ import { RhymeFamiliesDetail } from './components/RhymeFamilies';
 import { StoryArcDetail } from './components/StoryArc';
 import { FlowBeatGenerator } from './components/FlowBeatGenerator';
 import { FlowPrompts } from './components/FlowPrompts';
+import { MemeSoundCard } from './components/MemeSoundCard';
 import { CombinedFocusMode } from './components/workspace/CombinedFocusMode';
 import { CreatorSettingsModal } from './components/workspace/CreatorSettingsModal';
 import { FocusModeControls } from './components/workspace/FocusModeControls';
@@ -2196,17 +2197,7 @@ function App() {
 					id: 'meme-sound',
 					label: 'Meme Sound',
 					preview: fuelPack.memeSound?.name ?? 'Sound cue',
-					detail: (
-						<div className="card-detail-copy">
-							<p><strong>{fuelPack.memeSound?.name}</strong></p>
-							<p>{fuelPack.memeSound?.description}</p>
-							{fuelPack.memeSound?.sampleUrl && (
-								<a className="btn micro" href={fuelPack.memeSound.sampleUrl} target="_blank" rel="noreferrer">
-									Open sample
-								</a>
-							)}
-						</div>
-					)
+					detail: <MemeSoundCard memeSound={fuelPack.memeSound} />
 				} as DeckCard,
 				{
 					id: 'fragments',

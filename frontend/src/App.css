@@ -3012,11 +3012,53 @@
   color: rgba(148, 163, 184, 0.75);
 }
 
+.meme-sound-card {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.meme-sound-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.meme-sound-actions .btn {
+  flex: 1;
+  min-width: 100px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  background: rgba(96, 165, 250, 0.08);
+  color: var(--mood-contrast);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.meme-sound-actions .btn:hover:not(:disabled) {
+  background: rgba(96, 165, 250, 0.15);
+  border-color: rgba(96, 165, 250, 0.5);
+  transform: translateY(-1px);
+}
+
+.meme-sound-actions .btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.meme-sound-actions .btn.playing {
+  background: rgba(34, 211, 238, 0.12);
+  border-color: rgba(34, 211, 238, 0.4);
+}
+
 .title-prompt {
   margin-top: 0.45rem;
   color: rgba(248, 250, 252, 0.75);
   font-style: italic;
 }
+
 
 .chord {
   color: rgba(96, 165, 250, 0.85);

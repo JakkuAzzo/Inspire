@@ -625,6 +625,84 @@ function buildApiRouter() {
     res.json({ items: listMockNews(filters) });
   });
 
+  // Audio proxy endpoint for streaming/caching soundboardguys and similar URLs
+  router.get('/proxy-audio', async (req: Request, res: Response) => {
+    const urlParam = req.query.url as string | undefined;
+    if (!urlParam) {
+      return res.status(400).json({ error: 'url query parameter required' });
+    }
+
+    try {
+      // Validate URL
+      const targetUrl = new URL(urlParam);
+      const allowedHosts = ['soundboardguys.com', 'cdn.soundboardguys.com'];
+      const isAllowed = allowedHosts.some((host) => targetUrl.hostname.endsWith(host));
+
+      if (!isAllowed) {
+        return res.status(403).json({ error: 'Unsupported audio source' });
+      }
+
+      // For soundboardguys pages (not direct MP3), use Playwright to extract the MP3 URL
+      if (targetUrl.hostname.includes('soundboardguys.com') && !targetUrl.pathname.includes('.mp3')) {
+        try {
+          // Use the PlaywrightAPI if available, otherwise fetch the page and look for audio tag
+          const audioResponse = await fetch(urlParam);
+          if (!audioResponse.ok) {
+            return res.status(404).json({ error: 'Unable to reach audio source' });
+          }
+
+          const htmlText = await audioResponse.text();
+          // Look for MP3 URL in HTML (in audio tags or download links)
+          const mp3Regex = /href=["']([^"']*\.mp3[^"']*)["']|src=["']([^"']*\.mp3[^"']*)["']/gi;
+          const match = mp3Regex.exec(htmlText);
+
+          if (!match) {
+            return res.status(404).json({ error: 'No MP3 URL found on the page' });
+          }
+
+          const mp3Url = match[1] || match[2];
+          if (!mp3Url) {
+            return res.status(404).json({ error: 'Unable to extract MP3 URL' });
+          }
+
+          // Fetch the actual MP3 file
+          const mp3Response = await fetch(mp3Url);
+          if (!mp3Response.ok) {
+            return res.status(404).json({ error: 'Unable to download MP3 file' });
+          }
+
+          // Stream the MP3 with proper headers
+          res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('Cache-Control', 'public, max-age=604800'); // Cache for 1 week
+          res.setHeader('Access-Control-Allow-Origin', '*');
+
+          // Stream the response body to client
+          const buffer = await mp3Response.arrayBuffer();
+          res.send(Buffer.from(buffer));
+        } catch (err) {
+          console.error('[proxy-audio] Error extracting MP3 from soundboardguys page:', err);
+          return res.status(500).json({ error: 'Failed to extract audio URL from page' });
+        }
+      } else {
+        // Direct MP3 URL or other audio source
+        const audioResponse = await fetch(urlParam);
+        if (!audioResponse.ok) {
+          return res.status(404).json({ error: 'Unable to reach audio source' });
+        }
+
+        res.setHeader('Content-Type', audioResponse.headers.get('Content-Type') || 'audio/mpeg');
+        res.setHeader('Cache-Control', 'public, max-age=604800');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        const buffer = await audioResponse.arrayBuffer();
+        res.send(Buffer.from(buffer));
+      }
+    } catch (err) {
+      console.error('[proxy-audio] Error:', err);
+      res.status(500).json({ error: 'Failed to proxy audio' });
+    }
+  });
+
   // Daily challenge activity (mocked)
   router.get('/challenges/activity', (req: Request, res: Response) => {
     const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
