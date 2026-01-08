@@ -1168,6 +1168,206 @@ function buildApiRouter() {
     res.json({ uploaderId, impressions: Math.floor(Math.random() * 1000), downloads: Math.floor(Math.random() * 200), ctr: Math.random() });
   });
 
+  // ============ COLLABORATIVE SESSION ROUTES ============
+
+  // In-memory store for collaborative sessions (production would use DB)
+  const collaborativeSessions = new Map<string, any>();
+
+  /**
+   * POST /api/sessions/collaborate
+   * Create a new collaborative session
+   * NOTE: Only authenticated users can create full sessions.
+   * Guests can create sessions but with a 1-hour expiry.
+   */
+  router.post('/sessions/collaborate', (req: Request, res: Response) => {
+    try {
+      const { title, description, mode, submode, maxParticipants = 4, maxStreams = 4, isGuest = false } = req.body || {};
+
+      if (!title || !mode || !submode) {
+        return res.status(400).json({ error: 'title, mode, and submode required' });
+      }
+
+      // Guests can create sessions but they expire after 1 hour
+      if (isGuest) {
+        console.log('[Collab] Guest creating temporary collaboration session (1 hour expiry)');
+      }
+
+      const sessionId = createId('collab-session');
+      const now = Date.now();
+      const expiresAt = isGuest ? now + (60 * 60 * 1000) : undefined; // 1 hour for guests, unlimited for authenticated
+      
+      const session: any = {
+        id: sessionId,
+        title,
+        description: description || '',
+        mode,
+        submode,
+        hostId: 'user-' + Date.now(), // In production, get from auth
+        hostUsername: 'Creator',
+        createdAt: now,
+        expiresAt, // Expiry timestamp for guest sessions
+        isGuestSession: isGuest,
+        status: 'waiting',
+        maxParticipants,
+        maxStreams,
+        participants: [],
+        viewers: [],
+        daw: {
+          id: `daw-${sessionId}`,
+          bpm: 120,
+          timeSignature: '4/4',
+          key: 'C',
+          scale: 'major',
+          notes: [],
+          tempo: 120,
+          currentBeat: 0,
+          isPlaying: false,
+          lastUpdatedBy: 'host',
+          lastUpdatedAt: now
+        },
+        audioSyncState: {
+          serverTimestamp: now,
+          playbackPosition: 0,
+          isPlaying: false,
+          tempo: 120,
+          clientLatency: 0
+        },
+        comments: [],
+        isPersisted: false,
+        recordingUrl: undefined
+      };
+
+      collaborativeSessions.set(sessionId, session);
+      res.status(201).json({ id: sessionId, session });
+    } catch (err) {
+      console.error('[Collab] Failed to create session:', err);
+      res.status(500).json({ error: 'Failed to create session' });
+    }
+  });
+
+  /**
+   * GET /api/sessions/:sessionId
+   * Retrieve a collaborative session
+   */
+  router.get('/sessions/:sessionId', (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.params;
+      const session = collaborativeSessions.get(sessionId);
+
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      // Check if guest session has expired
+      if (session.isGuestSession && session.expiresAt && Date.now() > session.expiresAt) {
+        collaborativeSessions.delete(sessionId);
+        return res.status(410).json({ error: 'Guest session has expired' });
+      }
+
+      // Calculate remaining time for guest sessions
+      const remainingMs = session.expiresAt ? Math.max(0, session.expiresAt - Date.now()) : null;
+      
+      res.json({ 
+        session,
+        ...(remainingMs !== null && { remainingMs, remainingMinutes: Math.ceil(remainingMs / 60000) })
+      });
+    } catch (err) {
+      console.error('[Collab] Failed to retrieve session:', err);
+      res.status(500).json({ error: 'Failed to retrieve session' });
+    }
+  });
+
+  /**
+   * PUT /api/sessions/:sessionId
+   * Update a collaborative session (DAW state, comments, etc)
+   */
+  router.put('/sessions/:sessionId', (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.params;
+      const session = collaborativeSessions.get(sessionId);
+
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      const { daw, comments, audioSyncState, status } = req.body || {};
+
+      if (daw) session.daw = { ...session.daw, ...daw };
+      if (comments) session.comments = comments;
+      if (audioSyncState) session.audioSyncState = { ...session.audioSyncState, ...audioSyncState };
+      if (status) session.status = status;
+
+      collaborativeSessions.set(sessionId, session);
+      res.json({ session });
+    } catch (err) {
+      console.error('[Collab] Failed to update session:', err);
+      res.status(500).json({ error: 'Failed to update session' });
+    }
+  });
+
+  /**
+   * GET /api/sessions/:sessionId/comments
+   * Get all comments in a session
+   */
+  router.get('/sessions/:sessionId/comments', (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.params;
+      const session = collaborativeSessions.get(sessionId);
+
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      res.json({ comments: session.comments || [] });
+    } catch (err) {
+      console.error('[Collab] Failed to retrieve comments:', err);
+      res.status(500).json({ error: 'Failed to retrieve comments' });
+    }
+  });
+
+  /**
+   * POST /api/sessions/:sessionId/votes
+   * Record a vote on a comment or session
+   */
+  router.post('/sessions/:sessionId/votes', (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.params;
+      const { targetId, targetType, voteType, userId } = req.body || {};
+
+      if (!targetId || !targetType || !voteType) {
+        return res.status(400).json({ error: 'targetId, targetType, and voteType required' });
+      }
+
+      // In production, save to database
+      res.json({
+        voteId: createId('vote'),
+        sessionId,
+        targetId,
+        targetType,
+        voteType,
+        userId,
+        createdAt: Date.now()
+      });
+    } catch (err) {
+      console.error('[Collab] Failed to record vote:', err);
+      res.status(500).json({ error: 'Failed to record vote' });
+    }
+  });
+
+  /**
+   * GET /api/sessions
+   * List all active collaborative sessions
+   */
+  router.get('/sessions', (_req: Request, res: Response) => {
+    try {
+      const sessions = Array.from(collaborativeSessions.values()).filter(s => s.status !== 'ended');
+      res.json({ sessions, count: sessions.length });
+    } catch (err) {
+      console.error('[Collab] Failed to list sessions:', err);
+      res.status(500).json({ error: 'Failed to list sessions' });
+    }
+  });
+
   return router;
 }
 
@@ -1349,6 +1549,219 @@ io.on('connection', (socket) => {
     const room = incrementRoomCounts(roomId, 0, 1);
     io.emit('rooms:update', getRoomsSnapshot());
     io.to(roomId).emit('room:presence', { roomId, user, action: 'spectating' });
+  });
+
+  // ============ COLLABORATIVE SESSION HANDLERS ============
+
+  // Join collaborative session
+  socket.on('collab:join', ({ sessionId, userId, username, role }: {
+    sessionId: string;
+    userId: string;
+    username: string;
+    role: 'host' | 'collaborator' | 'viewer';
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    socket.join(roomKey);
+    
+    // Broadcast participant joined to all in session
+    io.to(roomKey).emit('collab:participant-joined', {
+      sessionId,
+      userId,
+      username,
+      role,
+      joinedAt: Date.now(),
+      isActive: true
+    });
+
+    console.log(`[Collab] ${username} (${role}) joined session ${sessionId}`);
+  });
+
+  // Leave collaborative session
+  socket.on('collab:leave', ({ sessionId, userId }: { sessionId: string; userId: string }) => {
+    const roomKey = `collab:${sessionId}`;
+    socket.leave(roomKey);
+    
+    io.to(roomKey).emit('collab:participant-left', {
+      sessionId,
+      userId,
+      leftAt: Date.now()
+    });
+
+    console.log(`[Collab] User ${userId} left session ${sessionId}`);
+  });
+
+  // Video stream events
+  socket.on('collab:stream:init', ({ sessionId, streamId, userId, username }: {
+    sessionId: string;
+    streamId: string;
+    userId: string;
+    username: string;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    io.to(roomKey).emit('collab:stream:ready', {
+      sessionId,
+      streamId,
+      userId,
+      username
+    });
+  });
+
+  socket.on('collab:stream:update', ({ sessionId, streamId, data }: {
+    sessionId: string;
+    streamId: string;
+    data: any;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    socket.to(roomKey).emit('collab:stream:updated', {
+      sessionId,
+      streamId,
+      data,
+      updatedAt: Date.now()
+    });
+  });
+
+  socket.on('collab:stream:control', ({ sessionId, streamId, userId, control, enabled }: {
+    sessionId: string;
+    streamId: string;
+    userId: string;
+    control: 'audio' | 'video';
+    enabled: boolean;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    io.to(roomKey).emit('collab:stream:control-changed', {
+      sessionId,
+      streamId,
+      userId,
+      control,
+      enabled,
+      changedAt: Date.now()
+    });
+  });
+
+  // DAW sync events
+  socket.on('collab:daw:sync', ({ sessionId, dawState }: {
+    sessionId: string;
+    dawState: any;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    // Broadcast to all but sender (they already have the state)
+    socket.to(roomKey).emit('collab:daw:synced', {
+      sessionId,
+      dawState,
+      syncedAt: Date.now(),
+      serverTimestamp: Date.now()
+    });
+  });
+
+  socket.on('collab:daw:note-add', ({ sessionId, note }: {
+    sessionId: string;
+    note: any;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    io.to(roomKey).emit('collab:daw:note-added', {
+      sessionId,
+      note,
+      addedAt: Date.now()
+    });
+  });
+
+  socket.on('collab:daw:note-remove', ({ sessionId, noteId }: {
+    sessionId: string;
+    noteId: string;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    io.to(roomKey).emit('collab:daw:note-removed', {
+      sessionId,
+      noteId,
+      removedAt: Date.now()
+    });
+  });
+
+  socket.on('collab:daw:playback', ({ sessionId, isPlaying, position, tempo }: {
+    sessionId: string;
+    isPlaying: boolean;
+    position: number;
+    tempo: number;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    io.to(roomKey).emit('collab:daw:playback-changed', {
+      sessionId,
+      isPlaying,
+      position,
+      tempo,
+      changedAt: Date.now(),
+      serverTimestamp: Date.now()
+    });
+  });
+
+  socket.on('collab:daw:tempo', ({ sessionId, tempo }: {
+    sessionId: string;
+    tempo: number;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    io.to(roomKey).emit('collab:daw:tempo-changed', {
+      sessionId,
+      tempo,
+      changedAt: Date.now()
+    });
+  });
+
+  // Audio sync events (for playback position sync)
+  socket.on('collab:audio:sync-request', ({ sessionId }: { sessionId: string }) => {
+    socket.emit('collab:audio:sync-response', {
+      sessionId,
+      serverTimestamp: Date.now(),
+      clientLatencyMs: 0 // Client calculates this
+    });
+  });
+
+  // Comment events
+  socket.on('collab:comment:add', ({ sessionId, comment }: {
+    sessionId: string;
+    comment: any;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    io.to(roomKey).emit('collab:comment:added', {
+      sessionId,
+      comment,
+      addedAt: Date.now()
+    });
+  });
+
+  socket.on('collab:comment:delete', ({ sessionId, commentId }: {
+    sessionId: string;
+    commentId: string;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    io.to(roomKey).emit('collab:comment:deleted', {
+      sessionId,
+      commentId,
+      deletedAt: Date.now()
+    });
+  });
+
+  // Vote events
+  socket.on('collab:vote', ({ sessionId, targetId, targetType, voteType, userId }: {
+    sessionId: string;
+    targetId: string;
+    targetType: 'comment' | 'session';
+    voteType: 'upvote' | 'downvote';
+    userId: string;
+  }) => {
+    const roomKey = `collab:${sessionId}`;
+    io.to(roomKey).emit('collab:vote:registered', {
+      sessionId,
+      targetId,
+      targetType,
+      voteType,
+      userId,
+      votedAt: Date.now()
+    });
+  });
+
+  // Disconnect handler
+  socket.on('disconnect', () => {
+    console.log(`[Socket] Client disconnected: ${socket.id}`);
   });
 });
 

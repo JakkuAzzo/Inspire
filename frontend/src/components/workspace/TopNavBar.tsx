@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import type { CreativeMode, InspireAnyPack, ModeDefinition, ModeSubmode } from '../../types';
 
 export interface TopNavBarProps {
@@ -36,8 +37,21 @@ export function TopNavBar({
 	onToggleWorkspaceControls,
 	onOpenSettings
 }: TopNavBarProps) {
+	const [isCollapsed, setIsCollapsed] = useState(false);
+
+	useEffect(() => {
+		const handleResize = () => {
+			// Collapse navbar when viewport width is less than 1200px
+			setIsCollapsed(window.innerWidth < 1200);
+		};
+
+		handleResize(); // Check on mount
+		window.addEventListener('resize', handleResize);
+		return () => window.removeEventListener('resize', handleResize);
+	}, []);
+
 	return (
-		<header className="top-nav glass">
+		<header className={`top-nav glass ${isCollapsed ? 'collapsed' : ''}`}>
 			<div className="nav-left">
 				<button className="back-button" type="button" onClick={onBackToModes}>
 					← Studios

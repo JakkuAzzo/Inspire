@@ -10,7 +10,8 @@ export default {
     video: 'off'
   },
   webServer: {
-    command: 'cd .. && npm run dev',
+    // Use the project dev script per team preference
+    command: 'sh ../run_dev.sh',
     url: 'http://localhost:8080',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

@@ -257,3 +257,119 @@ export interface StoryArcGenerateRequest {
   bpm?: number;
   nodeCount?: number;
 }
+
+// ============ COLLABORATIVE SESSION TYPES ============
+
+export interface VideoStreamMetadata {
+  streamId: string;
+  userId: string;
+  username: string;
+  isActive: boolean;
+  isMuted: boolean;
+  isVideoOn: boolean;
+  joinedAt: number;
+  streamType: 'main' | 'secondary' | 'viewer';
+}
+
+export interface DAWNote {
+  id: string;
+  pitch: number; // 0-127 MIDI note number
+  startTime: number; // in beats
+  duration: number; // in beats
+  velocity: number; // 0-127
+  track: number; // which track/instrument
+}
+
+export interface DAWSession {
+  id: string;
+  bpm: number;
+  timeSignature: string; // e.g., "4/4"
+  key: string;
+  scale: string;
+  notes: DAWNote[];
+  tempo: number;
+  currentBeat: number; // playhead position
+  isPlaying: boolean;
+  lastUpdatedBy: string;
+  lastUpdatedAt: number;
+}
+
+export interface AudioSyncState {
+  serverTimestamp: number; // server's master clock (ms since epoch)
+  playbackPosition: number; // playhead in beats
+  isPlaying: boolean;
+  tempo: number;
+  clientLatency: number; // estimated network latency in ms
+}
+
+export interface CommentThread {
+  id: string;
+  userId: string;
+  username: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  isEdited: boolean;
+  replies?: CommentThread[];
+  voteCount: number;
+}
+
+export interface VoteRecord {
+  id: string;
+  userId: string;
+  targetType: 'comment' | 'session';
+  targetId: string;
+  voteType: 'upvote' | 'downvote';
+  createdAt: number;
+}
+
+export interface CollaborativeSessionParticipant {
+  userId: string;
+  username: string;
+  role: 'host' | 'collaborator' | 'viewer';
+  joinedAt: number;
+  isActive: boolean;
+  audioEnabled: boolean;
+  videoEnabled: boolean;
+}
+
+export interface CollaborativeSession {
+  id: string;
+  title: string;
+  description: string;
+  mode: CreativeMode;
+  submode: string;
+  hostId: string;
+  hostUsername: string;
+  createdAt: number;
+  startedAt?: number;
+  endedAt?: number;
+  status: 'waiting' | 'active' | 'ended';
+  maxParticipants: number;
+  maxStreams: number; // typically 4
+  participants: CollaborativeSessionParticipant[];
+  viewers: CollaborativeSessionParticipant[];
+  daw: DAWSession;
+  audioSyncState: AudioSyncState;
+  comments: CommentThread[];
+  isPersisted: boolean; // whether to save to database
+  recordingUrl?: string; // link to recording if available
+}
+
+export interface CollaborativeSessionRequest {
+  title: string;
+  description?: string;
+  mode: CreativeMode;
+  submode: string;
+  maxParticipants?: number;
+  maxStreams?: number;
+  isGuest?: boolean; // If true, session expires after 1 hour
+}
+
+export interface StreamEventPayload {
+  sessionId: string;
+  streamId: string;
+  userId: string;
+  username: string;
+  data?: any;
+}
