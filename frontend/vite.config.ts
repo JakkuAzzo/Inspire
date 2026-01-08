@@ -1,12 +1,18 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import fs from 'fs'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
-    https: false, // Use HTTP for localhost (which allows mediaDevices)
+    https: process.env.VITE_CERT_PATH && process.env.VITE_KEY_PATH
+      ? {
+          cert: fs.readFileSync(process.env.VITE_CERT_PATH, 'utf-8'),
+          key: fs.readFileSync(process.env.VITE_KEY_PATH, 'utf-8'),
+        }
+      : undefined,
     host: 'localhost', // Explicitly use localhost
     proxy: {
       '/api': {
@@ -19,7 +25,7 @@ export default defineConfig({
       },
     },
   },
-  // @ts-expect-error Vitest config is supported by Vite when types are available
+  // @ts-ignore Vitest config is supported by Vite
   test: {
     environment: 'jsdom',
     setupFiles: './src/setupTests.ts',

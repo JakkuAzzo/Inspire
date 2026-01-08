@@ -9,6 +9,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import type { DAWSession, DAWNote, AudioSyncState } from '../../types';
 import audioSyncService, { type SyncMetrics } from '../../services/audioSyncService';
+import getSynthesizer from '../../services/audioSynthesizer';
 import './CollaborativeDAW.css';
 
 export interface CollaborativeDAwProps {
@@ -54,6 +55,7 @@ export function CollaborativeDAW({
   const containerRef = useRef<HTMLDivElement>(null);
   const pianoRollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
+  const playedNotesRef = useRef<Set<string>>(new Set()); // Track played note IDs to avoid re-triggering
 
   const [tempo, setTempo] = useState(dawSession.bpm);
   const [isPlaying, setIsPlaying] = useState(dawSession.isPlaying);
@@ -64,6 +66,8 @@ export function CollaborativeDAW({
   const [playheadPosition, setPlayheadPosition] = useState(0);
   const [syncMetrics, setSyncMetrics] = useState<SyncMetrics | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const playbackStartTimeRef = useRef<number | null>(null);
+  const playbackStartPositionRef = useRef<number>(0);
 
   const beatWidth = 80; // pixels per beat
   const trackHeight = 20; // pixels per semitone
@@ -102,12 +106,26 @@ export function CollaborativeDAW({
     if (!isPlaying) {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
+      // Stop all synthesizer notes when playback stops
+      const synth = getSynthesizer();
+      synth.stopAll();
+      playedNotesRef.current.clear();
+      playbackStartTimeRef.current = null;
       return;
     }
 
-    const startTime = performance.now();
-    const startPosition = playheadPosition;
+    // Reset playhead to 0 when starting playback
+    if (playbackStartTimeRef.current === null) {
+      setPlayheadPosition(0);
+      playbackStartPositionRef.current = 0;
+      playbackStartTimeRef.current = performance.now();
+      playedNotesRef.current.clear();
+    }
+
+    const startTime = playbackStartTimeRef.current;
+    const startPosition = playbackStartPositionRef.current;
 
     const animate = (currentTime: number) => {
       const elapsedMs = currentTime - startTime;
@@ -116,8 +134,33 @@ export function CollaborativeDAW({
 
       setPlayheadPosition(newPosition);
 
+      // Check which notes should be playing at this position
+      const synth = getSynthesizer();
+      const tolerance = 0.05; // 50ms lookahead
+
+      for (const note of notes) {
+        const noteId = note.id;
+        const noteStart = note.startTime;
+        const noteEnd = note.startTime + note.duration;
+
+        // Play note if we just crossed its start time
+        if (
+          newPosition >= noteStart &&
+          newPosition < noteStart + tolerance &&
+          !playedNotesRef.current.has(noteId)
+        ) {
+          synth.playNote(note.pitch, note.duration);
+          playedNotesRef.current.add(noteId);
+        }
+
+        // Reset tracking when playback passes the note's end
+        if (newPosition > noteEnd && playedNotesRef.current.has(noteId)) {
+          playedNotesRef.current.delete(noteId);
+        }
+      }
+
       // Sync periodically (every 500ms)
-      if (elapsedMs % 500 < 16) {
+      if (Math.floor(elapsedMs / 500) !== Math.floor((elapsedMs - 16) / 500)) {
         const syncState: AudioSyncState = {
           ...audioSyncState,
           playbackPosition: newPosition,
@@ -135,9 +178,10 @@ export function CollaborativeDAW({
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
     };
-  }, [isPlaying, playheadPosition, tempo, audioSyncState]);
+  }, [isPlaying, tempo, audioSyncState, notes]);
 
   const togglePlayback = useCallback(() => {
     const newState = !isPlaying;
@@ -218,6 +262,16 @@ export function CollaborativeDAW({
       setSelectedNotes(new Set());
     }
   }, [selectedNotes, removeNote]);
+
+  // Play note when piano key is clicked (for testing)
+  const handlePianoKeyClick = useCallback((midiNote: number) => {
+    try {
+      const synth = getSynthesizer();
+      synth.playNote(midiNote, 0.5); // Play for 500ms
+    } catch (err) {
+      console.warn('Could not play note:', err);
+    }
+  }, []);
 
   // Calculate max beat for grid sizing
   const maxBeat = Math.max(...notes.map(n => n.startTime + n.duration), 16);
@@ -308,12 +362,21 @@ export function CollaborativeDAW({
           {OCTAVES.flatMap(octave =>
             PIANO_KEYS.map((key, index) => {
               const isBlackKey = key.includes('#');
+              const midiNote = getMidiNote(key, octave);
               return (
                 <div
                   key={`${octave}-${key}`}
                   className={`piano-key ${isBlackKey ? 'black' : 'white'}`}
                   title={`${key}${octave}`}
                   style={{ height: `${trackHeight}px` }}
+                  onClick={() => handlePianoKeyClick(midiNote)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      handlePianoKeyClick(midiNote);
+                    }
+                  }}
                 >
                   {index === 0 && <span className="key-label">{key}4</span>}
                 </div>

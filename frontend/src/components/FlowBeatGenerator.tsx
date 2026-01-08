@@ -84,6 +84,9 @@ export const FlowBeatGenerator: React.FC<FlowBeatGeneratorProps> = ({ onClose })
 		return beatMs * getNoteUnits(noteLength);
 	};
 
+	// Suppress unused warning - function may be used in future refactoring
+	void getNoteDelayMs;
+
 	const stopAll = React.useCallback(() => {
 		setIsPlaying(false);
 		if (schedulerRef.current) {

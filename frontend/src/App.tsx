@@ -1163,6 +1163,22 @@ function App() {
 		}
 	}, []);
 
+	const handleSignOut = useCallback(async () => {
+		try {
+			await authService.logout();
+			setAuthUser(null);
+			setUserId('');
+			setShowAccountModal(false);
+			// Reset app state
+			setFuelPack(null);
+			setMode(null);
+			setSubmode(null);
+			setWorkspaceQueue([]);
+		} catch (err: any) {
+			console.error('Sign out failed:', err);
+		}
+	}, []);
+
 	// Load current user on mount
 	useEffect(() => {
 		authService.getCurrentUser().then(user => {
@@ -3131,82 +3147,77 @@ function App() {
 					</div>
 					<div className="nav-actions">
 						<div className="actions-group" role="group" aria-label="Workspace actions">
-							<button
-								type="button"
-								className="icon-button"
-								title="Generate fuel pack"
-								aria-label="Generate fuel pack"
-								onClick={handleGeneratePack}
-								disabled={loading === 'generate'}
-							>
-								⚡
-							</button>
-							<button
-								type="button"
-								className="icon-button"
-								title="Remix current pack"
-								aria-label="Remix current pack"
-								onClick={handleRemixPack}
-								disabled={loading === 'remix' || !fuelPack}
-							>
-								♻️
-							</button>
-							<button
-								type="button"
-								className="icon-button"
-								title="Start collaboration"
-								aria-label="Start collaboration"
-								onClick={() => setShowCollaborativeCreate(true)}
-							>
-								🎬
-							</button>
-							<button
-								type="button"
-								className="icon-button"
-								title="Share pack link"
-								aria-label="Share pack link"
-								onClick={() => handleSharePack(fuelPack)}
-								disabled={!fuelPack}
-							>
-								🔗
-							</button>
-							<button
-								type="button"
-								className="icon-button"
-								title="Save to archive"
-								aria-label="Save to archive"
-								onClick={handleSaveCurrentPack}
-								disabled={!fuelPack}
-							>
-								💾
-							</button>
-							<button
-								type="button"
-								className="icon-button"
-								title="Open saved packs"
-								aria-label="Open saved packs"
-								onClick={openSavedOverlay}
-							>
-								📁
-							</button>
-							<button
-								type="button"
-								className="icon-button"
-								title="Start collaboration"
-								aria-label="Start collaboration"
-								onClick={() => setShowCollaborativeCreate(true)}
-							>
-								🎬
-							</button>
-							<button
-								type="button"
-								className="icon-button"
-								title="Word Explorer"
-								aria-label="Open Word Explorer"
-								onClick={() => setShowWordExplorer(true)}
-							>
-								🔤
-							</button>
+							{submode && (
+								<>
+									<button
+										type="button"
+										className="icon-button"
+										title="Generate fuel pack"
+										aria-label="Generate fuel pack"
+										onClick={handleGeneratePack}
+										disabled={loading === 'generate'}
+									>
+										⚡
+									</button>
+									<button
+										type="button"
+										className="icon-button"
+										title="Remix current pack"
+										aria-label="Remix current pack"
+										onClick={handleRemixPack}
+										disabled={loading === 'remix' || !fuelPack}
+									>
+										♻️
+									</button>
+									<button
+										type="button"
+										className="icon-button"
+										title="Start collaboration"
+										aria-label="Start collaboration"
+										onClick={() => setShowCollaborativeCreate(true)}
+									>
+										🎬
+									</button>
+									<button
+										type="button"
+										className="icon-button"
+										title="Share pack link"
+										aria-label="Share pack link"
+										onClick={() => handleSharePack(fuelPack)}
+										disabled={!fuelPack}
+									>
+										🔗
+									</button>
+									<button
+										type="button"
+										className="icon-button"
+										title="Save to archive"
+										aria-label="Save to archive"
+										onClick={handleSaveCurrentPack}
+										disabled={!fuelPack}
+									>
+										💾
+									</button>
+									<button
+										type="button"
+										className="icon-button"
+										title="Open saved packs"
+										aria-label="Open saved packs"
+										onClick={openSavedOverlay}
+									>
+										📁
+									</button>
+									<button
+										type="button"
+										className="icon-button"
+										title="Word Explorer"
+										aria-label="Open Word Explorer"
+										onClick={() => setShowWordExplorer(true)}
+									>
+										🔤
+									</button>
+								</>
+							)}
 							<button
 								type="button"
 								className="icon-button"
@@ -3244,6 +3255,17 @@ function App() {
 						>
 							⚙️
 						</button>
+						{isAuthenticated && (
+							<button
+								type="button"
+								className="nav-signout"
+								aria-label="Sign out"
+								onClick={handleSignOut}
+								title="Sign out"
+							>
+								↪️
+							</button>
+						)}
 					</div>
 				</header>
 			) : (
