@@ -27,9 +27,11 @@ interface StreamTrack {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   stream?: MediaStream;
+  screenStream?: MediaStream;
   isLocal: boolean;
   isAudioEnabled: boolean;
   isVideoEnabled: boolean;
+  isScreenSharing?: boolean;
 }
 
 const GRID_LAYOUTS = {
@@ -143,10 +145,14 @@ export function VideoStreamManager({
     void initializeLocalStream();
 
     return () => {
-      // Cleanup: stop all tracks
+      // Cleanup: stop all tracks on unmount
       localStream?.getTracks().forEach(track => track.stop());
+      // Stop screen sharing if active
+      streams.forEach(stream => {
+        stream.screenStream?.getTracks().forEach(track => track.stop());
+      });
     };
-  }, [initializeLocalStream, localStream]);
+  }, [initializeLocalStream, localStream, streams]);
 
   // Add remote streams when participants join
   useEffect(() => {
@@ -181,8 +187,12 @@ export function VideoStreamManager({
   // Attach local stream to video element
   useEffect(() => {
     const localTrack = streams.get(localUserId);
-    if (localTrack?.videoRef.current && localStream) {
-      localTrack.videoRef.current.srcObject = localStream;
+    if (localTrack?.videoRef.current) {
+      // Use screen stream if screen sharing is active, otherwise use camera stream
+      const activeStream = localTrack.isScreenSharing ? localTrack.screenStream : localStream;
+      if (activeStream) {
+        localTrack.videoRef.current.srcObject = activeStream;
+      }
     }
   }, [streams, localStream, localUserId]);
 
@@ -228,13 +238,80 @@ export function VideoStreamManager({
     onControlChange?.(userId, 'video', newEnabled);
   }, [streams, onControlChange]);
 
+  const toggleScreenShare = useCallback(async (userId: string) => {
+    const track = streams.get(userId);
+    if (!track || !track.isLocal) return; // Only allow local user to share screen
+
+    try {
+      const isCurrentlySharing = track.isScreenSharing ?? false;
+
+      if (isCurrentlySharing && track.screenStream) {
+        // Stop screen sharing
+        track.screenStream.getTracks().forEach(t => t.stop());
+        setStreams(prev => {
+          const updated = new Map(prev);
+          const streamTrack = updated.get(userId);
+          if (streamTrack) {
+            streamTrack.screenStream = undefined;
+            streamTrack.isScreenSharing = false;
+          }
+          return updated;
+        });
+      } else {
+        // Start screen sharing
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            cursor: 'always' as DisplayCaptureSurfaceType
+          } as MediaTrackConstraints,
+          audio: false // Don't capture audio from screen
+        } as DisplayMediaStreamOptions);
+
+        // Stop sharing when user clicks "Stop sharing" in browser dialog
+        screenStream.getTracks().forEach(screenTrack => {
+          screenTrack.onended = () => {
+            setStreams(prev => {
+              const updated = new Map(prev);
+              const streamTrack = updated.get(userId);
+              if (streamTrack) {
+                streamTrack.screenStream = undefined;
+                streamTrack.isScreenSharing = false;
+              }
+              return updated;
+            });
+          };
+        });
+
+        setStreams(prev => {
+          const updated = new Map(prev);
+          const streamTrack = updated.get(userId);
+          if (streamTrack) {
+            streamTrack.screenStream = screenStream;
+            streamTrack.isScreenSharing = true;
+          }
+          return updated;
+        });
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'NotAllowedError') {
+        // User cancelled screen share
+        console.log('[VideoStreamManager] Screen share cancelled by user');
+      } else {
+        console.error('[VideoStreamManager] Failed to toggle screen share:', err);
+      }
+    }
+  }, [streams]);
+
   const leaveSession = useCallback(() => {
     // Stop all local tracks
     localStream?.getTracks().forEach(track => track.stop());
+    // Stop screen sharing if active
+    streams.forEach(stream => {
+      stream.screenStream?.getTracks().forEach(track => track.stop());
+    });
     setLocalStream(null);
     setStreams(new Map());
     onStreamLeave?.(localUserId);
-  }, [localStream, localUserId, onStreamLeave]);
+  }, [localStream, localUserId, onStreamLeave, streams]);
 
   const layoutClass = GRID_LAYOUTS[layout];
   const activeStreamCount = streams.size;
@@ -288,8 +365,8 @@ export function VideoStreamManager({
       <div className={`video-grid ${layoutClass}`} ref={containerRef}>
         {Array.from(streams.values()).map(track => (
           <div key={track.userId} className={`video-tile ${track.isLocal ? 'local' : 'remote'}`}>
-            {/* Video element (only show if video enabled) */}
-            {track.isVideoEnabled && (
+            {/* Video element (only show if video enabled or screen sharing) */}
+            {(track.isVideoEnabled || track.isScreenSharing) && (
               <video
                 ref={track.videoRef}
                 autoPlay
@@ -341,6 +418,17 @@ export function VideoStreamManager({
                 >
                   {track.isVideoEnabled ? '📹' : '📷'}
                 </button>
+                {track.isLocal && (
+                  <button
+                    type="button"
+                    className={`btn-control ${track.isScreenSharing ? 'enabled' : 'disabled'}`}
+                    title={track.isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
+                    onClick={() => toggleScreenShare(track.userId)}
+                    aria-label="Toggle screen share"
+                  >
+                    {track.isScreenSharing ? '📺' : '🖥️'}
+                  </button>
+                )}
               </div>
             </div>
           </div>

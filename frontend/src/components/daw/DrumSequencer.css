@@ -1,0 +1,192 @@
+.drum-sequencer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.sequencer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sequencer-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.preset-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.preset-select {
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: white;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.btn-clear {
+  padding: 0.5rem 1rem;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid #ef4444;
+  border-radius: 4px;
+  color: white;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-clear:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.btn-clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sequencer-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  overflow-x: auto;
+}
+
+.grid-header {
+  display: grid;
+  grid-template-columns: 80px repeat(16, 1fr);
+  gap: 2px;
+  margin-bottom: 0.25rem;
+}
+
+.drum-label-header {
+  /* Empty space above drum labels */
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.step-header.playing {
+  background: rgba(96, 165, 250, 0.3);
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.drum-row {
+  display: grid;
+  grid-template-columns: 80px repeat(16, 1fr);
+  gap: 2px;
+  align-items: center;
+}
+
+.drum-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.drum-label:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.drum-label.selected {
+  background: rgba(96, 165, 250, 0.3);
+  border: 1px solid #60a5fa;
+}
+
+.step-cell {
+  aspect-ratio: 1;
+  min-width: 30px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.step-cell:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.step-cell.active {
+  background: rgba(34, 197, 94, 0.3);
+  border-color: #22c55e;
+}
+
+.step-cell.active:hover {
+  background: rgba(34, 197, 94, 0.4);
+}
+
+.step-cell.current {
+  box-shadow: 0 0 0 2px #60a5fa;
+  animation: pulse 0.5s ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px #60a5fa;
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.5);
+  }
+}
+
+.step-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, #22c55e, rgba(34, 197, 94, 0.5));
+  transition: height 0.2s;
+}
+
+.sequencer-hint {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  margin-top: 0.5rem;
+}
+
+.sequencer-hint p {
+  margin: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .drum-row {
+    grid-template-columns: 60px repeat(16, 1fr);
+  }
+  
+  .grid-header {
+    grid-template-columns: 60px repeat(16, 1fr);
+  }
+  
+  .step-cell {
+    min-width: 24px;
+  }
+}

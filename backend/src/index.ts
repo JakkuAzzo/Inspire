@@ -703,6 +703,71 @@ function buildApiRouter() {
     }
   });
 
+  // Audio sample search (Freesound + Jamendo)
+  router.get('/audio/search', async (req: Request, res: Response) => {
+    const query = (req.query.query as string) || '';
+    const source = (req.query.source as string) || 'both';
+    const limitParam = req.query.limit ? parseInt(req.query.limit as string) : 20;
+    const limit = Math.min(limitParam, 50); // Cap at 50
+
+    if (!query.trim()) {
+      return res.status(400).json({ error: 'query parameter required' });
+    }
+
+    try {
+      const results: any = { sounds: [], tracks: [] };
+
+      // Search Freesound
+      if (source === 'freesound' || source === 'both') {
+        try {
+          const freesoundResults = await services.audioService?.searchSounds(query, limit);
+          if (freesoundResults && freesoundResults.length > 0) {
+            results.sounds = freesoundResults.map((sound: any) => ({
+              id: sound.id,
+              name: sound.name,
+              duration: sound.duration || 0,
+              previews: sound.previews || {},
+              tags: sound.tags || [],
+              username: sound.username || 'Unknown'
+            }));
+          }
+        } catch (err) {
+          console.warn('[audio/search] Freesound error:', err);
+        }
+      }
+
+      // Search Jamendo
+      if (source === 'jamendo' || source === 'both') {
+        try {
+          const jamendoResults = await services.audioService?.searchTracks?.(query, limit);
+          if (jamendoResults && jamendoResults.length > 0) {
+            results.tracks = jamendoResults.map((track: any) => ({
+              id: track.id,
+              name: track.name,
+              duration: track.duration || 0,
+              audio: track.audio || '',
+              albumname: track.albumname || '',
+              artist_name: track.artist_name || 'Unknown',
+              audiodownload_allowed: track.audiodownload_allowed || false
+            }));
+          }
+        } catch (err) {
+          console.warn('[audio/search] Jamendo error:', err);
+        }
+      }
+
+      // Return results
+      if (results.sounds.length === 0 && results.tracks.length === 0) {
+        return res.status(404).json({ error: 'No audio samples found' });
+      }
+
+      res.json(results);
+    } catch (err) {
+      console.error('[audio/search] Error:', err);
+      res.status(500).json({ error: 'Failed to search audio samples' });
+    }
+  });
+
   // Daily challenge activity (mocked)
   router.get('/challenges/activity', (req: Request, res: Response) => {
     const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;

@@ -9,6 +9,22 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+CERTS_DIR="$ROOT_DIR/.certs"
+
+# Generate self-signed HTTPS certificate if it doesn't exist
+setup_https_certs() {
+  if [[ ! -f "$CERTS_DIR/cert.pem" ]] || [[ ! -f "$CERTS_DIR/key.pem" ]]; then
+    echo "Generating self-signed HTTPS certificate..."
+    mkdir -p "$CERTS_DIR"
+    openssl req -x509 -newkey rsa:2048 -keyout "$CERTS_DIR/key.pem" -out "$CERTS_DIR/cert.pem" \
+      -days 365 -nodes -subj "/CN=localhost" 2>/dev/null || {
+      echo "Error: Failed to generate certificate. Make sure OpenSSL is installed." >&2
+      return 1
+    }
+    echo "✓ Self-signed certificate created at $CERTS_DIR"
+  fi
+}
+
 kill_port() {
   local port=$1
   if ! command -v lsof >/dev/null 2>&1; then
@@ -70,6 +86,8 @@ trap cleanup EXIT
 
 PIDS=()
 
+setup_https_certs || exit 1
+
 kill_port 3001
 kill_port 8080
 
@@ -80,8 +98,8 @@ PIDS+=($!)
 # Give the backend a short moment to boot before starting the frontend proxy
 sleep 2
 
-echo "Starting Inspire frontend on http://0.0.0.0:8080"
-npm run dev --prefix frontend -- --host 0.0.0.0 --port 8080 --strictPort &
+echo "Starting Inspire frontend on https://localhost:8080"
+VITE_CERT_PATH="$CERTS_DIR/cert.pem" VITE_KEY_PATH="$CERTS_DIR/key.pem" npm run dev --prefix frontend -- --host localhost --port 8080 --strictPort &
 PIDS+=($!)
 
 while true; do
