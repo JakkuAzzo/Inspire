@@ -180,6 +180,76 @@ npx playwright test     # Run E2E (builds + serves the app)
 - Meme Caption: pick a keyless template (Picsum preview) and generate a caption image (dummyimage).
 - Inspiration Image: per‑pack Picsum visual spark, with a refresh button.
 
+## 🎬 Collaboration & Real-Time Features
+
+### Collaborative Sessions
+
+Create real-time collaborative sessions where multiple users can work together on music production or editing tasks. Each session includes:
+
+- **Live Video & Audio Streams**: WebRTC-powered multi-user video grid supporting 1-4 simultaneous participants
+- **Shared Digital Audio Workstation (DAW)**: Synchronized BPM, tempo, key, and note editing across all participants
+- **Guest Session Time Limits**: Guest users are restricted to 1-hour sessions with a countdown timer visible in the session header
+- **Session Timer Display**: Real-time MM:SS countdown showing time remaining (for guest sessions)
+- **Instant Messaging**: Comments and notes shared within the session
+- **Session Persistence**: Sessions remain active until expiry or host closure
+
+### Camera Feed Example
+
+![Collaboration home screen](./docs/screenshots/collaboration/home-with-collab-peak.png)
+
+### How Collaborative Sessions Work
+
+1. **Create or Join**: Click the "Collaborate" peak on the home screen and start a new session or join an existing one
+2. **Grant Permissions**: Allow camera and microphone access when prompted
+3. **See Participants**: Watch video feeds from all active participants in a responsive grid layout
+4. **Share Controls**: Edit shared DAW parameters (BPM, key, notes) that sync in real-time to all participants
+5. **Session Timer** (Guests): Guest users see an orange countdown timer showing "MM:SS remaining" that automatically expires after 60 minutes
+6. **Leave Anytime**: Click the leave button to exit the session and return to the home screen
+
+### Guest Session Restrictions
+
+To manage resources fairly, guest users have the following limitations:
+
+- **1-Hour Time Limit**: Collaboration sessions expire automatically after 60 minutes for guests
+- **Server-Enforced Expiry**: The backend checks expiry on every access and returns HTTP 410 if the session has expired
+- **Visible Timer**: Guests see a countdown timer in the session header showing time remaining
+- **No Renewal**: Once expired, a guest must create a new session (authenticated users have unlimited sessions)
+
+### Multi-User Testing
+
+To test collaborative features with actual camera feeds:
+
+```bash
+# Run automated test with visible browsers showing both users
+npx playwright test collaboration-multiuser.spec.ts --headed
+
+# Or run specific test case
+npx playwright test collaboration-multiuser.spec.ts -g "should allow two users"
+```
+
+Test scenarios include:
+- ✅ Two users creating and joining the same session
+- ✅ Guest session timer display (60-minute countdown)
+- ✅ Expired session cleanup and HTTP 410 handling
+- ✅ Camera feed capture (both users visible in video grid)
+- ✅ Session metadata synchronization
+
+### Supported Platforms
+
+- Chrome/Chromium (WebRTC video)
+- Firefox (WebRTC video)
+- Safari (WebRTC video with limited codec support)
+- Mobile browsers (limited; camera access varies by OS)
+
+### Known Limitations
+
+- WebRTC requires camera/microphone hardware (physical or virtual camera)
+- Sessions use in-memory storage; restart loses all active sessions
+- Audio mixing not yet implemented (participants hear only their own microphone)
+- Future: Socket.IO event listeners for real-time DAW synchronization
+
+**See [COLLABORATION_VISUAL_GUIDE.md](./COLLABORATION_VISUAL_GUIDE.md) for detailed architecture diagrams, API responses, and implementation details.**
+
 ## Story Arc Pack Card (current state)
 
 **How it works today**

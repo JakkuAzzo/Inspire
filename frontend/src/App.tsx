@@ -25,6 +25,7 @@ import { MemeSoundCard } from './components/MemeSoundCard';
 import { CombinedFocusMode } from './components/workspace/CombinedFocusMode';
 import { CreatorSettingsModal } from './components/workspace/CreatorSettingsModal';
 import { FocusModeControls } from './components/workspace/FocusModeControls';
+import { CollaborativeSessionDetail } from './pages/CollaborativeSession';
 import { trackEvent } from './utils/analytics';
 import * as authService from './services/authService';
 import type { AuthUser } from './services/authService';
@@ -46,7 +47,9 @@ import type {
   ChallengeActivity,
   WorkspaceQueueItem,
 	MemeTemplate,
-	RemixMeta
+	RemixMeta,
+  CollaborativeSession,
+  CollaborativeSessionRequest
 } from './types';
 
 // Background helpers for mode/submode cards
@@ -835,6 +838,13 @@ function App() {
 	const [activeSessions] = useState<LiveSession[]>(LIVE_SESSION_PRESETS);
 	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 	const [viewerMode, setViewerMode] = useState<'idle' | 'spectating' | 'joining'>('idle');
+	// Collaborative session state
+	const [activeCollaborativeSession, setActiveCollaborativeSession] = useState<CollaborativeSession | null>(null);
+	const [showCollaborativeCreate, setShowCollaborativeCreate] = useState(false);
+	const [collaborativeSessionTitle, setCollaborativeSessionTitle] = useState('');
+	const [collaborativeSessionMode, setCollaborativeSessionMode] = useState<CreativeMode>('lyricist');
+	const [collaborativeSessionSubmode, setCollaborativeSessionSubmode] = useState('rapper');
+	const [userRole, setUserRole] = useState<'host' | 'collaborator' | 'viewer'>('host');
 	const [deckOrder, setDeckOrder] = useState<string[]>([]);
 	const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
 	const [spectateSearch, setSpectateSearch] = useState('');
@@ -1403,6 +1413,78 @@ function App() {
 		});
 	}, [challengeCompletedToday]);
 
+	const handleCreateCollaborativeSession = useCallback(async () => {
+		try {
+			setStatus('Creating collaboration room...');
+			const isGuest = !authUser; // User is a guest if not authenticated
+			
+			const request: CollaborativeSessionRequest = {
+				title: collaborativeSessionTitle || `${collaborativeSessionMode} Collab`,
+				mode: collaborativeSessionMode,
+				submode: collaborativeSessionSubmode,
+				isGuest
+			};
+
+			const res = await fetch('/api/sessions/collaborate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(request)
+			});
+
+			if (!res.ok) throw new Error('Failed to create session');
+			const body = await res.json();
+			const session: CollaborativeSession = body.session || body;
+			
+			setActiveCollaborativeSession(session);
+			setShowCollaborativeCreate(false);
+			setCollaborativeSessionTitle('');
+			setUserRole('host');
+			
+			// Show expiry warning for guests
+			if (isGuest && body.remainingMinutes) {
+				setStatus(`Collaboration room created! (Expires in ${body.remainingMinutes} minutes)`);
+			} else {
+				setStatus('Collaboration room created! Invite others to join.');
+			}
+			
+			trackEvent('collaborative_session_created', { 
+				sessionId: session.id,
+				mode: session.mode,
+				submode: session.submode,
+				isGuest
+			});
+		} catch (err) {
+			console.error('Failed to create collaborative session:', err);
+			setError('Unable to create collaboration room. Please try again.');
+		}
+	}, [collaborativeSessionTitle, collaborativeSessionMode, collaborativeSessionSubmode, userId, authUser]);
+
+	const handleJoinCollaborativeSession = useCallback(async (sessionId: string, role: 'collaborator' | 'viewer' = 'collaborator') => {
+		try {
+			setStatus('Joining collaboration room...');
+			const res = await fetch(`/api/sessions/${sessionId}`);
+			if (!res.ok) throw new Error('Session not found');
+			const session: CollaborativeSession = await res.json();
+			
+			setActiveCollaborativeSession(session);
+			setUserRole(role);
+			setStatus(`Joined ${session.title}!`);
+			trackEvent('collaborative_session_joined', {
+				sessionId,
+				role
+			});
+		} catch (err) {
+			console.error('Failed to join session:', err);
+			setError('Unable to join session. Check the session ID and try again.');
+		}
+	}, []);
+
+	const handleLeaveCollaborativeSession = useCallback(() => {
+		setActiveCollaborativeSession(null);
+		setUserRole('host');
+		setStatus('Left collaboration room.');
+		trackEvent('collaborative_session_left', {});
+	}, []);
 
 	const handleDismissOnboarding = useCallback(() => {
 		setShowOnboarding(false);
@@ -1511,19 +1593,6 @@ function App() {
 		setFuelPack(null);
 		setExpandedCard(null);
 		setStatus(`Spectating ${targetSession.owner}'s ${targetSession.title}`);
-	}, [activeSessions]);
-
-	const handleJoinSession = useCallback((sessionId: string) => {
-		const targetSession = activeSessions.find((session) => session.id === sessionId);
-		if (!targetSession) return;
-		setSelectedSessionId(sessionId);
-		setViewerMode('joining');
-		setCollaborationMode('collaborative');
-		setMode(targetSession.mode);
-		setSubmode(targetSession.submode);
-		setFuelPack(null);
-		setExpandedCard(null);
-		setStatus(`Joined ${targetSession.owner} in ${targetSession.title}`);
 	}, [activeSessions]);
 
 	const handleLeaveViewerMode = useCallback(() => {
@@ -3085,6 +3154,15 @@ function App() {
 							<button
 								type="button"
 								className="icon-button"
+								title="Start collaboration"
+								aria-label="Start collaboration"
+								onClick={() => setShowCollaborativeCreate(true)}
+							>
+								🎬
+							</button>
+							<button
+								type="button"
+								className="icon-button"
 								title="Share pack link"
 								aria-label="Share pack link"
 								onClick={() => handleSharePack(fuelPack)}
@@ -3110,6 +3188,15 @@ function App() {
 								onClick={openSavedOverlay}
 							>
 								📁
+							</button>
+							<button
+								type="button"
+								className="icon-button"
+								title="Start collaboration"
+								aria-label="Start collaboration"
+								onClick={() => setShowCollaborativeCreate(true)}
+							>
+								🎬
 							</button>
 							<button
 								type="button"
@@ -3230,17 +3317,31 @@ function App() {
 								onMouseLeave={() => setExpandedPeak(null)}
 							>
 								<div className="session-peak-header">
-									<h3>Join a collab</h3>
+									<h3>Collaborate</h3>
 									<p>Build alongside other artists.</p>
 								</div>
+								<button 
+									type="button" 
+									className="btn primary full-width"
+									onClick={() => setShowCollaborativeCreate(true)}
+									title="Create a new collaborative session"
+								>
+									🎬 Start
+								</button>
 								<ul className="session-peak-list">
+									{collaborativeSessions.length === 0 && <li className="session-empty">Create a session to invite others</li>}
 									{collaborativeSessions.map((session) => (
 										<li key={session.id}>
 											<div className="session-meta">
 												<strong>{session.title}</strong>
-												<span>{session.owner} · {session.participants} creators</span>
+												<span>{session.owner} · {session.participants} participants</span>
 											</div>
-											<button type="button" className="btn micro halo" onClick={() => handleJoinSession(session.id)}>
+											<button 
+												type="button" 
+												className="btn micro blue"
+												onClick={() => handleJoinCollaborativeSession(session.id, 'collaborator')}
+												title="Join this collaborative session"
+											>
 												Join
 											</button>
 										</li>
@@ -3249,49 +3350,49 @@ function App() {
 							</section>
 						)}
 
-						{/* Community Feed Peak */}
-						<section 
-							className={`session-peak glass ${expandedPeak === 'community' ? 'expanded' : ''}`}
-							onMouseEnter={() => setExpandedPeak('community')}
-							onMouseLeave={() => setExpandedPeak(null)}
-						>
-							<div className="session-peak-header">
-								<h3>Community feed</h3>
-								<p>Fresh remixes and drops.</p>
-							</div>
-							<div className="session-search">
-								<span aria-hidden="true">⌘</span>
-								<input
-									type="search"
-									value={communitySearch}
-									onChange={(e) => setCommunitySearch(e.target.value)}
-									placeholder="Search the feed"
-									aria-label="Search community feed"
-								/>
-							</div>
-							<ul className="session-peak-list">
-								{filteredCommunityPosts.slice(0, 4).length === 0 && <li className="session-empty">No posts match your search</li>}
-								{filteredCommunityPosts.slice(0, 4).map((post) => (
-									<li key={post.id}>
-										<div className="session-meta">
-											<strong>{post.author}</strong>
-											<span>{formatRelativeTime(post.createdAt)}</span>
-										</div>
-										<p className="session-snippet">{post.content.length > 120 ? `${post.content.slice(0, 120)}…` : post.content}</p>
-										{post.featuredPack && (
-											<button
-												type="button"
-												className="btn micro green"
-												onClick={() => handleForkCommunityPost(post)}
-												title="Fork this pack into your studio"
-											>
-												Fork
-											</button>
-										)}
-									</li>
-								))}
-							</ul>
-						</section>
+					{/* Community Feed Peak */}
+					<section 
+						className={`session-peak glass ${expandedPeak === 'community' ? 'expanded' : ''}`}
+						onMouseEnter={() => setExpandedPeak('community')}
+						onMouseLeave={() => setExpandedPeak(null)}
+					>
+						<div className="session-peak-header">
+							<h3>Community</h3>
+							<p>See what creators are making.</p>
+						</div>
+						<div className="session-search">
+							<span aria-hidden="true">⌘</span>
+							<input
+								type="search"
+								value={communitySearch}
+								onChange={(e) => setCommunitySearch(e.target.value)}
+								placeholder="Search the feed"
+								aria-label="Search community feed"
+							/>
+						</div>
+						<ul className="session-peak-list">
+							{filteredCommunityPosts.slice(0, 4).length === 0 && <li className="session-empty">No posts match your search</li>}
+							{filteredCommunityPosts.slice(0, 4).map((post) => (
+								<li key={post.id}>
+									<div className="session-meta">
+										<strong>{post.author}</strong>
+										<span>{formatRelativeTime(post.createdAt)}</span>
+									</div>
+									<p className="session-snippet">{post.content.length > 120 ? `${post.content.slice(0, 120)}…` : post.content}</p>
+									{post.featuredPack && (
+										<button
+											type="button"
+											className="btn micro green"
+											onClick={() => handleForkCommunityPost(post)}
+											title="Fork this pack into your studio"
+										>
+											Fork
+										</button>
+									)}
+								</li>
+							))}
+						</ul>
+					</section>
 					</div>
 				</>
 			)}
@@ -3371,6 +3472,77 @@ function App() {
 								</article>
 							))}
 						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Collaborative Session - Main View */}
+			{activeCollaborativeSession && (
+				<CollaborativeSessionDetail 
+					session={activeCollaborativeSession}
+					localUserId={userId}
+					localUsername={authUser?.displayName || 'Anonymous'}
+					userRole={userRole}
+					onLeaveSession={handleLeaveCollaborativeSession}
+				/>
+			)}
+			{/* Create Collaboration Modal */}
+			{showCollaborativeCreate && !activeCollaborativeSession && (
+				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Create collaboration" onClick={() => setShowCollaborativeCreate(false)}>
+					<div className="modal glass" onClick={(event) => event.stopPropagation()}>
+						<div className="overlay-header">
+							<h3>Start a Collaboration</h3>
+							<button type="button" className="icon-button" aria-label="Close" onClick={() => setShowCollaborativeCreate(false)}>✕</button>
+						</div>
+						<form className="modal-form" onSubmit={(e) => { e.preventDefault(); handleCreateCollaborativeSession(); }}>
+							<div className="form-group">
+								<label htmlFor="collab-title">Session Title (optional)</label>
+								<input
+									id="collab-title"
+									type="text"
+									value={collaborativeSessionTitle}
+									onChange={(e) => setCollaborativeSessionTitle(e.target.value)}
+									placeholder="My awesome collab"
+									maxLength={100}
+								/>
+							</div>
+							<div className="form-group">
+								<label htmlFor="collab-mode">Mode</label>
+								<select
+									id="collab-mode"
+									value={collaborativeSessionMode}
+									onChange={(e) => {
+										const mode = e.target.value as CreativeMode;
+										setCollaborativeSessionMode(mode);
+										// Reset submode when mode changes
+										const modeDefinition = modeDefinitions.find(m => m.id === mode);
+										if (modeDefinition && modeDefinition.submodes.length > 0) {
+											setCollaborativeSessionSubmode(modeDefinition.submodes[0].id);
+										}
+									}}
+								>
+									{modeDefinitions.map(mode => (
+										<option key={mode.id} value={mode.id}>{mode.label}</option>
+									))}
+								</select>
+							</div>
+							<div className="form-group">
+								<label htmlFor="collab-submode">Submode</label>
+								<select
+									id="collab-submode"
+									value={collaborativeSessionSubmode}
+									onChange={(e) => setCollaborativeSessionSubmode(e.target.value)}
+								>
+									{modeDefinitions.find(m => m.id === collaborativeSessionMode)?.submodes.map(submode => (
+										<option key={submode.id} value={submode.id}>{submode.label}</option>
+									))}
+								</select>
+							</div>
+							<div className="form-actions">
+								<button type="submit" className="btn primary">Create & Invite</button>
+								<button type="button" className="btn secondary" onClick={() => setShowCollaborativeCreate(false)}>Cancel</button>
+							</div>
+						</form>
 					</div>
 				</div>
 			)}
