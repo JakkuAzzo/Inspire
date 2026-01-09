@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('Drag and drop pack cards into combined focus area', async ({ page }) => {
-  await page.goto('http://localhost:8080/');
+  await page.goto('/');
   
   // Wait for page to load and pick a mode (Lyricist)
   await page.waitForTimeout(1000);

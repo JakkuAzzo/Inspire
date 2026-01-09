@@ -5,7 +5,7 @@ test('Story Arc scaffold generates distinct beats', async ({ page }) => {
 
 	await page.goto('/');
 	await page.getByRole('button', { name: /Get Started - Pick a Lab/i }).click();
-	await page.getByRole('button', { name: /Lyricist Studio/i }).click();
+	await page.getByRole('button', { name: /Writer Lab/i }).click();
 	await page.getByRole('button', { name: /Rapper/i }).click({ timeout: 10_000 }).catch(() => {});
 	await page.getByRole('button', { name: /Generate fuel pack/i }).first().click();
 

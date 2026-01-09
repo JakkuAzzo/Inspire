@@ -22,7 +22,6 @@ import { StoryArcDetail } from './components/StoryArc';
 import { FlowBeatGenerator } from './components/FlowBeatGenerator';
 import { FlowPrompts } from './components/FlowPrompts';
 import { MemeSoundCard } from './components/MemeSoundCard';
-import { CombinedFocusMode } from './components/workspace/CombinedFocusMode';
 import { CreatorSettingsModal } from './components/workspace/CreatorSettingsModal';
 import { FocusModeControls } from './components/workspace/FocusModeControls';
 import { CollaborativeSessionDetail } from './pages/CollaborativeSession';
@@ -817,7 +816,7 @@ function App() {
                 return Number.isFinite(parsed) ? parsed : null;
         });
         const [focusMode, setFocusMode] = useState(false);
-        const [focusModeType, setFocusModeType] = useState<'single' | 'combined'>('single');
+        const [focusModeType, setFocusModeType] = useState<'single'>('single');
         const [focusDensity, setFocusDensity] = useState<number>(() => {
                 if (typeof window === 'undefined') return 8;
                 const stored = window.localStorage.getItem(`${FOCUS_CONTROLS_KEY}:density`);
@@ -849,15 +848,24 @@ function App() {
 	const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
 	const [spectateSearch, setSpectateSearch] = useState('');
 	const [communitySearch, setCommunitySearch] = useState('');
-	const [combinedFocusCardIds, setCombinedFocusCardIds] = useState<string[]>([]);
 	const [customWordInput, setCustomWordInput] = useState('');
-	const [mixerHover, setMixerHover] = useState(false);
 	const [chipPicker, setChipPicker] = useState<{ type: 'powerWord' | 'instrument' | 'headline' | 'meme' | 'sample'; index?: number } | null>(null);
 	const dragSourceRef = useRef<string | null>(null);
 	const audioContextRef = useRef<AudioContext | null>(null);
 	const [communityPosts] = useState<CommunityPost[]>(COMMUNITY_POSTS);
 	const [workspaceQueue, setWorkspaceQueue] = useState<WorkspaceQueueItem[]>(INITIAL_WORKSPACE_QUEUE);
 	const [queueCollapsed, setQueueCollapsed] = useState(false);
+	// Inspiration queue tabs and notepad state
+	const [queueTab, setQueueTab] = useState<'inspiration' | 'notepad'>('inspiration');
+	const [notepadText, setNotepadText] = useState<string>('');
+	const [notepadSavedAt, setNotepadSavedAt] = useState<number | null>(null);
+
+	useEffect(() => {
+		try {
+			const saved = localStorage.getItem('inspire.notepad');
+			if (saved !== null) setNotepadText(saved);
+		} catch {}
+	}, []);
 	const [packStageWidth, setPackStageWidth] = useState(60);
 	const [isResizing, setIsResizing] = useState(false);
 	const [youtubeVideos, setYoutubeVideos] = useState<Record<string, YouTubeVideoPreview>>({});
@@ -970,12 +978,10 @@ function App() {
 	const [memeStimuli, setMemeStimuli] = useState<MemeTemplate[]>([]);
 	const [memeStimuliError, setMemeStimuliError] = useState<string | null>(null);
 
-	useEffect(() => {
-		if (!focusMode) {
-			setMixerHover(false);
-		}
-	}, [focusMode]);
-
+	// Combined pack cards functionality
+	const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
+	const [showCombinedView, setShowCombinedView] = useState(false);
+	const [showAddCardModal, setShowAddCardModal] = useState(false);
 
 	useEffect(() => {
 		youtubeVideosRef.current = youtubeVideos;
@@ -1548,6 +1554,14 @@ function App() {
 		setQueueCollapsed((prev) => !prev);
 	}, []);
 
+	const handleNotepadChange = useCallback((value: string) => {
+		setNotepadText(value);
+		try {
+			localStorage.setItem('inspire.notepad', value);
+			setNotepadSavedAt(Date.now());
+		} catch {}
+	}, []);
+
 	const handleResizeMouseDown = useCallback(() => {
 		setIsResizing(true);
 	}, []);
@@ -1590,6 +1604,44 @@ function App() {
 	const handleFocusModeToggle = useCallback(() => {
 		setFocusModeType('single');
 		setFocusMode((prev) => !prev);
+	}, []);
+
+	const handleToggleCardSelection = useCallback((cardId: string) => {
+		setSelectedCardIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(cardId)) {
+				next.delete(cardId);
+			} else {
+				next.add(cardId);
+			}
+			return next;
+		});
+	}, []);
+
+	const handleCombineSelected = useCallback(() => {
+		if (selectedCardIds.size >= 2) {
+			setShowCombinedView(true);
+			trackEvent('combined_view_opened', { cardCount: selectedCardIds.size });
+		}
+	}, [selectedCardIds]);
+
+	const handleRemoveFromCombined = useCallback((cardId: string) => {
+		setSelectedCardIds((prev) => {
+			const next = new Set(prev);
+			next.delete(cardId);
+			return next;
+		});
+		if (selectedCardIds.size <= 2) {
+			setShowCombinedView(false);
+		}
+	}, [selectedCardIds.size]);
+
+	const handleAddCardToCombined = useCallback((cardId: string) => {
+		setSelectedCardIds((prev) => new Set(prev).add(cardId));
+	}, []);
+
+	const handleCloseCombinedView = useCallback(() => {
+		setShowCombinedView(false);
 	}, []);
 
         const handleBackToPackList = useCallback(() => {
@@ -2569,58 +2621,6 @@ function App() {
 
 	const selectedCard = orderedPackDeck.find((card) => card.id === expandedCard) ?? null;
 	const showingDetail = Boolean(selectedCard);
-	const handleMixerDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
-		event.preventDefault();
-		if (event.dataTransfer) {
-			event.dataTransfer.dropEffect = 'copy';
-		}
-		setMixerHover(true);
-	}, []);
-
-	const handleMixerDragLeave = useCallback(() => {
-		setMixerHover(false);
-	}, []);
-
-        const handleMixerDrop = useCallback(
-                (event: ReactDragEvent<HTMLDivElement>) => {
-                        event.preventDefault();
-                        setMixerHover(false);
-                        const cardId =
-                                event.dataTransfer.getData('text/plain') ||
-                                dragSourceRef.current ||
-                                expandedCard ||
-                                orderedPackDeck[0]?.id;
-                        if (!cardId) return;
-                        const card = orderedPackDeck.find((entry) => entry.id === cardId);
-                        if (!card) return;
-                        setCombinedFocusCardIds((current) => (current.includes(card.id) ? current : [...current, card.id]));
-                },
-                [expandedCard, orderedPackDeck]
-        );
-
-        const handleMixerKeyboardAdd = useCallback(() => {
-                const cardId = expandedCard ?? orderedPackDeck[0]?.id;
-                if (!cardId) return false;
-                const card = orderedPackDeck.find((entry) => entry.id === cardId);
-                if (!card) return false;
-                setCombinedFocusCardIds((current) => (current.includes(card.id) ? current : [...current, card.id]));
-                trackEvent('combined_focus_keyboard_add', { cardId });
-                return true;
-        }, [expandedCard, orderedPackDeck]);
-
-	const handleRemoveCombinedCard = useCallback((cardId: string) => {
-		setCombinedFocusCardIds((current) => current.filter((id) => id !== cardId));
-		trackEvent('combined_focus_remove_card', { cardId });
-	}, []);
-
-	const combinedCards = useMemo(() => {
-		return combinedFocusCardIds
-			.map((id) => {
-				const card = orderedPackDeck.find((c) => c.id === id);
-				return card ? { id: card.id, label: card.label } : null;
-			})
-			.filter(Boolean) as Array<{ id: string; label: string }>;
-	}, [combinedFocusCardIds, orderedPackDeck]);
 
 		useEffect(() => {
 			if (!focusMode) return;
@@ -2864,19 +2864,96 @@ function App() {
 
 		const pick = (values: string[]) => Array.from(new Set(values.map((v) => v.trim()).filter(Boolean)));
 
-		if (focusModeType === 'combined') {
-			const combined = combinedFocusCardIds.flatMap(itemsForCard);
-			return pick(combined);
-		}
-
 		if (focusModeType === 'single' && selectedCard) {
 			return pick(itemsForCard(selectedCard.id));
 		}
 
 		return [];
-	}, [combinedFocusCardIds, focusModeType, fuelPack, memeStimuli, selectedCard, rhymeResults, storyArcScaffold]);
+	}, [focusModeType, fuelPack, memeStimuli, selectedCard, rhymeResults, storyArcScaffold]);
+
+	const combinedFocusItems = useMemo(() => {
+		if (!isModePack(fuelPack) || selectedCardIds.size === 0) return [] as string[];
+		const pack = fuelPack as ModePack;
+
+		const itemsForCard = (cardId: string): string[] => {
+			if (isLyricistPack(pack)) {
+				switch (cardId) {
+					case 'word-explorer':
+						return [...pack.powerWords];
+					case 'rhyme-families': {
+						const searched = rhymeResults.map((r) => r.word);
+						return searched.length ? searched : [...(pack.rhymeFamilies ?? [])];
+					}
+					case 'story-arc':
+							if (storyArcScaffold?.nodes?.length) {
+								return storyArcScaffold.nodes.map((n) => `${n.label}: ${n.text}`).filter(Boolean);
+							}
+							return [pack.storyArc.start, pack.storyArc.middle, pack.storyArc.end];
+					case 'headline':
+						return [pack.newsPrompt.headline, pack.newsPrompt.context, pack.newsPrompt.source];
+					case 'flow-prompts':
+						return [...(pack.flowPrompts ?? [])];
+					case 'meme-sound':
+						return [pack.memeSound?.name, pack.memeSound?.description].filter(Boolean) as string[];
+					case 'fragments':
+						return [...(pack.lyricFragments ?? [])];
+					case 'meme-stimuli':
+						return memeStimuli.map((m) => m.name);
+					default:
+						return [];
+				}
+			}
+			if (isProducerPack(pack)) {
+				switch (cardId) {
+					case 'main-sample':
+						return [pack.sample?.title ?? '', pack.sample?.source ?? ''].filter(Boolean);
+					case 'constraints':
+						return [...(pack.constraints ?? [])];
+					case 'fx-ideas':
+						return [...(pack.fxIdeas ?? [])];
+					case 'palette':
+						return [...(pack.instrumentPalette ?? [])];
+					case 'video-cue':
+						return [pack.videoSnippet?.title ?? '', pack.videoSnippet?.description ?? ''].filter(Boolean);
+					case 'challenge':
+						return [pack.challenge ?? ''].filter(Boolean);
+					case 'meme-stimuli':
+						return memeStimuli.map((m) => m.name);
+					default:
+						return [];
+				}
+			}
+			if (isEditorPack(pack)) {
+				switch (cardId) {
+					case 'moodboard':
+						return (pack.moodboard ?? []).map((c) => c.title);
+					case 'audio-prompts':
+						return (pack.audioPrompts ?? []).map((p) => p.name);
+					case 'timeline':
+						return [...(pack.timelineBeats ?? [])];
+					case 'constraints':
+						return [...(pack.visualConstraints ?? [])];
+					case 'challenge':
+						return [pack.challenge ?? '', pack.titlePrompt ?? ''].filter(Boolean);
+					case 'meme-stimuli':
+						return memeStimuli.map((m) => m.name);
+					default:
+						return [];
+				}
+			}
+			return [];
+		};
+
+		const pick = (values: string[]) => Array.from(new Set(values.map((v) => v.trim()).filter(Boolean)));
+		
+		// Aggregate items from all selected cards
+		const allItems = Array.from(selectedCardIds).flatMap((cardId) => itemsForCard(cardId));
+		return pick(allItems);
+	}, [fuelPack, memeStimuli, selectedCardIds, rhymeResults, storyArcScaffold]);
 
 	const visibleFocusItems = useMemo(() => focusItems.slice(0, Math.max(focusDensity, 6)), [focusDensity, focusItems]);
+
+	const visibleCombinedFocusItems = useMemo(() => combinedFocusItems.slice(0, Math.max(focusDensity, 6)), [focusDensity, combinedFocusItems]);
 
 	const FocusStream = ({ anchored = false, compact = false, forceActive = false }: { anchored?: boolean; compact?: boolean; forceActive?: boolean }) => (
 		<FallingWordStream
@@ -3569,6 +3646,42 @@ function App() {
 				</div>
 			)}
 
+			{showAddCardModal && showCombinedView && (
+				<div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Add card to combined view" onClick={() => setShowAddCardModal(false)}>
+					<div className="modal glass" onClick={(event) => event.stopPropagation()}>
+						<div className="overlay-header">
+							<h3>Add a Card</h3>
+							<button type="button" className="icon-button" aria-label="Close" onClick={() => setShowAddCardModal(false)}>✕</button>
+						</div>
+						<div className="modal-content">
+							<p className="hint">Select a card to add to the combined view.</p>
+							<ul className="card-selection-list">
+								{orderedPackDeck.map((card) => (
+									!selectedCardIds.has(card.id) && (
+										<li key={card.id} className="card-selection-item">
+											<div className="card-selection-info">
+												<strong>{card.label}</strong>
+												<span className="card-selection-preview">{card.preview}</span>
+											</div>
+											<button
+												type="button"
+												className="btn micro primary"
+												onClick={() => {
+													handleAddCardToCombined(card.id);
+													setShowAddCardModal(false);
+												}}
+											>
+												Add
+											</button>
+										</li>
+									)
+								))}
+							</ul>
+						</div>
+					</div>
+				</div>
+			)}
+
 			{mode && !submode && activeModeDefinition && (
 				<section className="submode-panel glass">
 					<button className="back-button" type="button" onClick={handleBackToModes}>← Choose another mode</button>
@@ -3668,6 +3781,15 @@ function App() {
 													← Back to list
 												</button>
 											)}
+											{!showingDetail && !focusMode && selectedCardIds.size >= 2 && (
+												<button 
+													type="button" 
+													className="btn primary micro combine-btn" 
+													onClick={handleCombineSelected}
+												>
+													✨ Combine ({selectedCardIds.size})
+												</button>
+											)}
 											<p className="pack-id">#{getPackId(fuelPack)}</p>
 											<h3>{showingDetail && selectedCard ? selectedCard.label : fuelPack.title}</h3>
 											<p className="summary">{showingDetail && selectedCard ? `Pack: ${fuelPack.title}` : fuelPack.summary}</p>
@@ -3722,7 +3844,7 @@ function App() {
 
 								{isModePack(fuelPack) && (
 									<>
-										{!showingDetail && (
+										{!showingDetail && !showCombinedView && (
 											<div className="pack-deck" role="list">
 												{orderedPackDeck.map((card, index) => (
 													<button
@@ -3740,6 +3862,14 @@ function App() {
 														style={{ '--card-index': index } as CSSProperties}
 														aria-expanded={expandedCard === card.id}
 													>
+														<input 
+															type="checkbox" 
+															className="card-checkbox" 
+															aria-label={`Select ${card.label}`}
+															checked={selectedCardIds.has(card.id)}
+															onChange={() => handleToggleCardSelection(card.id)}
+															onClick={(e) => e.stopPropagation()}
+														/>
 														<span className="card-label">
 															{card.label}
 															{draggedCardId === card.id && <span className="snap-indicator" aria-hidden="true">⇕</span>}
@@ -3749,40 +3879,84 @@ function App() {
 												))}
 											</div>
 										)}
-                                                                                {isModePack(fuelPack) && !focusMode && !showingDetail && (
-                                                                                        <section className="focus-mixer-shell">
-                                                                                                <CombinedFocusMode
-                                                                                                        className={mixerHover ? 'focus-mixer hover' : 'focus-mixer'}
-                                                                                                        mixerHover={mixerHover}
-                                                                                                        combinedCount={combinedFocusCardIds.length}
-                                                                                                        combinedCards={combinedCards}
-                                                                                                        onDragOver={handleMixerDragOver}
-                                                                                                        onDragLeave={handleMixerDragLeave}
-                                                                                                        onDrop={handleMixerDrop}
-                                                                                                        onClear={() => setCombinedFocusCardIds([])}
-                                                                                                        onRemoveCard={handleRemoveCombinedCard}
-                                                                                                        onKeyboardAdd={handleMixerKeyboardAdd}
-                                                                                                        stream={<FocusStream anchored forceActive />}
-                                                                                                        actions={
-                                                                                                                combinedFocusCardIds.length >= 2 ? (
-                                                                                                                        <button
-                                                                                                                                type="button"
-                                                                                                                                className="btn secondary micro"
-                                                                                                                                title="Open the combined focus animation"
-                                                                                                                                onClick={() => {
-                                                                                                                                        setFocusModeType('combined');
-                                                                                                                                        setFocusMode(true);
-                                                                                                                                        trackEvent('focus_mode_open', { type: 'combined' });
-                                                                                                                                        if (!expandedCard && orderedPackDeck.length) setExpandedCard(orderedPackDeck[0].id);
-                                                                                                                                }}
-                                                                                                                        >
-                                                                                                                                Open focus mode
-                                                                                                                        </button>
-                                                                                                                ) : null
-                                                                                                        }
-                                                                                                />
-                                                                                        </section>
-                                                                                )}
+										{showCombinedView && (
+											<div className="combined-workspace">
+												<div className="combined-header">
+													<h3>Combined View ({selectedCardIds.size} cards)</h3>
+													<button
+														type="button"
+														className="btn ghost micro close-combined"
+														onClick={handleCloseCombinedView}
+														aria-label="Exit combined view"
+													>
+														← Back to list
+													</button>
+												</div>
+												<div className="combined-cards-container">
+													{Array.from(selectedCardIds).map((cardId) => {
+														const card = orderedPackDeck.find(c => c.id === cardId);
+														if (!card) return null;
+														return (
+															<div key={cardId} className="combined-card-section">
+																<div className="combined-card-header">
+																	<h4>{card.label}</h4>
+																	<button
+																		type="button"
+																		className="btn ghost micro remove-card"
+																		onClick={() => handleRemoveFromCombined(cardId)}
+																		title="Remove from combined view"
+																	>
+																		✕
+																	</button>
+																</div>
+																<div className="combined-card-detail">
+																	{(() => {
+																		const currentCard = orderedPackDeck.find(c => c.id === cardId);
+																		if (!currentCard) return null;
+																		return (
+																			<>
+																				<p className="pack-id">#{cardId}</p>
+																				<div className="detail-body">{currentCard.detail}</div>
+																			</>
+																		);
+																	})()}
+																</div>
+															</div>
+														);
+													})}
+												</div>
+												<div className="combined-actions">
+													{selectedCardIds.size < orderedPackDeck.length && !focusMode && (
+														<button
+															type="button"
+															className="btn secondary add-card-btn"
+															onClick={() => setShowAddCardModal(true)}
+														>
+															+ Add Card
+														</button>
+													)}
+													<button
+														type="button"
+														className={`btn primary focus-btn${focusMode ? ' active' : ''}`}
+														onClick={() => setFocusMode((prev) => !prev)}
+														title={focusMode ? 'Exit focus mode' : 'View combined focus mode'}
+													>
+														{focusMode ? 'Exit Focus Mode' : 'Focus Mode'}
+													</button>
+												</div>
+												{focusMode && (
+													<div className="combined-focus-stream" style={{ height: 300, marginTop: 16, position: 'relative' }}>
+														<FallingWordStream
+															items={visibleCombinedFocusItems}
+															active={true}
+															maxVisible={Math.max(focusDensity, 6)}
+															spawnIntervalMs={focusSpawnIntervalMs}
+															fallDurationMs={focusFallDurationMs}
+														/>
+													</div>
+												)}
+											</div>
+										)}
 										{selectedCard && !focusMode && renderPackDetail(false)}
 									</>
 								)}
@@ -3822,6 +3996,26 @@ function App() {
 											Clips and references tuned to <strong>{fuelPack.title}</strong>.
 										</p>
 									</div>
+									<div className="queue-tabs" role="tablist" aria-label="Queue tabs">
+										<button
+											type="button"
+											className={`tab${queueTab === 'inspiration' ? ' active' : ''}`}
+											role="tab"
+											aria-selected={queueTab === 'inspiration'}
+											onClick={() => setQueueTab('inspiration')}
+										>
+											Inspiration Queue
+										</button>
+										<button
+											type="button"
+											className={`tab${queueTab === 'notepad' ? ' active' : ''}`}
+											role="tab"
+											aria-selected={queueTab === 'notepad'}
+											onClick={() => setQueueTab('notepad')}
+										>
+											Writing Notepad
+										</button>
+									</div>
 									<button
 										type="button"
 										className="btn ghost micro queue-toggle"
@@ -3832,9 +4026,9 @@ function App() {
 										{queueCollapsed ? 'Expand queue' : 'Collapse queue'}
 									</button>
 								</div>
-								{!queueCollapsed && youtubeError && <p className="queue-hint" role="status">{youtubeError}</p>}
-								{!queueCollapsed && (
-									<ul id="workspaceQueueList" className="queue-list">
+								{!queueCollapsed && queueTab === 'inspiration' && youtubeError && <p className="queue-hint" role="status">{youtubeError}</p>}
+								{!queueCollapsed && queueTab === 'inspiration' && (
+									<ul id="workspaceQueueList" className="queue-list" role="tabpanel" aria-label="Inspiration Queue">
 									{workspaceQueue.map((item) => (
 										<li key={item.id} className="queue-item">
 											<div className="queue-meta">
@@ -3943,6 +4137,34 @@ function App() {
 									))}
 									</ul>
 								)}
+								{!queueCollapsed && queueTab === 'notepad' && (
+									<div className="notepad-panel" role="tabpanel" aria-label="Writing Notepad">
+										<div className="notepad-header">
+											<strong>Writing Notepad</strong>
+											<span className="notepad-status">
+												{notepadSavedAt ? `Saved ${new Date(notepadSavedAt).toLocaleTimeString()}` : 'Unsaved'}
+											</span>
+										</div>
+										<textarea
+											className="notepad-textarea"
+											value={notepadText}
+											onChange={(e) => handleNotepadChange(e.target.value)}
+											placeholder="Write lyrics, hooks, and ideas here..."
+											rows={10}
+										></textarea>
+										<div className="notepad-footer" aria-live="polite">
+											<span>{notepadText.length} chars</span>
+											<div className="notepad-actions">
+												<button type="button" className="btn micro" onClick={() => { navigator.clipboard.writeText(notepadText); }}>
+													Copy
+												</button>
+												<button type="button" className="btn micro" onClick={() => { setNotepadText(''); handleNotepadChange(''); }}>
+													Clear
+												</button>
+											</div>
+										</div>
+									</div>
+								)}
 							</aside>
 						)}
 
@@ -3954,33 +4176,16 @@ function App() {
 				<FocusModeOverlay
 					isOpen={focusMode}
 					onClose={() => { setFocusMode(false); setFocusModeType('single'); }}
-					ariaLabel={focusModeType === 'combined' ? 'Combined focus mode' : 'Focus mode'}
+					ariaLabel="Focus mode"
 					showCloseButton={false}
 					extended
 				>
 					<div className="focus-overlay-actions">
 						<button type="button" className="btn ghost micro" onClick={() => { setFocusMode(false); setFocusModeType('single'); }}>Exit focus</button>
-						{focusModeType === 'combined' && (
-							<button type="button" className="btn tertiary micro" onClick={() => setCombinedFocusCardIds([])}>Clear combined</button>
-						)}
 					</div>
 					{focusModeType === 'single' && selectedCard && renderPackDetail(true)}
-                                        {focusModeType === 'combined' && (
-                                                <CombinedFocusMode
-                                                        mixerHover={mixerHover}
-                                                        combinedCount={combinedFocusCardIds.length}
-                                                        combinedCards={combinedCards}
-                                                        onDragOver={handleMixerDragOver}
-                                                        onDragLeave={handleMixerDragLeave}
-                                                        onDrop={handleMixerDrop}
-                                                        onClear={() => setCombinedFocusCardIds([])}
-                                                        onRemoveCard={handleRemoveCombinedCard}
-                                                        onKeyboardAdd={handleMixerKeyboardAdd}
-                                                        stream={<FocusStream anchored forceActive />}
-                                                />
-                                        )}
-                                </FocusModeOverlay>
-                        )}
+				</FocusModeOverlay>
+			)}
 
                         {focusControlsOpen && (
                                 <FocusModeOverlay

@@ -27,6 +27,7 @@ import {
   LyricistModePack,
   ProducerModePack,
   EditorModePack,
+  DAWModePack,
   MemeSound,
   NewsPrompt,
   SampleReference,
@@ -35,6 +36,7 @@ import {
 } from './types';
 import {
   generateModePack,
+  buildDAWPack,
   listModeDefinitions,
   listMockMemes,
   listMockNews,
@@ -604,6 +606,45 @@ function buildApiRouter() {
         console.error('[fuel-pack] fallback error', fallbackError);
         res.status(500).json({ error: 'Failed to generate pack for mode' });
       }
+    }
+  });
+
+  // DAW pack generation - generates a producer-mode pack with DAW-specific content (samples, drums, tempo, key)
+  router.post('/modes/daw/fuel-pack', async (req: Request, res: Response) => {
+    const body = req.body as ModePackRequest | undefined;
+    if (!body || !body.submode) {
+      return res.status(400).json({ error: 'submode is required' });
+    }
+
+    const filters = coalesceFilters({
+      ...body.filters,
+      ...body.relevance,
+      timeframe: body.timeframe ?? body.filters?.timeframe ?? body.relevance?.timeframe,
+      tone: body.tone ?? body.filters?.tone ?? body.relevance?.tone,
+      semantic: body.semantic ?? body.filters?.semantic ?? body.relevance?.semantic
+    });
+    const started = Date.now();
+    console.log(`[fuel-pack] daw/${body.submode} req filters=${JSON.stringify(filters)}`);
+
+    // Validate DAW submode
+    const validSubmodes = ['lofi', 'trap', 'house', 'experimental'];
+    if (!validSubmodes.includes(body.submode)) {
+      return res.status(400).json({ error: `Unsupported DAW submode: ${body.submode}` });
+    }
+
+    try {
+      const useMockFallback = process.env.USE_MOCK_FALLBACK !== 'false';
+      const timeoutMs = Number(process.env.FUEL_PACK_TIMEOUT_MS ?? 5000);
+      const pack = await Promise.race([
+        buildDAWPack({ ...body, filters }, filters, useMockFallback ? {} : services, body.mood),
+        new Promise<ModePack>((_, reject) => setTimeout(() => reject(new Error('buildDAWPack timed out')), timeoutMs))
+      ]);
+      packs.set(pack.id, pack);
+      res.status(201).json({ pack });
+      console.log(`[fuel-pack] ok daw/${body.submode} in ${Date.now() - started}ms id=${pack.id}`);
+    } catch (error) {
+      console.error('[fuel-pack] daw error', error);
+      res.status(500).json({ error: 'Failed to generate DAW pack' });
     }
   });
 

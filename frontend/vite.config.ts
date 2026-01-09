@@ -7,12 +7,14 @@ import fs from 'fs'
 export default defineConfig({
   plugins: [react()],
   server: {
-    https: process.env.VITE_CERT_PATH && process.env.VITE_KEY_PATH
-      ? {
-          cert: fs.readFileSync(process.env.VITE_CERT_PATH, 'utf-8'),
-          key: fs.readFileSync(process.env.VITE_KEY_PATH, 'utf-8'),
-        }
-      : undefined,
+    https: process.env.VITE_DISABLE_HTTPS === 'true'
+      ? undefined
+      : (process.env.VITE_CERT_PATH && process.env.VITE_KEY_PATH
+        ? {
+            cert: fs.readFileSync(process.env.VITE_CERT_PATH, 'utf-8'),
+            key: fs.readFileSync(process.env.VITE_KEY_PATH, 'utf-8'),
+          }
+        : undefined),
     host: 'localhost', // Explicitly use localhost
     proxy: {
       '/api': {

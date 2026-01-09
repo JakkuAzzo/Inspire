@@ -1,5 +1,6 @@
 import {
   CreativeMode,
+  DAWModePack,
   EditorModePack,
   InspirationClip,
   LyricistModePack,
@@ -35,7 +36,7 @@ export interface ModePackServices {
 const MODE_DEFINITIONS: ModeDefinition[] = [
   {
     id: 'lyricist',
-    label: 'Lyricist Studio',
+    label: 'Writer Lab',
     description: 'Storytelling, wordplay, hooks, and emotional arcs.',
     icon: '📝',
     accent: '#ec4899',
@@ -688,6 +689,177 @@ function validateFilters(filters?: Partial<RelevanceFilter>): RelevanceFilter {
   };
 }
 
+async function buildDAWPack(
+  request: ModePackRequest,
+  filters: RelevanceFilter,
+  services: ModePackServices,
+  mood?: string
+): Promise<DAWModePack> {
+  const submode = request.submode || 'lofi';
+  
+  // Define tempo ranges by submode
+  const tempoRanges: Record<string, [number, number]> = {
+    'lofi': [70, 90],
+    'trap': [140, 160],
+    'house': [120, 128],
+    'experimental': [60, 180]
+  };
+  
+  const [minTempo, maxTempo] = tempoRanges[submode] || [80, 120];
+  const tempo = Math.floor(Math.random() * (maxTempo - minTempo + 1)) + minTempo;
+  
+  // Define key signatures based on tone
+  const keys = filters.tone === 'dark' 
+    ? ['Dm', 'Am', 'Gm', 'Em', 'Cm']
+    : filters.tone === 'deep'
+    ? ['Cmaj', 'Gmaj', 'Dmaj', 'Amaj', 'Fmaj']
+    : ['Cmaj', 'Gmaj', 'Fmaj', 'Dmaj', 'Am'];
+  const key = keys[Math.floor(Math.random() * keys.length)];
+  
+  // Define chord progressions by mood
+  const chordProgressions: Record<string, string[][]> = {
+    'dark': [['Dm', 'Bb', 'F', 'C'], ['Am', 'F', 'C', 'G'], ['Em', 'C', 'G', 'D']],
+    'deep': [['Cmaj', 'Am', 'Fmaj', 'G'], ['Gmaj', 'Em', 'Cmaj', 'D'], ['Dmaj', 'Bm', 'Gmaj', 'A']],
+    'funny': [['Cmaj', 'F', 'G', 'Am'], ['Gmaj', 'C', 'D', 'Em'], ['Fmaj', 'Bb', 'C', 'Dm']]
+  };
+  const progressions = chordProgressions[filters.tone] || chordProgressions['deep'];
+  const chordProgression = progressions[Math.floor(Math.random() * progressions.length)];
+  
+  // Generate drum patterns by submode
+  const drumPatterns: Record<string, any[]> = {
+    'lofi': [
+      { step: 0, drum: 'kick', velocity: 90, enabled: true },
+      { step: 4, drum: 'snare', velocity: 85, enabled: true },
+      { step: 8, drum: 'kick', velocity: 90, enabled: true },
+      { step: 12, drum: 'snare', velocity: 85, enabled: true },
+      { step: 2, drum: 'hihat', velocity: 60, enabled: true },
+      { step: 6, drum: 'hihat', velocity: 60, enabled: true },
+      { step: 10, drum: 'hihat', velocity: 60, enabled: true },
+      { step: 14, drum: 'hihat', velocity: 60, enabled: true }
+    ],
+    'trap': [
+      { step: 0, drum: 'kick', velocity: 127, enabled: true },
+      { step: 6, drum: 'kick', velocity: 100, enabled: true },
+      { step: 4, drum: 'snare', velocity: 120, enabled: true },
+      { step: 12, drum: 'snare', velocity: 120, enabled: true },
+      { step: 2, drum: 'hihat', velocity: 80, enabled: true },
+      { step: 3, drum: 'hihat', velocity: 70, enabled: true },
+      { step: 6, drum: 'hihat', velocity: 80, enabled: true },
+      { step: 10, drum: 'hihat', velocity: 80, enabled: true },
+      { step: 14, drum: 'hihat', velocity: 80, enabled: true }
+    ],
+    'house': [
+      { step: 0, drum: 'kick', velocity: 110, enabled: true },
+      { step: 4, drum: 'kick', velocity: 110, enabled: true },
+      { step: 8, drum: 'kick', velocity: 110, enabled: true },
+      { step: 12, drum: 'kick', velocity: 110, enabled: true },
+      { step: 4, drum: 'clap', velocity: 100, enabled: true },
+      { step: 12, drum: 'clap', velocity: 100, enabled: true },
+      { step: 0, drum: 'hihat', velocity: 70, enabled: true },
+      { step: 2, drum: 'hihat', velocity: 70, enabled: true },
+      { step: 4, drum: 'hihat', velocity: 70, enabled: true },
+      { step: 6, drum: 'hihat', velocity: 70, enabled: true },
+      { step: 8, drum: 'hihat', velocity: 70, enabled: true },
+      { step: 10, drum: 'hihat', velocity: 70, enabled: true },
+      { step: 12, drum: 'hihat', velocity: 70, enabled: true },
+      { step: 14, drum: 'hihat', velocity: 70, enabled: true }
+    ],
+    'experimental': [
+      { step: 0, drum: 'kick', velocity: 100, enabled: true },
+      { step: 5, drum: 'snare', velocity: 90, enabled: true },
+      { step: 9, drum: 'kick', velocity: 100, enabled: true },
+      { step: 13, drum: 'clap', velocity: 85, enabled: true },
+      { step: 3, drum: 'perc', velocity: 75, enabled: true },
+      { step: 7, drum: 'tom', velocity: 80, enabled: true },
+      { step: 11, drum: 'crash', velocity: 95, enabled: true }
+    ]
+  };
+  const drumPattern = drumPatterns[submode] || drumPatterns['lofi'];
+  
+  // Fetch samples from audio service
+  const samples: any[] = [];
+  
+  try {
+    // Search for different types of samples
+    const searches = [
+      { query: 'kick drum', limit: 3, type: 'kick' },
+      { query: 'snare', limit: 2, type: 'snare' },
+      { query: 'hi-hat', limit: 2, type: 'hihat' },
+      { query: submode === 'lofi' ? 'jazz piano' : submode === 'trap' ? '808 bass' : 'synth pad', limit: 3, type: 'melodic' },
+      { query: submode === 'house' ? 'vocal chop' : 'ambient texture', limit: 2, type: 'texture' }
+    ];
+    
+    for (const search of searches) {
+      if (services.audioService) {
+        try {
+          const sounds = await services.audioService.searchSounds(search.query, search.limit);
+          sounds.forEach((sound: any) => {
+            samples.push({
+              id: sound.id,
+              name: sound.name,
+              duration: sound.duration || 1,
+              url: sound.previews?.['preview-hq-mp3'] || sound.previews?.['preview-lq-mp3'] || '',
+              source: 'freesound' as const,
+              tags: sound.tags || [search.type],
+              tempo: tempo
+            });
+          });
+        } catch (err) {
+          console.warn(`DAW pack: Failed to fetch ${search.query}, continuing with other samples`, err);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('DAW pack: Audio service unavailable, using mock samples', err);
+  }
+  
+  // If no samples fetched, provide mock samples
+  if (samples.length === 0) {
+    samples.push(
+      { id: 'mock-kick-1', name: 'Kick Drum 1', duration: 0.5, url: '', source: 'local' as const, tags: ['kick'], tempo },
+      { id: 'mock-snare-1', name: 'Snare 1', duration: 0.3, url: '', source: 'local' as const, tags: ['snare'], tempo },
+      { id: 'mock-hihat-1', name: 'Hi-Hat 1', duration: 0.2, url: '', source: 'local' as const, tags: ['hihat'], tempo },
+      { id: 'mock-pad-1', name: 'Synth Pad', duration: 4.0, url: '', source: 'local' as const, tags: ['pad'], tempo },
+      { id: 'mock-bass-1', name: 'Bass Loop', duration: 2.0, url: '', source: 'local' as const, tags: ['bass'], tempo }
+    );
+  }
+  
+  // Define mood tags based on filters
+  const moodTags = [
+    filters.tone,
+    filters.timeframe,
+    submode,
+    mood || 'creative'
+  ];
+  
+  // Generate challenge based on semantic filter
+  const challenges: Record<RelevanceSemantic, string> = {
+    'tight': `Create a ${submode} track using only the provided samples. Stay within ${tempo} BPM and keep the ${key} key signature.`,
+    'balanced': `Mix the drum pattern with at least 3 melodic samples. Experiment with panning and effects.`,
+    'wild': `Chop the longest sample into 4+ pieces and rearrange them. Flip the tempo mid-track if you dare.`
+  };
+  const challenge = challenges[filters.semantic];
+  
+  return {
+    id: createId('daw'),
+    timestamp: Date.now(),
+    mode: 'producer' as const, // DAW is producer-focused
+    submode,
+    title: `${submode.charAt(0).toUpperCase() + submode.slice(1)} DAW Session`,
+    headline: `${tempo} BPM · ${key} · ${samples.length} samples loaded`,
+    summary: `A curated pack of samples, drum patterns, and chord progressions for ${submode} production.`,
+    filters,
+    samples,
+    drumPattern,
+    key,
+    tempo,
+    chordProgression,
+    moodTags,
+    genre: submode,
+    challenge
+  };
+}
+
 export async function generateModePack(
   mode: CreativeMode,
   request: ModePackRequest,
@@ -739,3 +911,6 @@ export function listMockNews(filters?: Partial<RelevanceFilter>): NewsPrompt[] {
   const applied = validateFilters(filters);
   return filterByTimeframe(NEWS_PROMPTS, applied.timeframe);
 }
+
+// Export buildDAWPack for direct use in routes
+export { buildDAWPack };

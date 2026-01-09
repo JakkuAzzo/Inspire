@@ -137,13 +137,14 @@ export const SampleBrowser: React.FC<SampleBrowserProps> = ({
     setCurrentlyPlaying(sample.id);
   }, [audioElement, currentlyPlaying]);
 
-  const stopPreview = useCallback(() => {
-    if (audioElement) {
-      audioElement.pause();
-      audioElement.currentTime = 0;
-    }
-    setCurrentlyPlaying(null);
-  }, [audioElement]);
+  // Commenting out unused stopPreview function
+  // const stopPreview = useCallback(() => {
+  //   if (audioElement) {
+  //     audioElement.pause();
+  //     audioElement.currentTime = 0;
+  //   }
+  //   setCurrentlyPlaying(null);
+  // }, [audioElement]);
 
   const handleDragStart = useCallback((e: React.DragEvent, sample: AudioSample) => {
     e.dataTransfer.setData('application/json', JSON.stringify(sample));
@@ -153,7 +154,7 @@ export const SampleBrowser: React.FC<SampleBrowserProps> = ({
 
   const loadPresetSamples = useCallback((category: string) => {
     setSearchQuery(category);
-    setSearchQuery(prev => {
+    setSearchQuery(() => {
       handleSearch();
       return category;
     });

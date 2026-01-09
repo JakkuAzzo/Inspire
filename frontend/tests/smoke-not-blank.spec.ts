@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('app renders non-blank landing UI', async ({ page }) => {
-  await page.goto('http://localhost:8080');
+  await page.goto('/');
   await page.waitForLoadState('domcontentloaded');
   // Wait briefly for React to render
   await page.waitForTimeout(500);

@@ -167,7 +167,36 @@ export interface EditorModePack extends ModePackBase {
   titlePrompt: string;
 }
 
-export type ModePack = LyricistModePack | ProducerModePack | EditorModePack;
+export interface DrumStep {
+  step: number;
+  drum: 'kick' | 'snare' | 'hihat' | 'clap' | 'tom' | 'crash' | 'ride' | 'perc';
+  velocity: number;
+  enabled: boolean;
+}
+
+export interface AudioSample {
+  id: string;
+  name: string;
+  duration: number;
+  url: string;
+  source: 'freesound' | 'jamendo' | 'local';
+  tags?: string[];
+  tempo?: number;
+}
+
+export interface DAWModePack extends ModePackBase {
+  mode: 'producer'; // DAW is a pack card within Producer Lab
+  samples: AudioSample[];
+  drumPattern?: DrumStep[];
+  key: string;
+  tempo: number;
+  chordProgression?: string[];
+  moodTags: string[];
+  genre?: string;
+  challenge?: string;
+}
+
+export type ModePack = LyricistModePack | ProducerModePack | EditorModePack | DAWModePack;
 
 export interface WordGeneratorOptions {
   startsWith?: string;

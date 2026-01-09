@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('Live Headline should have only one Focus Mode button', async ({ page }) => {
 	// Navigate to app
-	await page.goto('http://localhost:5173');
+	await page.goto('/');
 	await page.waitForLoadState('networkidle');
 
 	// Click Get Started
@@ -12,8 +12,8 @@ test('Live Headline should have only one Focus Mode button', async ({ page }) =>
 		await page.waitForTimeout(500);
 	}
 
-	// Click Lyricist Studio
-	const lyricistBtn = page.locator('button:has-text("Lyricist Studio")').or(page.locator('h2:has-text("Lyricist Studio")')).first();
+	// Click Writer Lab
+	const lyricistBtn = page.locator('button:has-text("Writer Lab")').or(page.locator('h2:has-text("Writer Lab")')).first();
 	await lyricistBtn.click();
 	await page.waitForTimeout(500);
 
@@ -46,7 +46,7 @@ test('Live Headline should have only one Focus Mode button', async ({ page }) =>
 });
 
 test('Rhyme Families should have only one Focus Mode button', async ({ page }) => {
-	await page.goto('http://localhost:5173');
+	await page.goto('/');
 	await page.waitForLoadState('networkidle');
 
 	const getStartedBtn = page.locator('button:has-text("Get Started")');
@@ -55,7 +55,7 @@ test('Rhyme Families should have only one Focus Mode button', async ({ page }) =
 		await page.waitForTimeout(500);
 	}
 
-	const lyricistBtn = page.locator('button:has-text("Lyricist Studio")').or(page.locator('h2:has-text("Lyricist Studio")')).first();
+	const lyricistBtn = page.locator('button:has-text("Writer Lab")').or(page.locator('h2:has-text("Writer Lab")')).first();
 	await lyricistBtn.click();
 	await page.waitForTimeout(500);
 
@@ -84,7 +84,7 @@ test('Rhyme Families should have only one Focus Mode button', async ({ page }) =
 });
 
 test('Word Explorer should have only one Focus Mode button', async ({ page }) => {
-	await page.goto('http://localhost:5173');
+	await page.goto('/');
 	await page.waitForLoadState('networkidle');
 
 	const getStartedBtn = page.locator('button:has-text("Get Started")');
@@ -93,7 +93,7 @@ test('Word Explorer should have only one Focus Mode button', async ({ page }) =>
 		await page.waitForTimeout(500);
 	}
 
-	const lyricistBtn = page.locator('button:has-text("Lyricist Studio")').or(page.locator('h2:has-text("Lyricist Studio")')).first();
+	const lyricistBtn = page.locator('button:has-text("Writer Lab")').or(page.locator('h2:has-text("Writer Lab")')).first();
 	await lyricistBtn.click();
 	await page.waitForTimeout(500);
 

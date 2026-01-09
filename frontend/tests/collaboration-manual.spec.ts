@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Start Collaboration - Manual Flow', () => {
 	test('manually verify collaboration UI is accessible', async ({ page }) => {
 		// Navigate to the app
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		
 		// Wait for app to load
 		await page.waitForSelector('.session-peak, .mode-card, .app-foreground', { timeout: 15000 });

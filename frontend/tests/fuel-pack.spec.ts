@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/test';
+import { applyNetworkMocks } from './helpers/networkMocks';
 
 const SCREENSHOT_DIR = 'test-artifacts';
 
 // Generates a fresh fuel pack from the hero flow and captures a screenshot of the deck.
 test('generate fuel pack', async ({ page }) => {
 	test.setTimeout(90_000);
+	await applyNetworkMocks(page);
 	page.on('console', (msg) => {
 		console.log(`[console:${msg.type()}] ${msg.text()}`);
 	});
@@ -16,8 +18,12 @@ test('generate fuel pack', async ({ page }) => {
 	});
 	await page.goto('/');
 
-	await page.getByRole('button', { name: 'Get Started - Pick a Lab' }).click();
-	await page.getByRole('button', { name: /Lyricist Studio/ }).click();
+	// Wait for hero CTA to be ready
+	const heroCTA = page.getByRole('button', { name: 'Get Started - Pick a Lab' });
+	await expect(heroCTA).toBeVisible({ timeout: 15000 });
+	await heroCTA.click();
+	await expect(page.getByRole('button', { name: /Writer Lab/ })).toBeVisible({ timeout: 15000 });
+	await page.getByRole('button', { name: /Writer Lab/ }).click();
 	await page.getByRole('button', { name: 'Rapper' }).click();
 
 	const generateButton = page.getByRole('button', { name: 'Generate fuel pack' });
