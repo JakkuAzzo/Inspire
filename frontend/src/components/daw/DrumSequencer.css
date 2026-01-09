@@ -69,10 +69,6 @@
   margin-bottom: 0.25rem;
 }
 
-.drum-label-header {
-  /* Empty space above drum labels */
-}
-
 .step-header {
   display: flex;
   align-items: center;

@@ -1,0 +1,80 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e4]:
+  - button "Sign up or log in to Inspire" [ref=e5] [cursor=pointer]:
+    - generic [ref=e6]: Sign up / Log in
+    - generic [ref=e7]: ↗
+  - banner [ref=e8]:
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - img "Inspire" [ref=e11]
+        - heading "Make Something" [level=1] [ref=e12]
+      - paragraph [ref=e13]: Choose your creative studio and spin a fresh challenge.
+    - generic [ref=e14] [cursor=pointer]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: Mood themes
+        - generic:
+          - button "Aurora" [ref=e17]:
+            - generic [ref=e18]: ✨
+            - text: Aurora
+          - button "Lo-Fi" [ref=e19]:
+            - generic [ref=e20]: 🌙
+            - text: Lo-Fi
+          - button "Neon" [ref=e21]:
+            - generic [ref=e22]: 🌈
+            - text: Neon
+          - button "Vaporwave" [ref=e23]:
+            - generic [ref=e24]: 🌅
+            - text: Vaporwave
+          - button "Noir" [ref=e25]:
+            - generic [ref=e26]: 🖤
+            - text: Noir
+      - button "Daily challenge 9h 49m 04s City Lights Cypher Write or score something that captures the glow of the nighttime commute. Sign in to complete View progress →" [ref=e28]:
+        - generic [ref=e29]: Daily challenge
+        - generic [ref=e30]: 9h 49m 04s
+        - generic [ref=e31]: City Lights Cypher
+        - generic [ref=e32]: Write or score something that captures the glow of the nighttime commute.
+        - generic [ref=e33]: Sign in to complete
+        - generic [ref=e34]: View progress →
+  - button "Get Started - Pick a Lab" [ref=e36] [cursor=pointer]
+  - generic:
+    - generic [ref=e37] [cursor=pointer]:
+      - generic [ref=e38]:
+        - heading "Spectate live" [level=3] [ref=e39]
+        - paragraph: Jump into an active room.
+      - generic [ref=e40]:
+        - generic [ref=e41]: ⌘
+        - searchbox "Search live sessions" [ref=e42]
+      - list [ref=e43]:
+        - listitem [ref=e44]:
+          - generic [ref=e45]:
+            - strong [ref=e46]: Hook Draft Lab
+            - generic [ref=e47]: "@auroraflow · 128 viewers"
+          - button "Spectate" [ref=e48]
+        - listitem [ref=e49]:
+          - generic [ref=e50]:
+            - strong [ref=e51]: Reel Speedrun
+            - generic [ref=e52]: "@cutcraft · 64 viewers"
+          - button "Spectate" [ref=e53]
+    - generic [ref=e54] [cursor=pointer]:
+      - generic [ref=e55]:
+        - heading "Community" [level=3] [ref=e56]
+        - paragraph [ref=e57]: See what creators are making.
+      - generic [ref=e58]:
+        - generic [ref=e59]: ⌘
+        - searchbox "Search community feed" [ref=e60]
+      - list [ref=e61]:
+        - listitem [ref=e62]:
+          - generic [ref=e63]:
+            - strong [ref=e64]: "@auroraflow"
+            - generic [ref=e65]: 45m ago
+          - paragraph [ref=e66]: Hook sketch recorded on last night’s stream. The crowd lost it on the second drop.
+          - button "Fork" [ref=e67]
+        - listitem [ref=e68]:
+          - generic [ref=e69]:
+            - strong [ref=e70]: "@midnightloops"
+            - generic [ref=e71]: 1h ago
+          - paragraph [ref=e72]: Texture flip built from kitchen percussion + subway rumble. Ready for someone to add vocals.
+          - button "Fork" [ref=e73]
+```

@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Collapsible Navbar', () => {
 	test('navbar collapses on small viewport and expands on hover', async ({ page }) => {
 		// Start on the home page
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		
 		// Wait for the app to load
 		await page.waitForSelector('.mode-card', { timeout: 10000 });
@@ -67,7 +67,7 @@ test.describe('Collapsible Navbar', () => {
 	});
 
 	test('navbar maintains visibility of critical elements when collapsed', async ({ page }) => {
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		await page.waitForSelector('.mode-card', { timeout: 10000 });
 		
 		// Enter a studio

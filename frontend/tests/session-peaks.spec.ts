@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Session Peaks Hover Behavior', () => {
 	test.beforeEach(async ({ page }) => {
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		await page.waitForLoadState('networkidle');
 	});
 

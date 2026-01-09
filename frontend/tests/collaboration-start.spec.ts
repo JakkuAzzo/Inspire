@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Start Collaboration', () => {
 	test('should open collaboration modal and create a session', async ({ page }) => {
 		// Navigate to the app
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		
 		// Wait for the app to load (wait for session peaks which are on home screen)
 		await page.waitForSelector('.session-peak', { timeout: 15000 });
@@ -60,7 +60,7 @@ test.describe('Start Collaboration', () => {
 	});
 
 	test('should validate required fields in collaboration modal', async ({ page }) => {
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		await page.waitForSelector('.session-peak', { timeout: 15000 });
 		
 		// Open collaboration modal
@@ -97,7 +97,7 @@ test.describe('Start Collaboration', () => {
 	});
 
 	test('should close modal when clicking backdrop', async ({ page }) => {
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		await page.waitForSelector('.session-peak', { timeout: 15000 });
 		
 		// Open collaboration modal
@@ -116,7 +116,7 @@ test.describe('Start Collaboration', () => {
 	});
 
 	test('should close modal when clicking close button', async ({ page }) => {
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		await page.waitForSelector('.session-peak', { timeout: 15000 });
 		
 		// Open collaboration modal
@@ -136,7 +136,7 @@ test.describe('Start Collaboration', () => {
 	});
 
 	test('should update submode options when mode changes', async ({ page }) => {
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		await page.waitForSelector('.session-peak', { timeout: 15000 });
 		
 		// Open collaboration modal
@@ -174,7 +174,7 @@ test.describe('Start Collaboration', () => {
 	});
 
 	test('should display empty state when no collaborative sessions exist', async ({ page }) => {
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		await page.waitForSelector('.session-peak', { timeout: 15000 });
 		
 		// Look for the collaboration peak section

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import './SampleChopper.css';
-import { AudioSample } from './SampleBrowser';
+import type { AudioSample } from './SampleBrowser';
 
 interface ChopPoint {
   id: string;

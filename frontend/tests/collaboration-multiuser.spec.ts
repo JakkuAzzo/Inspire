@@ -17,7 +17,7 @@ test.describe('Multi-User Collaboration with Screenshots', () => {
 			});
 			const user1Page = await user1Context.newPage();
 			
-			await user1Page.goto('http://localhost:8080', { waitUntil: 'networkidle' });
+			await user1Page.goto('/', { waitUntil: 'networkidle' });
 			await user1Page.waitForSelector('.session-peak', { timeout: 15000 });
 			
 			// Take screenshot of home screen
@@ -98,7 +98,7 @@ test.describe('Multi-User Collaboration with Screenshots', () => {
 			});
 			const user2Page = await user2Context.newPage();
 			
-			await user2Page.goto('http://localhost:8080', { waitUntil: 'networkidle' });
+			await user2Page.goto('/', { waitUntil: 'networkidle' });
 			await user2Page.waitForSelector('.session-peak', { timeout: 15000 });
 			
 			// Take screenshot of user 2 home screen
@@ -168,7 +168,7 @@ test.describe('Multi-User Collaboration with Screenshots', () => {
 		await context.grantPermissions(['camera', 'microphone']);
 		
 		// This test verifies that guest sessions show expiry timer
-		await page.goto('http://localhost:8080');
+		await page.goto('/');
 		await page.waitForSelector('.session-peak', { timeout: 15000 });
 		
 		// Make a direct API call as guest to create a session

@@ -1043,7 +1043,7 @@
   appearance: none;
 }
 
-/* Lyricist Studio - Pink accent with subtle background image */
+/* Writer Lab - Pink accent with subtle background image */
 .mode-card:nth-child(1) {
   background: linear-gradient(135deg, rgba(20, 30, 70, 0.95) 0%, rgba(40, 20, 60, 0.95) 100%);
   background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><defs><linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:rgb(236,72,153);stop-opacity:0.1" /><stop offset="100%" style="stop-color:rgb(236,72,153);stop-opacity:0.03" /></linearGradient></defs><rect width="400" height="300" fill="url(%23g1)"/></svg>');
@@ -1607,7 +1607,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
   gap: 1.25rem;
   min-height: 0;
-  align-items: start;
+  align-items: stretch;
   overflow-y: auto;
   padding-bottom: 0.5rem;
 }
@@ -1618,6 +1618,8 @@
 
 .workspace-main.with-queue > .pack-stage {
   grid-column: 1;
+  align-self: stretch;
+  height: 100%;
 }
 
 .workspace-main:not(.with-queue) {
@@ -1626,7 +1628,9 @@
 
 .workspace-main.with-queue > .workspace-queue {
   grid-column: 2;
-  align-self: start;
+  align-self: stretch;
+  height: 100%;
+  max-height: none;
 }
 
 /* When a resize divider is present, use a 3-column grid and place the queue in col 3 */
@@ -1635,6 +1639,14 @@
 }
 .workspace-main.with-queue.has-divider > .workspace-queue {
   grid-column: 3;
+  align-self: stretch;
+  height: 100%;
+  max-height: none;
+}
+.workspace-main.with-queue.has-divider > .pack-stage {
+  grid-column: 1;
+  align-self: stretch;
+  height: 100%;
 }
 .workspace-main.with-queue.has-divider > .workspace-resize-divider {
   grid-column: 2;
@@ -2905,6 +2917,7 @@
 .workspace-main .pack-stage {
   flex: 1 1 60%;
   min-height: 0;
+  height: 100%;
   overflow: auto;
 }
 
@@ -4406,5 +4419,359 @@
 
   .beat-block {
     min-height: 88px;
+  }
+}
+/* DAW Pack Styling */
+
+.samples-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sample-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.sample-item {
+  padding: 0.8rem;
+  border: 1px solid var(--mood-border);
+  border-radius: 6px;
+  background: rgba(96, 165, 250, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sample-item strong {
+  font-weight: 600;
+  color: var(--mood-accent);
+}
+
+.sample-meta {
+  font-size: 0.85rem;
+  color: rgba(241, 245, 255, 0.6);
+}
+
+.daw-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem;
+  border-radius: 6px;
+  background: rgba(96, 165, 250, 0.05);
+  border: 1px solid var(--mood-border);
+}
+
+.info-row .label {
+  font-weight: 500;
+  color: rgba(241, 245, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.info-row strong {
+  color: var(--mood-accent);
+  font-weight: 600;
+}
+
+.info-row .tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.drum-pattern-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.drum-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: 0.6rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.drum-step {
+  padding: 0.6rem;
+  border: 1px solid var(--mood-border);
+  border-radius: 4px;
+  background: rgba(96, 165, 250, 0.08);
+  text-align: center;
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.drum-step.disabled {
+  opacity: 0.4;
+  background: rgba(96, 165, 250, 0.03);
+}
+
+.drum-step .step-num {
+  font-weight: 700;
+  color: var(--mood-accent);
+}
+
+.drum-step .drum-type {
+  color: rgba(241, 245, 255, 0.8);
+  text-transform: capitalize;
+  font-size: 0.75rem;
+}
+
+.drum-step .velocity {
+  color: rgba(241, 245, 255, 0.6);
+  font-size: 0.7rem;
+}
+/* Combined Workspace Styles */
+
+.combined-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  background: rgba(10, 16, 37, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+}
+
+.combined-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.combined-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.combined-header .close-combined {
+  min-width: auto;
+  padding: 0.5rem 0.75rem;
+}
+
+.combined-cards-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  max-height: 500px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.combined-cards-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.combined-cards-container::-webkit-scrollbar-track {
+  background: rgba(96, 165, 250, 0.05);
+  border-radius: 3px;
+}
+
+.combined-cards-container::-webkit-scrollbar-thumb {
+  background: rgba(96, 165, 250, 0.2);
+  border-radius: 3px;
+}
+
+.combined-cards-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(96, 165, 250, 0.3);
+}
+
+.combined-card-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.combined-card-section:hover {
+  background: rgba(96, 165, 250, 0.12);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+.combined-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.combined-card-header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.combined-card-header .remove-card {
+  flex-shrink: 0;
+  min-width: 28px;
+  padding: 0.4rem;
+  color: rgba(239, 68, 68, 0.7);
+  transition: color 0.2s ease;
+}
+
+.combined-card-header .remove-card:hover {
+  color: #ef4444;
+}
+
+.combined-card-detail {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: rgba(241, 245, 255, 0.8);
+  overflow-y: auto;
+  max-height: 200px;
+}
+
+.combined-card-detail .pack-id {
+  margin: 0 0 0.5rem 0;
+  color: rgba(96, 165, 250, 0.7);
+  font-size: 0.75rem;
+}
+
+.combined-card-detail .detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.combined-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  flex-wrap: wrap;
+}
+
+.combined-actions .add-card-btn,
+.combined-actions .focus-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.combined-focus-stream {
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 6px;
+  background: rgba(96, 165, 250, 0.04);
+  overflow: hidden;
+}
+
+/* Card selection list in modal */
+.card-selection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.card-selection-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: rgba(96, 165, 250, 0.06);
+  border: 1px solid rgba(96, 165, 250, 0.15);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.card-selection-item:hover {
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(96, 165, 250, 0.25);
+}
+
+.card-selection-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-selection-info strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-selection-preview {
+  font-size: 0.8rem;
+  color: rgba(241, 245, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Combine button styling */
+.combine-btn {
+  background: rgba(168, 85, 247, 0.2);
+  border-color: rgba(168, 85, 247, 0.4);
+  color: #d8b4fe;
+  transition: all 0.2s ease;
+}
+
+.combine-btn:hover {
+  background: rgba(168, 85, 247, 0.3);
+  border-color: rgba(168, 85, 247, 0.6);
+  color: #edd5ff;
+}
+
+.combine-btn:active {
+  background: rgba(168, 85, 247, 0.4);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .combined-cards-container {
+    grid-template-columns: 1fr;
+  }
+
+  .combined-actions {
+    flex-direction: column-reverse;
+  }
+
+  .combined-actions .add-card-btn,
+  .combined-actions .focus-btn {
+    width: 100%;
+    justify-content: center;
   }
 }

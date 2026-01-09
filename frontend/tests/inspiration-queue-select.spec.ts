@@ -9,7 +9,7 @@ test('inspiration queue track selection replaces main player', async ({ page }) 
 
   // Enter studio via hero flow and generate a fresh pack (ensures YouTube item exists)
   await page.getByRole('button', { name: 'Get Started - Pick a Lab' }).click();
-  await page.getByRole('button', { name: /Lyricist Studio/ }).click();
+  await page.getByRole('button', { name: /Writer Lab/ }).click();
   await page.getByRole('button', { name: 'Rapper' }).click();
   const generateButton = page.getByRole('button', { name: 'Generate fuel pack' });
   await expect(generateButton).toBeEnabled();

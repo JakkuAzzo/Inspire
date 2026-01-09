@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('Pack card checkboxes enable combined focus mode', async ({ page }) => {
-  await page.goto('http://localhost:8080');
+  await page.goto('/');
   
   // Wait for the app to load
   await page.waitForSelector('.app', { timeout: 5000 });

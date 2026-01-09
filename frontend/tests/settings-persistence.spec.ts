@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 async function navigateToWorkspace(page: Page) {
         await page.goto('/');
         await page.getByRole('button', { name: 'Get Started - Pick a Lab' }).click();
-        await page.getByRole('button', { name: /Lyricist Studio/ }).click();
+                await page.getByRole('button', { name: /Writer Lab/ }).click();
         await page.getByRole('button', { name: 'Rapper' }).click();
 }
 

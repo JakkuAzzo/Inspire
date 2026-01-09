@@ -5,9 +5,8 @@ test('Drag and drop two pack cards into combined focus', async ({ page }) => {
   
   await page.goto('/');
   
-  // Pick Lyricist Studio
-  await page.getByRole('button', { name: 'Get Started - Pick a Lab' }).click();
-  await page.getByRole('button', { name: /Lyricist Studio/ }).click();
+  // Pick Writer Lab
+  await page.getByRole('button', { name: /Writer Lab/ }).click();
   
   // Pick Rapper submode
   await page.getByRole('button', { name: 'Rapper' }).click();

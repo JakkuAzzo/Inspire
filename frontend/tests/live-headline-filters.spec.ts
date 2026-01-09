@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test.describe('Live Headline Filters', () => {
   test('input fields should work like Word Explorer inputs', async ({ page }) => {
     // Navigate to the app
-    await page.goto('http://localhost:8080/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle');
 
     // Sign in if needed (look for demo account or sign-up)
@@ -13,8 +13,8 @@ test.describe('Live Headline Filters', () => {
       await page.waitForTimeout(500);
     }
 
-    // Navigate to Lyricist Studio
-    const lyricistBtn = page.locator('button:has-text("Lyricist Studio")').first();
+    // Navigate to Writer Lab
+    const lyricistBtn = page.locator('button:has-text("Writer Lab")').first();
     await lyricistBtn.click();
     await page.waitForLoadState('networkidle');
 
@@ -86,7 +86,7 @@ test.describe('Live Headline Filters', () => {
 
   test('Update headlines button should trigger API call with filter parameters', async ({ page }) => {
     // Navigate to the app
-    await page.goto('http://localhost:8080/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle');
 
     // Sign in if needed
@@ -96,8 +96,8 @@ test.describe('Live Headline Filters', () => {
       await page.waitForTimeout(500);
     }
 
-    // Navigate to Lyricist Studio
-    const lyricistBtn = page.locator('button:has-text("Lyricist Studio")').first();
+    // Navigate to Writer Lab
+    const lyricistBtn = page.locator('button:has-text("Writer Lab")').first();
     await lyricistBtn.click();
     await page.waitForLoadState('networkidle');
 
@@ -157,7 +157,7 @@ test.describe('Live Headline Filters', () => {
 
   test('Random button should fetch headlines with random seed', async ({ page }) => {
     // Navigate to the app
-    await page.goto('http://localhost:8080/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle');
 
     // Sign in if needed
@@ -167,8 +167,8 @@ test.describe('Live Headline Filters', () => {
       await page.waitForTimeout(500);
     }
 
-    // Navigate to Lyricist Studio
-    const lyricistBtn = page.locator('button:has-text("Lyricist Studio")').first();
+    // Navigate to Writer Lab
+    const lyricistBtn = page.locator('button:has-text("Writer Lab")').first();
     await lyricistBtn.click();
     await page.waitForLoadState('networkidle');
 

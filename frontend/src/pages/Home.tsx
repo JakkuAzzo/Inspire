@@ -36,7 +36,7 @@ export function Home({
 	const [modeCards] = useState([
 		{
 			id: 'lyricist' as const,
-			label: 'Lyricist Studio',
+			label: 'Writer Lab',
 			description: 'Storytelling, hooks, rhyme families, and emotions.'
 		},
 		{

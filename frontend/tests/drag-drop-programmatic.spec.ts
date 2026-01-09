@@ -5,9 +5,9 @@ test('Drag pack cards into combined focus using data transfer', async ({ page })
   
   await page.goto('/');
   
-  // Pick Lyricist Studio
+  // Pick Writer Lab
   await page.getByRole('button', { name: 'Get Started - Pick a Lab' }).click();
-  await page.getByRole('button', { name: /Lyricist Studio/ }).click();
+  await page.getByRole('button', { name: /Writer Lab/ }).click();
   
   // Pick Rapper submode
   await page.getByRole('button', { name: 'Rapper' }).click();
