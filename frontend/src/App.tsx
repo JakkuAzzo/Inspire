@@ -133,6 +133,61 @@ const THEME_OPTIONS = [
 	{ id: 'noir', label: 'Noir', emoji: '🖤' }
 ];
 
+// Syllable counting utility (simple heuristic)
+function countSyllables(word: string): number {
+	if (!word || word.trim().length === 0) return 0;
+	const cleaned = word.toLowerCase().replace(/[^a-z]/g, '');
+	if (cleaned.length === 0) return 0;
+	// Count vowel groups
+	const vowelGroups = cleaned.match(/[aeiouy]+/g);
+	let count = vowelGroups ? vowelGroups.length : 0;
+	// Adjust for silent e
+	if (cleaned.endsWith('e') && count > 1) count--;
+	// Ensure at least 1 syllable
+	return Math.max(count, 1);
+}
+
+// Extract last word from a line
+function getLastWord(line: string): string {
+	const words = line.trim().split(/\s+/).filter(w => w.length > 0);
+	return words.length > 0 ? words[words.length - 1].replace(/[^a-zA-Z]/g, '').toLowerCase() : '';
+}
+
+// Simple rhyme detection (last 2-3 chars match)
+function getRhymeSuffix(word: string): string {
+	if (word.length < 2) return word;
+	return word.slice(-3);
+}
+
+// Assign rhyme scheme labels (A, B, C, etc.)
+function analyzeRhymeScheme(lines: string[]): { scheme: string[]; groups: Map<string, number> } {
+	const scheme: string[] = [];
+	const suffixToLabel = new Map<string, string>();
+	const groups = new Map<string, number>();
+	let labelIndex = 0;
+	const labels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+	for (const line of lines) {
+		const lastWord = getLastWord(line);
+		if (!lastWord || lastWord.length < 2) {
+			scheme.push('');
+			continue;
+		}
+		const suffix = getRhymeSuffix(lastWord);
+		if (!suffixToLabel.has(suffix)) {
+			const label = labels[labelIndex % labels.length];
+			suffixToLabel.set(suffix, label);
+			groups.set(label, 0);
+			labelIndex++;
+		}
+		const label = suffixToLabel.get(suffix)!;
+		scheme.push(label);
+		groups.set(label, (groups.get(label) || 0) + 1);
+	}
+
+	return { scheme, groups };
+}
+
 const SHARE_PARAM = 'pack';
 const STATS_KEY_PREFIX = 'inspire:creatorStats:';
 const FOCUS_CONTROLS_KEY = 'inspire:focusControls';
@@ -4016,18 +4071,20 @@ function App() {
 											Writing Notepad
 										</button>
 									</div>
-									<button
-										type="button"
-										className="btn ghost micro queue-toggle"
-										onClick={toggleQueueCollapsed}
-										aria-expanded={!queueCollapsed}
-										aria-controls="workspaceQueueList"
-									>
-										{queueCollapsed ? 'Expand queue' : 'Collapse queue'}
-									</button>
+									{queueTab === 'inspiration' && (
+										<button
+											type="button"
+											className="btn ghost micro queue-toggle"
+											onClick={toggleQueueCollapsed}
+											aria-expanded={!queueCollapsed}
+											aria-controls="workspaceQueueList"
+										>
+											{queueCollapsed ? 'Expand queue' : 'Collapse queue'}
+										</button>
+									)}
 								</div>
-								{!queueCollapsed && queueTab === 'inspiration' && youtubeError && <p className="queue-hint" role="status">{youtubeError}</p>}
-								{!queueCollapsed && queueTab === 'inspiration' && (
+								{queueTab === 'inspiration' && !queueCollapsed && youtubeError && <p className="queue-hint" role="status">{youtubeError}</p>}
+								{queueTab === 'inspiration' && !queueCollapsed && (
 									<ul id="workspaceQueueList" className="queue-list" role="tabpanel" aria-label="Inspiration Queue">
 									{workspaceQueue.map((item) => (
 										<li key={item.id} className="queue-item">
@@ -4137,34 +4194,68 @@ function App() {
 									))}
 									</ul>
 								)}
-								{!queueCollapsed && queueTab === 'notepad' && (
-									<div className="notepad-panel" role="tabpanel" aria-label="Writing Notepad">
-										<div className="notepad-header">
-											<strong>Writing Notepad</strong>
-											<span className="notepad-status">
-												{notepadSavedAt ? `Saved ${new Date(notepadSavedAt).toLocaleTimeString()}` : 'Unsaved'}
-											</span>
-										</div>
-										<textarea
-											className="notepad-textarea"
-											value={notepadText}
-											onChange={(e) => handleNotepadChange(e.target.value)}
-											placeholder="Write lyrics, hooks, and ideas here..."
-											rows={10}
-										></textarea>
-										<div className="notepad-footer" aria-live="polite">
-											<span>{notepadText.length} chars</span>
-											<div className="notepad-actions">
-												<button type="button" className="btn micro" onClick={() => { navigator.clipboard.writeText(notepadText); }}>
-													Copy
-												</button>
-												<button type="button" className="btn micro" onClick={() => { setNotepadText(''); handleNotepadChange(''); }}>
-													Clear
-												</button>
+								{queueTab === 'notepad' && (() => {
+									const lines = notepadText.split('\n');
+									const { scheme, groups } = analyzeRhymeScheme(lines);
+									const rhymeColors = ['#ec4899', '#22d3ee', '#a855f7', '#f59e0b', '#10b981', '#ef4444'];
+									const schemeColorMap = new Map<string, string>();
+									let colorIndex = 0;
+									for (const [label, count] of groups.entries()) {
+										if (count > 1) { // Only highlight rhymes that repeat
+											schemeColorMap.set(label, rhymeColors[colorIndex % rhymeColors.length]);
+											colorIndex++;
+										}
+									}
+
+									return (
+										<div className="notepad-panel" role="tabpanel" aria-label="Writing Notepad">
+											<div className="notepad-header">
+												<strong>Writing Notepad</strong>
+												<span className="notepad-status">
+													{notepadSavedAt ? `Saved ${new Date(notepadSavedAt).toLocaleTimeString()}` : 'Unsaved'}
+												</span>
+											</div>
+											<div className="notepad-editor">
+												<textarea
+													className="notepad-textarea"
+													value={notepadText}
+													onChange={(e) => handleNotepadChange(e.target.value)}
+													placeholder="Write lyrics, hooks, and ideas here..."
+													rows={10}
+												></textarea>
+												<div className="notepad-annotations">
+													{lines.map((line, idx) => {
+														const words = line.trim().split(/\s+/).filter(w => w.length > 0);
+														const syllableCount = words.reduce((sum, w) => sum + countSyllables(w), 0);
+														const rhymeLabel = scheme[idx];
+														const rhymeColor = rhymeLabel && schemeColorMap.has(rhymeLabel) ? schemeColorMap.get(rhymeLabel) : undefined;
+														return (
+															<div key={idx} className="notepad-line-info">
+																<span className="syllable-count">{syllableCount || '—'}</span>
+																{rhymeColor && (
+																	<span className="rhyme-badge" style={{ backgroundColor: rhymeColor }}>
+																		{rhymeLabel}
+																	</span>
+																)}
+															</div>
+														);
+													})}
+												</div>
+											</div>
+											<div className="notepad-footer" aria-live="polite">
+												<span>{notepadText.length} chars</span>
+												<div className="notepad-actions">
+													<button type="button" className="btn micro" onClick={() => { navigator.clipboard.writeText(notepadText); }}>
+														Copy
+													</button>
+													<button type="button" className="btn micro" onClick={() => { setNotepadText(''); handleNotepadChange(''); }}>
+														Clear
+													</button>
+												</div>
 											</div>
 										</div>
-									</div>
-								)}
+									);
+								})()}
 							</aside>
 						)}
 

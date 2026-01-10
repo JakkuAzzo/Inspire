@@ -285,6 +285,7 @@ export interface StoryArcGenerateRequest {
   genre?: string;
   bpm?: number;
   nodeCount?: number;
+  seed?: string | number;
 }
 
 // ============ COLLABORATIVE SESSION TYPES ============

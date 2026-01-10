@@ -26,6 +26,7 @@ export type StoryArcGenerateRequest = {
   genre?: string;
   bpm?: number;
   nodeCount?: number;
+  seed?: string | number;
 };
 
 const DEFAULT_NODE_LABELS = [
@@ -73,39 +74,44 @@ function parseBulletList(lines: string[], prefix: string): string[] {
 }
 
 function parseField(lines: string[], label: string): string {
+  // Look for a line starting with label: (case-insensitive)
   const found = lines.find((l) => l.toLowerCase().startsWith(label.toLowerCase() + ':'));
-  if (!found) return '';
-  return found.split(':').slice(1).join(':').trim();
+  if (found) {
+    return found.split(':').slice(1).join(':').trim();
+  }
+
+  // Fallback: look for label without colon (for simplified prompts)
+  const altFound = lines.find((l) => l.toLowerCase().startsWith(label.toLowerCase()));
+  if (altFound) {
+    // Return everything after the label
+    return altFound.substring(label.length).trim();
+  }
+
+  return '';
 }
 
 function parseNodes(lines: string[], nodeLabels: string[]): StoryArcNode[] {
-  // Look for explicit "ARC NODES:" section, else try to infer from numbered lines.
-  const idx = lines.findIndex((l) => l.toLowerCase().startsWith('arc nodes'));
-  const candidates = idx === -1 ? lines : lines.slice(idx + 1);
-
-  const numbered = candidates
-    .map((l) => l.replace(/^[-*\s]+/, '').trim())
-    .filter((l) => /^\d+\s*[.)]/.test(l) || nodeLabels.some((label) => l.toLowerCase().startsWith(label.toLowerCase())));
-
+  // Since the prompt is simpler now, just look for numbered sentences
   const nodes: StoryArcNode[] = [];
-  for (let i = 0; i < numbered.length && nodes.length < nodeLabels.length; i += 1) {
-    const raw = numbered[i];
-    const cleaned = raw.replace(/^\d+\s*[.)]\s*/, '').trim();
-    const parts = cleaned.split(/\s*-\s*/);
-    if (parts.length >= 2) {
-      const label = parts[0].trim();
-      const text = parts.slice(1).join(' - ').trim();
-      nodes.push({ id: `arc-${nodes.length + 1}`, label, text });
-    } else {
-      nodes.push({ id: `arc-${nodes.length + 1}`, label: nodeLabels[nodes.length], text: cleaned });
+  
+  for (let i = 0; i < lines.length && nodes.length < nodeLabels.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    // Match pattern: "1. text" or "1) text"
+    const numbered = line.match(/^\d+[\s.)\-]+(.+)/);
+    if (numbered && numbered[1]) {
+      const text = numbered[1].trim();
+      if (text.length > 10) {  // Must be substantial text, not just a label
+        const label = nodeLabels[nodes.length];
+        if (label) {
+          nodes.push({ id: `arc-${nodes.length + 1}`, label, text });
+        }
+      }
     }
   }
 
-  if (nodes.length === 0) {
-    return nodeLabels.map((label, index) => ({ id: `arc-${index + 1}`, label, text: '' }));
-  }
-
-  // Ensure we have exactly nodeLabels.length nodes.
+  // Fill remaining with empty nodes
   while (nodes.length < nodeLabels.length) {
     nodes.push({ id: `arc-${nodes.length + 1}`, label: nodeLabels[nodes.length], text: '' });
   }
@@ -114,40 +120,50 @@ function parseNodes(lines: string[], nodeLabels: string[]): StoryArcNode[] {
 }
 
 function buildPrompt(input: StoryArcGenerateRequest, nodeLabels: string[]): string {
-  const bpmLine = typeof input.bpm === 'number' && Number.isFinite(input.bpm) ? `BPM: ${input.bpm}` : '';
-  const genreLine = input.genre ? `Genre: ${input.genre}` : '';
-  const themeLine = input.theme ? `Theme hints: ${input.theme}` : '';
+  // Flan-t5-small is weak; use direct instruction format that works better
+  // Focus on asking it to extend/develop ideas rather than generate from scratch
+  const summary = input.summary;
+  const beats = nodeLabels.join(', ');
+  
+  return `Summarize this story in ${nodeLabels.length} narrative beats: ${beats}
 
-  return [
-    'You are a creative writing assistant for musicians. Expand the user summary into a consistent story-arc scaffold for lyrics.',
-    'Output MUST use the exact headings shown below. Keep each field punchy (1-3 sentences).',
-    '',
-    `SUMMARY: ${input.summary}`,
-    themeLine,
-    genreLine,
-    bpmLine,
-    '',
-    'HEADINGS:',
-    'THEME:',
-    'PROTAGONIST / POV:',
-    'INCITING MOMENT:',
-    'RISING TENSION:',
-    'TURNING POINT:',
-    'CHORUS THESIS (HOOK IDEA):',
-    'BRIDGE TWIST / CONFESSION:',
-    'RESOLUTION / FINAL IMAGE:',
-    'MOTIFS:',
-    'PUNCHY LINES:',
-    `ARC NODES (${nodeLabels.length}):`,
-    nodeLabels.map((label, idx) => `${idx + 1}. ${label} -`).join('\n'),
-    '',
-    'Rules:',
-    '- Motifs: 3-6 bullet points',
-    '- Punchy lines: exactly 10 numbered lines',
-    '- ARC NODES: fill each line with a concrete beat, not abstract advice'
-  ]
+Story: ${summary}
+
+Write one sentence for each beat that captures that moment in the story. Be specific and vivid.`;
+}
+
+// Lightweight helpers to diversify fallback beats without external dependencies.
+function hashStringToInt(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i += 1) {
+    h = ((h << 5) - h) + str.charCodeAt(i);
+    h |= 0; // force 32-bit
+  }
+  return Math.abs(h);
+}
+
+function pickTemplate(templates: string[], seedStr: string): string {
+  if (templates.length === 0) return '';
+  const seed = hashStringToInt(seedStr);
+  return templates[seed % templates.length];
+}
+
+function extractKeywords(text: string, max = 3): string[] {
+  const stop = new Set([
+    'the', 'and', 'but', 'for', 'with', 'into', 'from', 'that', 'this', 'then', 'they', 'them', 'have', 'has', 'had',
+    'over', 'under', 'into', 'onto', 'about', 'after', 'before', 'because', 'while', 'when', 'where', 'what', 'who',
+    'are', 'is', 'was', 'were', 'be', 'been', 'being', 'of', 'in', 'on', 'to', 'it', 'as', 'at', 'by', 'an', 'a'
+  ]);
+  const tokens = String(text || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
     .filter(Boolean)
-    .join('\n');
+    .filter((t) => !stop.has(t) && t.length > 3);
+  const uniq: string[] = [];
+  for (const t of tokens) {
+    if (!uniq.includes(t)) uniq.push(t);
+  }
+  return uniq.slice(0, max);
 }
 
 function synthesizeBeat(label: string, input: StoryArcGenerateRequest): string {
@@ -155,25 +171,108 @@ function synthesizeBeat(label: string, input: StoryArcGenerateRequest): string {
   const style = input.genre ? `${input.genre} vibe` : input.theme ? String(input.theme).toLowerCase() : '';
   const tempo = typeof input.bpm === 'number' && Number.isFinite(input.bpm) ? `${input.bpm} BPM` : '';
   const styleSuffix = [style, tempo].filter(Boolean).length ? ` (${[style, tempo].filter(Boolean).join(' · ')})` : '';
+  const kws = extractKeywords(base, 2);
+  const kwPhrase = kws.length ? kws.join(' / ') : 'the plan';
 
   const lower = label.toLowerCase();
+  const seedPrefix = input.seed ? `${input.seed}|` : '';
+  const seedStr = `${seedPrefix}${label}|${base}|${style}|${tempo}`;
+
   switch (lower) {
-    case 'start':
-      return `Set the scene: ${base}. We arrive hungry and unproven${styleSuffix}.`;
-    case 'inciting incident':
-      return `Trigger: a door opens and shakes the routine — ${base}. A reason to move now${styleSuffix}.`;
-    case 'obstacle':
-      return `Complication: old obligations push back; time and money get tight. The cost of chasing this grows.`;
-    case 'midpoint turn':
-      return `Reversal: a small win exposes a bigger risk. The path forward isn’t what it looked like on day one.`;
-    case 'second obstacle':
-      return `Aftershock: pressure escalates; help falls through. Doubt creeps in as the city tests resolve${styleSuffix}.`;
-    case 'climax':
-      return `Decision: pick a side at full volume — commit to the dream or go home. No turning back after this drop.`;
-    case 'resolution':
-      return `Fallout: quieter streets, new rules. We carry a changed voice into the next chorus, even if the echo hurts.`;
-    default:
+    case 'start': {
+      const templates = [
+        'Open on {kw}: {base}. First steps echo{style}.',
+        'Set the scene around {kw}: {base}. New stakes breathe{style}.',
+        'Day zero: {base}. We arrive restless and unproven{style}.',
+        'Camera finds {kw}; {base}. Momentum wakes up{style}.',
+        'Streetlights blink over {kw}; {base}. We draw the first map{style}.',
+        'Curtain up: {kw} threads through {base}. The room inhales{style}.',
+        'Intro bars: {base}. {kw} sketches the route in chalk{style}.'
+      ];
+      const tpl = pickTemplate(templates, seedStr);
+      return tpl.replace('{kw}', kwPhrase).replace('{base}', base).replace('{style}', styleSuffix);
+    }
+    case 'inciting incident': {
+      const templates = [
+        'Catalyst: {kw} crosses the line — {base}. Move now{style}.',
+        'Trigger hits: routine snaps; {kw} lights up — {base}{style}.',
+        'A door opens; {kw} spills forward — {base}. Urgency spikes{style}.',
+        'Green light from nowhere: {base}. {kw} becomes the reason{style}.',
+        'Message on the wire: {kw} fractures the lull — {base}{style}.',
+        'Coin toss lands on {kw}; {base}. Momentum makes the call{style}.',
+        'A spark catches {kw}; {base}. The beat refuses to wait{style}.'
+      ];
+      const tpl = pickTemplate(templates, seedStr);
+      return tpl.replace('{kw}', kwPhrase).replace('{base}', base).replace('{style}', styleSuffix);
+    }
+    case 'obstacle': {
+      const templates = [
+        'Complication: old obligations push back; time thins. {kw} refuses to bend.',
+        'Pushback: doors close, budgets shrink. The price of {kw} climbs.',
+        'Friction: favors dry up; calendars jam. {kw} slows the run.',
+        'Static in the path: {kw} stutters while costs stack.',
+        'Crosswind: {kw} slides off schedule while doubts pile up.',
+        'Gatekeepers shuffle papers; {kw} waits and the meter runs.',
+        'Thin margins bite; {kw} learns to move with less.'
+      ];
+      const tpl = pickTemplate(templates, seedStr);
+      return tpl.replace('{kw}', kwPhrase);
+    }
+    case 'midpoint turn': {
+      const templates = [
+        'Reversal: a small win exposes a bigger risk in {kw}. The map changes.',
+        'Halfway reveal: {kw} was never the destination. Course bends.',
+        'A loud yes uncovers a quieter price: {kw}. Direction flips.',
+        'Midpoint: the reward reframes the mission; {kw} redraws the line.',
+        'Center of the track: {kw} turns the compass. Plans shed weight.',
+        'The chorus hints a cost: {kw}. Verse learns a new truth.',
+        'A shortcut opens and closes — {kw}. We rewrite the route.'
+      ];
+      const tpl = pickTemplate(templates, seedStr);
+      return tpl.replace('{kw}', kwPhrase);
+    }
+    case 'second obstacle': {
+      const templates = [
+        'Aftershock: allies fade; help falls through. {kw} tests resolve{style}.',
+        'Escalation: delays multiply; {kw} drags confidence through the rain{style}.',
+        'Pressure spike: promises slip; {kw} makes the city heavier{style}.',
+        'Doubt creeps: the timeline buckles and {kw} squeezes the margin{style}.',
+        'Cold calls go warm then cold; {kw} keeps the dial tone honest{style}.',
+        'Frayed edges: {kw} rubs against deadlines until sparks slow down{style}.',
+        'Second hit: {kw} tests patience under flickering lights{style}.'
+      ];
+      const tpl = pickTemplate(templates, seedStr);
+      return tpl.replace('{kw}', kwPhrase).replace('{style}', styleSuffix);
+    }
+    case 'climax': {
+      const templates = [
+        'Decision: choose {kw} at full volume — commit or walk. No backspace after this drop.',
+        'Final push: we vote with breath and bruises. {kw} or nothing.',
+        'Crossroads on beat: jump into {kw} or turn the lights out.',
+        'No turning back: stake the name on {kw} and hit send.',
+        'Hands up/eyes open: {kw} becomes the oath. We sign in rhythm.',
+        'Last measure: {kw} or silence. We cut the dithering.',
+        'Release the brake: {kw} carries the name across the measure.'
+      ];
+      const tpl = pickTemplate(templates, seedStr);
+      return tpl.replace('{kw}', kwPhrase);
+    }
+    case 'resolution': {
+      const templates = [
+        'Fallout: quieter {kw}, new rules. A changed voice carries to the next chorus.',
+        'After the drop: {kw} settles into ritual. The echo learns our name.',
+        'Final image: {kw} under softer lights. We keep moving different.',
+        'Landing: {kw} hums in low color. The promise becomes practice.',
+        'Soft fade: {kw} rides the tail of the reverb. We speak simpler.',
+        'Window open: {kw} drifts into the next verse as a habit.',
+        'Quiet handshake: {kw} accepts the cost. The city nods.'
+      ];
+      const tpl = pickTemplate(templates, seedStr);
+      return tpl.replace('{kw}', kwPhrase);
+    }
+    default: {
       return `${label}: ${base}${styleSuffix}`;
+    }
   }
 }
 
@@ -200,8 +299,17 @@ function buildFallbackScaffold(input: StoryArcGenerateRequest, nodeLabels: strin
     'I bend the timeline until the drop says mercy.'
   ];
   const punchyLines = punchTemplates.map((tpl, i) => `${i + 1}. ${tpl.replace('{theme}', theme)}`);
-  const synth = (label: string) => synthesizeBeat(label, input);
-  const nodes = nodeLabels.map((label, index) => ({ id: `arc-${index + 1}`, label, text: synth(label) }));
+  
+  // For fallback nodes, generate using synthesizeBeat for each label
+  // This gives diverse, input-responsive content that isn't just hardcoded
+  const nodes = nodeLabels.map((label, index) => {
+    const text = synthesizeBeat(label, input);
+    return { 
+      id: `arc-${index + 1}`, 
+      label, 
+      text
+    };
+  });
 
   return {
     theme,
@@ -222,19 +330,22 @@ function buildFallbackScaffold(input: StoryArcGenerateRequest, nodeLabels: strin
 function ensureProgression(scaffold: StoryArcScaffold, summary: string, nodeLabels: string[]): StoryArcScaffold {
   const summarySnippet = summary.slice(0, 140);
 
-  // Enforce distinct node beats
-  const seen = new Set<string>();
-  const diversifiedNodes = scaffold.nodes.map((node, idx) => {
-    const label = nodeLabels[idx] ?? node.label;
-    let text = (node.text || '').trim();
-    const normalized = text.toLowerCase();
-    if (!text || normalized === summarySnippet.toLowerCase() || seen.has(normalized)) {
-      // Generate a richer, label-aware fallback using the input context if available
-      text = synthesizeBeat(label, { summary: summarySnippet, theme: scaffold.theme } as StoryArcGenerateRequest);
-    }
-    seen.add(text.toLowerCase());
-    return { ...node, label, text };
-  });
+  // Only enforce distinct node beats if nodes already have content from AI.
+  // If nodes are empty (fallback mode), leave them as-is to signal AI generation needed.
+  const hasAnyNodeContent = scaffold.nodes.some((n) => n.text && n.text.trim());
+  
+  const diversifiedNodes = hasAnyNodeContent 
+    ? scaffold.nodes.map((node, idx) => {
+        const label = nodeLabels[idx] ?? node.label;
+        let text = (node.text || '').trim();
+        const normalized = text.toLowerCase();
+        // Only keep distinct AI-generated text; don't fill empty with templates
+        if (!text || normalized === summarySnippet.toLowerCase()) {
+          text = '';
+        }
+        return { ...node, label, text };
+      })
+    : scaffold.nodes; // If fallback/empty, return as-is
 
   // Make punchy lines less repetitive if they collapsed to one value
   const uniquePunchies = Array.from(new Set((scaffold.punchyLines || []).map((l) => l.trim()).filter(Boolean)));
@@ -298,31 +409,37 @@ export async function generateStoryArcScaffold(input: StoryArcGenerateRequest): 
     const rawText = Array.isArray(result) ? String(result[0]?.generated_text ?? '') : String(result?.generated_text ?? '');
     const lines = safeLineSplit(rawText);
 
-    const scaffold: StoryArcScaffold = ensureProgression({
-      theme: parseField(lines, 'THEME') || input.theme || input.genre || '',
-      protagonistPOV: parseField(lines, 'PROTAGONIST / POV') || 'First-person',
-      incitingMoment: parseField(lines, 'INCITING MOMENT') || '',
-      risingTension: parseField(lines, 'RISING TENSION') || '',
-      turningPoint: parseField(lines, 'TURNING POINT') || '',
-      chorusThesis: parseField(lines, 'CHORUS THESIS (HOOK IDEA)') || '',
-      bridgeTwist: parseField(lines, 'BRIDGE TWIST / CONFESSION') || '',
-      resolution: parseField(lines, 'RESOLUTION / FINAL IMAGE') || '',
-      motifs: parseBulletList(lines, 'MOTIFS')?.slice(0, 8) ?? [],
-      punchyLines: parseBulletList(lines, 'PUNCHY LINES')?.slice(0, 10) ?? [],
-      nodes: parseNodes(lines, nodeLabels),
+    // Parse nodes from simplified output
+    const nodes = parseNodes(lines, nodeLabels);
+
+    // Build scaffold with parsed nodes (no old fields like THEME, PROTAGONIST, etc.)
+    // Use fallback values if AI didn't generate full scaffold
+    const scaffold: StoryArcScaffold = {
+      theme: input.theme || input.genre || '',
+      protagonistPOV: 'First-person',
+      incitingMoment: '',
+      risingTension: '',
+      turningPoint: '',
+      chorusThesis: '',
+      bridgeTwist: '',
+      resolution: '',
+      motifs: [],
+      punchyLines: [],
+      nodes,
       model: 'Xenova/flan-t5-small',
       rawText
-    }, summary, nodeLabels);
+    };
 
-    // If parsing failed badly, still guarantee content.
-    const hasAny = Boolean(scaffold.incitingMoment || scaffold.chorusThesis || scaffold.nodes.some((n) => n.text));
-    if (!hasAny) {
-      return { ...ensureProgression(buildFallbackScaffold({ ...input, summary }, nodeLabels), summary, nodeLabels), rawText, model: 'Xenova/flan-t5-small' };
+    // If nodes were successfully parsed with content, ensure progression and return
+    const hasNodeContent = nodes.some((n) => n.text && n.text.trim());
+    if (hasNodeContent) {
+      return ensureProgression(scaffold, summary, nodeLabels);
     }
 
-    return scaffold;
+    // If nodes are empty, fall back to generating default scaffold with synthesized beats
+    return ensureProgression(buildFallbackScaffold({ ...input, summary }, nodeLabels), summary, nodeLabels);
   } catch (err) {
-    // Offline / model download failure: return deterministic scaffold.
+    // Offline / model download failure: return fallback with synthesized beats
     return ensureProgression(buildFallbackScaffold({ ...input, summary }, nodeLabels), summary, nodeLabels);
   }
 }
