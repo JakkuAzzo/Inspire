@@ -1202,13 +1202,14 @@ function buildApiRouter() {
   // Story Arc generator (Transformers-powered, with fallback)
   router.post('/story-arc/generate', async (req: Request, res: Response) => {
     try {
-      const { summary, theme, genre, bpm, nodeCount } = req.body || {};
+      const { summary, theme, genre, bpm, nodeCount, seed } = req.body || {};
       const scaffold = await generateStoryArcScaffold({
         summary: String(summary ?? ''),
         theme: theme ? String(theme) : undefined,
         genre: genre ? String(genre) : undefined,
         bpm: typeof bpm === 'number' ? bpm : bpm ? Number(bpm) : undefined,
-        nodeCount: typeof nodeCount === 'number' ? nodeCount : nodeCount ? Number(nodeCount) : undefined
+        nodeCount: typeof nodeCount === 'number' ? nodeCount : nodeCount ? Number(nodeCount) : undefined,
+        seed: typeof seed === 'number' ? seed : seed ? String(seed) : undefined
       });
       res.status(201).json({ scaffold });
     } catch (err) {
