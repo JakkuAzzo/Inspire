@@ -41,7 +41,8 @@ import {
   listMockMemes,
   listMockNews,
   listMockSamples,
-  listMockWords
+  listMockWords,
+  listMockMemeSounds
 } from './modePackGenerator';
 import { createAllServices } from './services';
 import { searchYoutubeKeyless, buildYoutubeQuery } from './services/youtubeSearchService';
@@ -136,8 +137,8 @@ function buildFallbackLyricistPack(body: ModePackRequest, filters: RelevanceFilt
     timeframe: filters.timeframe,
     source: 'Inspire'
   };
-  const toneLabel = filters.tone === 'dark' ? 'grit' : filters.tone === 'deep' ? 'depth' : 'punchlines';
-  const memeSound: MemeSound = { name: 'Fallback meme sound', description: `Lean into ${toneLabel}.`, tone: filters.tone };
+  const memeSounds = listMockMemeSounds(filters);
+  const memeSound: MemeSound = memeSounds[0] ?? { name: 'Fallback meme sound', description: `Lean into the moment.`, tone: filters.tone };
   return {
     id: createId('lyricist'),
     timestamp: Date.now(),

@@ -12,7 +12,10 @@ export function MemeSoundCard({ memeSound }: MemeSoundCardProps) {
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 
 	const handlePlay = useCallback(async () => {
-		if (!memeSound?.sampleUrl) return;
+		if (!memeSound?.sampleUrl) {
+			setError('No audio URL available for this sound.');
+			return;
+		}
 
 		try {
 			setIsLoading(true);
@@ -97,8 +100,9 @@ export function MemeSoundCard({ memeSound }: MemeSoundCardProps) {
 						type="button"
 						className={`btn micro ${isPlaying ? 'playing' : ''}`}
 						onClick={handlePlay}
-						disabled={isLoading}
+						disabled={isLoading || !memeSound.sampleUrl}
 						aria-label={isPlaying ? 'Pause sound' : 'Play sound'}
+						title={!memeSound.sampleUrl ? 'No audio URL available' : ''}
 					>
 						{isLoading ? '⏳ Loading…' : isPlaying ? '⏸ Pause' : '▶ Play'}
 					</button>

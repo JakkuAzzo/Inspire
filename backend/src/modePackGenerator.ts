@@ -912,5 +912,10 @@ export function listMockNews(filters?: Partial<RelevanceFilter>): NewsPrompt[] {
   return filterByTimeframe(NEWS_PROMPTS, applied.timeframe);
 }
 
+export function listMockMemeSounds(filters?: Partial<RelevanceFilter>): MemeSound[] {
+  const applied = validateFilters(filters);
+  return filterByTone(MEME_SOUNDS, applied.tone);
+}
+
 // Export buildDAWPack for direct use in routes
 export { buildDAWPack };
