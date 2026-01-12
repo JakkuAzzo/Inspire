@@ -279,22 +279,24 @@ export function Workspace({
 							<span className="label">Prompt Challenge</span>
 							<p>{challengeText}</p>
 						</div>
-						<div className="news-headlines">
-							<span className="label">Linked Headlines</span>
-							{newsLoading && <p className="hint">Loading headlines…</p>}
-							{!newsLoading && newsError && <p className="error">{newsError}</p>}
-							{!newsLoading && !newsError && newsHeadlines.length > 0 && (
-								<ul>
-									{newsHeadlines.map((item, idx) => (
-										<li key={`${item.url}-${idx}`}>
-											<a href={item.url} target="_blank" rel="noreferrer">{item.title}</a>
-											{item.source && <span className="news-source"> · {item.source}</span>}
-										</li>
-									))}
-								</ul>
-							)}
-							{!newsLoading && !newsError && !newsHeadlines.length && <p className="hint">No linked headlines yet.</p>}
-						</div>
+						{selectedCard.id === 'headline' && (
+							<div className="news-headlines">
+								<span className="label">Linked Headlines</span>
+								{newsLoading && <p className="hint">Loading headlines…</p>}
+								{!newsLoading && newsError && <p className="error">{newsError}</p>}
+								{!newsLoading && !newsError && newsHeadlines.length > 0 && (
+									<ul>
+										{newsHeadlines.map((item, idx) => (
+											<li key={`${item.url}-${idx}`}>
+												<a href={item.url} target="_blank" rel="noreferrer">{item.title}</a>
+												{item.source && <span className="news-source"> · {item.source}</span>}
+											</li>
+										))}
+									</ul>
+								)}
+								{!newsLoading && !newsError && !newsHeadlines.length && <p className="hint">No linked headlines yet.</p>}
+							</div>
+						)}
 					</>
 				)}
 			</div>

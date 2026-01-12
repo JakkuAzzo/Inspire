@@ -3069,20 +3069,21 @@ function App() {
 				{fuelPack && (
 					<>
 						<FocusStream anchored forceActive={inFocusOverlay} />
-						<div className="news-headlines">
-							<span className="label">Linked Headlines</span>
-							{headlineSearchParams.randomSeed !== null && <p className="hint">Random mode on — showing anything timely.</p>}
-							{(headlineSearchParams.topic || headlineSearchParams.keywords || headlineSearchParams.from || headlineSearchParams.to) && (
+						{selectedCard.id === 'headline' && (
+							<div className="news-headlines">
+								<span className="label">Linked Headlines</span>
+								{headlineSearchParams.randomSeed !== null && <p className="hint">Random mode on — showing anything timely.</p>}
+								{(headlineSearchParams.topic || headlineSearchParams.keywords || headlineSearchParams.from || headlineSearchParams.to) && (
 								<p className="hint">
 									Filters:
 									{headlineSearchParams.topic ? ` topic “${headlineSearchParams.topic}”` : ''}
 									{headlineSearchParams.keywords ? ` keywords ${headlineSearchParams.keywords}` : ''}
 									{headlineSearchParams.from || headlineSearchParams.to ? ` dates ${headlineSearchParams.from || 'any'} → ${headlineSearchParams.to || 'now'}` : ''}
 								</p>
-							)}
-							{newsLoading && <p className="hint">Loading headlines…</p>}
-							{!newsLoading && newsError && <p className="error">{newsError}</p>}
-							{!newsLoading && !newsError && newsHeadlines.length > 0 && (
+								)}
+								{newsLoading && <p className="hint">Loading headlines…</p>}
+								{!newsLoading && newsError && <p className="error">{newsError}</p>}
+								{!newsLoading && !newsError && newsHeadlines.length > 0 && (
 								<ul>
 									{newsHeadlines.map((item, idx) => (
 										<li key={`${item.url}-${idx}`}>
@@ -3091,9 +3092,10 @@ function App() {
 										</li>
 									))}
 								</ul>
-							)}
-							{!newsLoading && !newsError && !newsHeadlines.length && <p className="hint">No linked headlines yet.</p>}
-						</div>
+								)}
+								{!newsLoading && !newsError && !newsHeadlines.length && <p className="hint">No linked headlines yet.</p>}
+							</div>
+						)}
 					</>
 				)}
 			</div>
