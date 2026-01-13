@@ -2,6 +2,7 @@ import React from 'react';
 
 interface WordExplorerProps {
 	powerWords: string[];
+	wordResults: Array<{ word: string; score?: number; numSyllables?: number }>;
 	wordStartsWith: string;
 	wordRhymeWith: string;
 	wordSyllables: string;
@@ -17,11 +18,15 @@ interface WordExplorerProps {
 	onWordTopic: (value: string) => void;
 	onCustomWordInput: (value: string) => void;
 	onCustomWordSubmit: () => void;
+	onSearchWords: () => void;
+	onWordResultClick: (word: string) => void;
 	onWordChipClick: (index: number) => void;
+	onFocusModeToggle?: () => void;
 }
 
 export const WordExplorerDetail: React.FC<WordExplorerProps> = ({
 	powerWords,
+	wordResults,
 	wordStartsWith,
 	wordRhymeWith,
 	wordSyllables,
@@ -37,7 +42,10 @@ export const WordExplorerDetail: React.FC<WordExplorerProps> = ({
 	onWordTopic,
 	onCustomWordInput,
 	onCustomWordSubmit,
-	onWordChipClick
+	onSearchWords,
+	onWordResultClick,
+	onWordChipClick,
+	onFocusModeToggle
 }) => {
 	return (
 		<div className="word-explorer-panel">
@@ -57,13 +65,13 @@ export const WordExplorerDetail: React.FC<WordExplorerProps> = ({
 						onChange={(e) => onWordRhymeWith(e.target.value)}
 					/>
 					<input
-						type="text"
+						type="number"
 						placeholder="Syllables"
 						value={wordSyllables}
 						onChange={(e) => onWordSyllables(e.target.value)}
 					/>
 					<input
-						type="text"
+						type="number"
 						placeholder="Max results"
 						value={wordMaxResults}
 						onChange={(e) => onWordMaxResults(e.target.value)}
@@ -78,6 +86,11 @@ export const WordExplorerDetail: React.FC<WordExplorerProps> = ({
 				{wordLoading && <p className="status-text loading">Searching…</p>}
 				{!wordLoading && wordError && <p className="status-text error">{wordError}</p>}
 			</div>
+			<div className="word-explorer-actions" style={{ marginBottom: 12 }}>
+				<button type="button" className="btn" onClick={onSearchWords} disabled={wordLoading}>
+					{wordLoading ? 'Searching…' : 'Search words'}
+				</button>
+			</div>
 			<div className="word-grid">
 				{powerWords.map((word, index) => (
 					<button
@@ -89,6 +102,31 @@ export const WordExplorerDetail: React.FC<WordExplorerProps> = ({
 						{word}
 					</button>
 				))}
+			</div>
+			<div className="word-results">			{!wordLoading && !wordError && wordResults.length > 0 && onFocusModeToggle && (
+				<button
+					type="button"
+					className="btn secondary focus-toggle"
+					onClick={onFocusModeToggle}
+					style={{ marginBottom: 12, width: '100%' }}
+				>
+					Focus Mode
+				</button>
+			)}				{!wordLoading && !wordError && wordResults.length === 0 && <p className="status-text">No results yet. Try a search.</p>}
+				{!wordLoading && !wordError && wordResults.length > 0 && (
+					<div className="word-grid results">
+						{wordResults.map((word) => (
+							<button
+								key={word.word}
+								type="button"
+								className="word-chip interactive"
+								onClick={() => onWordResultClick(word.word)}
+							>
+								{word.word}
+							</button>
+						))}
+					</div>
+				)}
 			</div>
 			<div className="word-explorer-actions">
 				<input

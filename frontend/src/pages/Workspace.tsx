@@ -44,7 +44,6 @@ interface WorkspaceProps {
 	onCardExpanded: (cardId: string | null) => void;
 	focusMode: boolean;
 	onFocusModeToggle: () => void;
-	onOpenWordExplorer: () => void;
 	onOpenSavedPacks: () => void;
 	workspaceQueue: WorkspaceQueueItem[];
 	youtubeVideos: Record<string, YouTubeVideoPreview>;
@@ -116,7 +115,6 @@ export function Workspace({
 	onLookupIdChange,
 	onLoadById,
 	onFocusModeToggle,
-	onOpenWordExplorer,
 	onOpenSavedPacks
 }: WorkspaceProps) {
 	// Local interactive state for playlist operations in Workspace context
@@ -355,15 +353,6 @@ export function Workspace({
 							onClick={onOpenSavedPacks}
 						>
 							📁
-						</button>
-						<button
-							type="button"
-							className="icon-button"
-							title="Word Explorer"
-							aria-label="Open Word Explorer"
-							onClick={onOpenWordExplorer}
-						>
-							🔤
 						</button>
 						<button
 							type="button"
