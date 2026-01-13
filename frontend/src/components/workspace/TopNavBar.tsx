@@ -16,7 +16,6 @@ export interface TopNavBarProps {
 	onSharePack: () => void;
 	onSavePack: () => void;
 	onOpenSaved: () => void;
-	onOpenWordExplorer: () => void;
 	onToggleWorkspaceControls: () => void;
 	onOpenSettings: () => void;
 }
@@ -33,7 +32,6 @@ export function TopNavBar({
 	onSharePack,
 	onSavePack,
 	onOpenSaved,
-	onOpenWordExplorer,
 	onToggleWorkspaceControls,
 	onOpenSettings
 }: TopNavBarProps) {
@@ -103,15 +101,6 @@ export function TopNavBar({
 						onClick={onOpenSaved}
 					>
 						📁
-					</button>
-					<button
-						type="button"
-						className="icon-button"
-						title="Word Explorer"
-						aria-label="Open Word Explorer"
-						onClick={onOpenWordExplorer}
-					>
-						🔤
 					</button>
 					<button
 						type="button"

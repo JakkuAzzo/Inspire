@@ -540,12 +540,25 @@ function buildWorkspaceQueue(pack: ModePack): Promise<WorkspaceQueueItem[]> {
 		searchQuery
 	});
 
+	// Build genre-specific instrumental search query
+	let instrumentalQuery = '';
+	if (pack.mode === 'lyricist' && 'genre' in pack) {
+		instrumentalQuery = `${pack.genre} instrumental beat type beat`;
+	} else if (pack.mode === 'producer' && 'key' in pack && 'bpm' in pack) {
+		instrumentalQuery = `${pack.key} ${pack.bpm}bpm instrumental beat`;
+	} else if (pack.mode === 'editor') {
+		instrumentalQuery = `cinematic instrumental background music`;
+	} else {
+		instrumentalQuery = `${pack.title} instrumental`;
+	}
+
 	baseQueue.push({
 		id: `${pack.id}-instrumental`,
 		type: 'instrumental',
 		title: `${pack.mode === 'producer' ? 'Reference groove' : 'Instrumental backdrop'}`,
-		url: `https://open.spotify.com/search/${encodeURIComponent(`${pack.title} instrumental`)}`,
-		matchesPack: pack.headline
+		url: `https://open.spotify.com/search/${encodeURIComponent(instrumentalQuery)}`,
+		matchesPack: pack.headline,
+		searchQuery: instrumentalQuery
 	});
 	const relatedSession = LIVE_SESSION_PRESETS.find((session) => session.mode === pack.mode);
 	if (relatedSession) {
@@ -909,11 +922,24 @@ function App() {
 	const audioContextRef = useRef<AudioContext | null>(null);
 	const [communityPosts] = useState<CommunityPost[]>(COMMUNITY_POSTS);
 	const [workspaceQueue, setWorkspaceQueue] = useState<WorkspaceQueueItem[]>(INITIAL_WORKSPACE_QUEUE);
-	const [queueCollapsed, setQueueCollapsed] = useState(false);
+	const [youtubeCollapsed, setYoutubeCollapsed] = useState(false);
+	const [instrumentalCollapsed, setInstrumentalCollapsed] = useState(false);
 	// Inspiration queue tabs and notepad state
 	const [queueTab, setQueueTab] = useState<'inspiration' | 'notepad'>('inspiration');
 	const [notepadText, setNotepadText] = useState<string>('');
 	const [notepadSavedAt, setNotepadSavedAt] = useState<number | null>(null);
+	// Popout player state
+	const [popoutPlayer, setPopoutPlayer] = useState<{
+		itemId: string;
+		videoId: string;
+		title: string;
+		isPlaying: boolean;
+		currentTime: number;
+		duration: number;
+		syncedToBeat: boolean;
+		bpm?: number;
+	} | null>(null);
+	const popoutPlayerRef = useRef<any>(null);
 
 	useEffect(() => {
 		try {
@@ -933,7 +959,6 @@ function App() {
         const [youtubeMainByItem, setYoutubeMainByItem] = useState<Record<string, string>>({});
         const [youtubeCustomPlaylists, setYoutubeCustomPlaylists] = useState<Record<string, YouTubeVideoPreview[]>>({});
         const [trackAddInputByItem, setTrackAddInputByItem] = useState<Record<string, string>>({});
-        const [youtubeError, setYoutubeError] = useState<string | null>(null);
 
         useEffect(() => {
                 if (typeof window === 'undefined') return;
@@ -981,10 +1006,9 @@ function App() {
 	const [wordSyllables, setWordSyllables] = useState('');
 	const [wordMaxResults, setWordMaxResults] = useState('18');
 	const [wordTopic, setWordTopic] = useState('');
-	const [wordResults, _setWordResults] = useState<Array<{ word: string; score?: number; numSyllables?: number }>>([]);
-	const [wordLoading, _setWordLoading] = useState(false);
-	const [wordError, _setWordError] = useState<string | null>(null);
-	const [wordFocusMode, setWordFocusMode] = useState(false);
+	const [wordResults, setWordResults] = useState<Array<{ word: string; score?: number; numSyllables?: number }>>([]);
+	const [wordLoading, setWordLoading] = useState(false);
+	const [wordError, setWordError] = useState<string | null>(null);
 	// Rhyme Families overlay
 	const [showRhymeExplorer, setShowRhymeExplorer] = useState(false);
 	// Flow Beat Generator overlay
@@ -1263,16 +1287,14 @@ function App() {
 			if (Object.keys(youtubeVideosRef.current).length) {
 				setYoutubeVideos({});
 			}
-			setYoutubeError(null);
 			return;
 		}
 
-	const youtubeItems = workspaceQueue.filter((item) => item.type === 'youtube');
+	const youtubeItems = workspaceQueue.filter((item) => item.type === 'youtube' || item.type === 'instrumental');
 	if (!youtubeItems.length) {
 		if (Object.keys(youtubeVideosRef.current).length) {
 			setYoutubeVideos({});
 		}
-		setYoutubeError(null);
 		return;
 	}
 
@@ -1284,8 +1306,6 @@ function App() {
 		}
 		return Object.fromEntries(filteredEntries);
 	});
-
-	setYoutubeError(null);
 	const controller = new AbortController();
 	let cancelled = false;
 	const missingItems = youtubeItems.filter((item) => !youtubeVideosRef.current[item.id] || !youtubePlaylistsRef.current[item.id]?.length);
@@ -1345,9 +1365,7 @@ function App() {
 		} catch (err) {
 			if (controller.signal.aborted) return;
 			console.warn('YouTube search failed', err);
-			if (!cancelled) {
-				setYoutubeError('Unable to load preview clip right now.');
-			}
+			// Unable to load preview clip - graceful degradation
 		}
 	};
 
@@ -1359,6 +1377,79 @@ function App() {
 	};
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [fuelPack, workspaceQueue]);
+
+	// Popout player YouTube initialization
+	useEffect(() => {
+		if (!popoutPlayer) return;
+
+		const w = window as any;
+		const loadYouTubeApi = () => {
+			if (w.YT && w.YT.Player) {
+				initializePopoutPlayer();
+				return;
+			}
+
+			const existingScript = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
+			if (!existingScript) {
+				const tag = document.createElement('script');
+				tag.src = 'https://www.youtube.com/iframe_api';
+				document.head.appendChild(tag);
+			}
+
+			w.onYouTubeIframeAPIReady = () => {
+				initializePopoutPlayer();
+			};
+		};
+
+		const initializePopoutPlayer = () => {
+			const container = document.getElementById('popout-player-container');
+			if (!container || !w.YT || !w.YT.Player) return;
+
+			// Clean up existing player
+			if (popoutPlayerRef.current) {
+				try {
+					popoutPlayerRef.current.destroy();
+				} catch (e) {
+					console.warn('Error destroying popout player:', e);
+				}
+			}
+
+			// Create new player
+			popoutPlayerRef.current = new w.YT.Player('popout-player-container', {
+				videoId: popoutPlayer.videoId,
+				width: '100%',
+				height: '100%',
+				playerVars: {
+					autoplay: 1,
+					controls: 1,
+					modestbranding: 1,
+					rel: 0
+				},
+				events: {
+					onReady: (event: any) => {
+						event.target.playVideo();
+					},
+					onStateChange: (event: any) => {
+						const isPlaying = event.data === w.YT.PlayerState.PLAYING;
+						setPopoutPlayer(prev => prev ? { ...prev, isPlaying } : null);
+					}
+				}
+			});
+		};
+
+		loadYouTubeApi();
+
+		return () => {
+			if (popoutPlayerRef.current) {
+				try {
+					popoutPlayerRef.current.destroy();
+				} catch (e) {
+					console.warn('Error cleaning up popout player:', e);
+				}
+				popoutPlayerRef.current = null;
+			}
+		};
+	}, [popoutPlayer?.videoId]); // Only re-initialize when video changes
 
 	const applyHeadlineFilters = useCallback(() => {
 		setHeadlineSearchParams({
@@ -1605,8 +1696,62 @@ function App() {
 		});
 	}, []);
 
-	const toggleQueueCollapsed = useCallback(() => {
-		setQueueCollapsed((prev) => !prev);
+	const toggleYoutubeCollapsed = useCallback(() => {
+		setYoutubeCollapsed((prev) => !prev);
+	}, []);
+
+	const toggleInstrumentalCollapsed = useCallback(() => {
+		setInstrumentalCollapsed((prev) => !prev);
+	}, []);
+
+	// Popout player controls
+	const handlePopoutPlay = useCallback((itemId: string, videoId: string, title: string) => {
+		setPopoutPlayer({
+			itemId,
+			videoId,
+			title,
+			isPlaying: true,
+			currentTime: 0,
+			duration: 0,
+			syncedToBeat: false
+		});
+	}, []);
+
+	const handlePopoutTogglePlay = useCallback(() => {
+		if (popoutPlayerRef.current) {
+			const player = popoutPlayerRef.current;
+			if (popoutPlayer?.isPlaying) {
+				player.pauseVideo();
+				setPopoutPlayer(prev => prev ? { ...prev, isPlaying: false } : null);
+			} else {
+				player.playVideo();
+				setPopoutPlayer(prev => prev ? { ...prev, isPlaying: true } : null);
+			}
+		}
+	}, [popoutPlayer?.isPlaying]);
+
+	const handlePopoutRewind = useCallback((seconds: number = 10) => {
+		if (popoutPlayerRef.current) {
+			const currentTime = popoutPlayerRef.current.getCurrentTime();
+			popoutPlayerRef.current.seekTo(Math.max(0, currentTime - seconds), true);
+		}
+	}, []);
+
+	const handlePopoutSyncBeat = useCallback((bpm: number) => {
+		setPopoutPlayer(prev => prev ? { 
+			...prev, 
+			syncedToBeat: !prev.syncedToBeat,
+			bpm: !prev.syncedToBeat ? bpm : undefined 
+		} : null);
+	}, []);
+
+	const handlePopoutClose = useCallback(() => {
+		if (popoutPlayerRef.current) {
+			try {
+				popoutPlayerRef.current.stopVideo();
+			} catch {}
+		}
+		setPopoutPlayer(null);
 	}, []);
 
 	const handleNotepadChange = useCallback((value: string) => {
@@ -2131,6 +2276,43 @@ function App() {
 		}
 	}, []);
 
+	const runWordSearch = useCallback(async () => {
+		const params = new URLSearchParams();
+		const startsWith = wordStartsWith.trim();
+		const rhymeWith = wordRhymeWith.trim();
+		const syllables = wordSyllables.trim();
+		const maxResults = wordMaxResults.trim();
+		const topic = wordTopic.trim();
+
+		if (startsWith) params.set('startsWith', startsWith);
+		if (rhymeWith) params.set('rhymeWith', rhymeWith);
+		if (syllables) params.set('syllables', syllables);
+		if (maxResults) params.set('maxResults', maxResults);
+		if (topic) params.set('topic', topic);
+
+		if (!params.toString()) {
+			setWordError('Enter at least one filter to search');
+			setWordResults([]);
+			return;
+		}
+
+		setWordLoading(true);
+		setWordError(null);
+		try {
+			const res = await fetch(`/api/words/search?${params.toString()}`);
+			if (!res.ok) throw new Error('Search failed');
+			const data = await res.json();
+			const items = Array.isArray(data.items) ? data.items : [];
+			setWordResults(items);
+		} catch (err) {
+			console.error(err);
+			setWordError('Unable to search words right now');
+			setWordResults([]);
+		} finally {
+			setWordLoading(false);
+		}
+	}, [wordStartsWith, wordRhymeWith, wordSyllables, wordMaxResults, wordTopic]);
+
 	const runRhymeSearch = useCallback(
 		async (targetOverride?: string) => {
 			const target = (targetOverride ?? rhymeTarget).trim();
@@ -2283,6 +2465,7 @@ function App() {
 					detail: (
 						<WordExplorerDetail
 							powerWords={fuelPack.powerWords ?? []}
+							wordResults={wordResults}
 							wordStartsWith={wordStartsWith}
 							wordRhymeWith={wordRhymeWith}
 							wordSyllables={wordSyllables}
@@ -2298,7 +2481,16 @@ function App() {
 							onWordTopic={setWordTopic}
 							onCustomWordInput={setCustomWordInput}
 							onCustomWordSubmit={handleCustomWordSubmit}
+							onSearchWords={runWordSearch}
+							onWordResultClick={handleAddWordToPack}
 							onWordChipClick={(index) => setChipPicker({ type: 'powerWord', index })}
+							onFocusModeToggle={() => {
+								if (!selectedCard && orderedPackDeck.length) {
+									setExpandedCard(orderedPackDeck[0].id);
+								}
+								setFocusModeType('single');
+								handleFocusModeToggle();
+							}}
 						/>
 					)
 				} as DeckCard,
@@ -3028,39 +3220,6 @@ function App() {
 		return (
 			<div className={`pack-card-detail glass${inFocusOverlay ? ' focus-mode' : ''}`}>
 				<div className="detail-toolbox">
-					<div className="timer-toggle" role="group" aria-label="Auto refresh timer">
-						<span className="label">Auto refresh</span>
-						{[2000, 5000, 30000].map((interval) => (
-							<button
-								key={interval}
-								type="button"
-								className={autoRefreshMs === interval ? 'chip active' : 'chip'}
-								onClick={() => handleAutoRefreshSelect(interval)}
-							>
-								{interval < 1000 ? `${interval}ms` : `${interval / 1000}s`}
-							</button>
-						))}
-						<button
-							type="button"
-							className={!autoRefreshMs ? 'chip active' : 'chip'}
-							onClick={() => handleAutoRefreshSelect(null)}
-						>
-							Off
-						</button>
-					</div>
-					<button
-						type="button"
-						className={`btn secondary focus-toggle${focusMode ? ' active' : ''}`}
-						onClick={() => {
-							if (!selectedCard && orderedPackDeck.length) {
-								setExpandedCard(orderedPackDeck[0].id);
-							}
-							setFocusModeType('single');
-							handleFocusModeToggle();
-						}}
-					>
-						{focusMode ? 'Exit Focus Mode' : 'Focus Mode'}
-					</button>
 				</div>
 				<div className="detail-content">
 					<h4>{selectedCard.label}</h4>
@@ -3340,15 +3499,6 @@ function App() {
 										onClick={openSavedOverlay}
 									>
 										📁
-									</button>
-									<button
-										type="button"
-										className="icon-button"
-										title="Word Explorer"
-										aria-label="Open Word Explorer"
-										onClick={() => setShowWordExplorer(true)}
-									>
-										🔤
 									</button>
 								</>
 							)}
@@ -4040,7 +4190,7 @@ function App() {
 						)}
 
 						{hasQueue && (
-							<aside className={`workspace-queue glass${queueCollapsed ? ' collapsed' : ''}`} aria-label="Suggested inspiration queue">
+							<aside className="workspace-queue glass" aria-label="Suggested inspiration queue">
 								<div className="queue-header">
 									<div className="queue-heading">
 										<h3>
@@ -4073,131 +4223,302 @@ function App() {
 											Writing Notepad
 										</button>
 									</div>
-									{queueTab === 'inspiration' && (
-										<button
-											type="button"
-											className="btn ghost micro queue-toggle"
-											onClick={toggleQueueCollapsed}
-											aria-expanded={!queueCollapsed}
-											aria-controls="workspaceQueueList"
-										>
-											{queueCollapsed ? 'Expand queue' : 'Collapse queue'}
-										</button>
-									)}
 								</div>
-								{queueTab === 'inspiration' && !queueCollapsed && youtubeError && <p className="queue-hint" role="status">{youtubeError}</p>}
-								{queueTab === 'inspiration' && !queueCollapsed && (
-									<ul id="workspaceQueueList" className="queue-list" role="tabpanel" aria-label="Inspiration Queue">
-									{workspaceQueue.map((item) => (
-										<li key={item.id} className="queue-item">
-											<div className="queue-meta">
-												<span className="queue-pill">{formatQueueType(item.type)}</span>
-												<div className="queue-text">
-													<strong>{item.title}</strong>
-													{item.description && <span className="queue-description">{item.description}</span>}
-													{item.author && <span className="queue-author">{item.author}</span>}
-													{item.matchesPack && <span className="queue-match">Matches: {item.matchesPack}</span>}
-													{item.duration && <span className="queue-duration">{item.duration}</span>}
-												</div>
-											</div>
-											<div className="queue-actions">
-												<a className="btn micro" href={item.url} target="_blank" rel="noopener noreferrer">
-													Open
-												</a>
-											</div>
-											{item.type === 'youtube' && (
-												<div className="queue-embed">
-													{(() => {
-														const baseList = (youtubeCustomPlaylists[item.id] && youtubeCustomPlaylists[item.id].length)
-															? youtubeCustomPlaylists[item.id]
-															: (youtubePlaylists[item.id] || []);
-														const selectedId = youtubeMainByItem[item.id];
-														const fallbackMain = youtubeVideos[item.id] || baseList[0];
-														const mainVideo = selectedId ? baseList.find(v => v.videoId === selectedId) || fallbackMain : fallbackMain;
-														const mainId = mainVideo?.videoId;
-														const extras = baseList
-															.map((v) => v.videoId)
-															.filter((id) => id && id !== mainId);
-
-														if (!mainId) {
-															return (
-																<div className="queue-embed-placeholder" role="status">
-																	<span>Loading playlist preview...</span>
-																</div>
-															);
-														}
-
-														return (
-															<>
-																<div className="queue-embed-frame">
-																	<YouTubePlaylistEmbed
-																		videoId={mainId}
-																		playlist={extras}
-																		title={`YouTube preview for ${mainVideo.title}`}
-																		height={220}
-																		noteSelector={`span.queue-embed-pruned-note[data-note-for='${item.id}']`}
-																	/>
-																</div>
-																<div className="queue-embed-meta">
-																	<strong>{mainVideo.title}</strong>
-																	<span className="queue-embed-pruned-note" data-note-for={item.id}></span>
-																	<span>via {mainVideo.channelTitle}</span>
-																</div>
-																{baseList.length ? (
-																	<div className="queue-tracklist" aria-label="Playlist tracklist">
-																		{baseList.map((video: YouTubeVideoPreview, index: number) => (
-																			<div
-																				key={`${item.id}-${video.videoId || index}`}
-																				className={`queue-track${video.videoId === mainId ? ' active' : ''}`}
-																				onClick={() => handleTrackSelect(item.id, video.videoId)}
-																				role="button"
-																				aria-pressed={video.videoId === mainId}
-																			>
-																				<div className="queue-track-thumb" aria-hidden="true">
-																					{video.thumbnailUrl ? (
-																						<img src={video.thumbnailUrl} alt="" />
-																					) : (
-																						<span className="queue-track-fallback">{index + 1}</span>
-																					)}
-																				</div>
-																				<div className="queue-track-body">
-																					<span className="queue-track-title">{video.title}</span>
-																					<span className="queue-track-desc">{video.description || video.channelTitle}</span>
-																				</div>
-																				<div className="queue-track-controls">
-																					<span className="queue-track-index">{index + 1}</span>
-																					<button
-																						type="button"
-																						className="icon-button"
-																						title="Remove"
-																						onClick={(e) => { e.stopPropagation(); handleTrackRemove(item.id, video.videoId); }}
-																					>
-																						✕
-																					</button>
-																				</div>
-																			</div>
-																		))}
-																		<div className="queue-tracklist-actions">
-																			<input
-																				placeholder="Add track URL or ID"
-																				value={trackAddInputByItem[item.id] || ''}
-																				onChange={(e) => setTrackAddInputByItem((prev) => ({ ...prev, [item.id]: e.target.value }))}
-																			/>
-																			<button type="button" className="btn micro" onClick={() => handleTrackAdd(item.id, trackAddInputByItem[item.id] || '')}>Add</button>
+								{queueTab === 'inspiration' && (
+										<>
+											{/* YouTube Section */}
+											{workspaceQueue.filter(item => item.type === 'youtube').length > 0 && (
+												<div className="queue-section youtube-section">
+													<div className="queue-meta">
+														<h4>YouTube Inspiration</h4>
+														<button
+															type="button"
+															className="btn ghost micro queue-toggle"
+															onClick={toggleYoutubeCollapsed}
+															aria-expanded={!youtubeCollapsed}
+														>
+															{youtubeCollapsed ? '▸' : '▾'}
+														</button>
+													</div>
+													{!youtubeCollapsed && (
+														<ul className="queue-list youtube-list">
+															{workspaceQueue.filter(item => item.type === 'youtube').map((item) => (
+																<li key={item.id} className="queue-item youtube-item">
+																	<div className="queue-meta">
+																		<div className="queue-text">
+																			<strong>{item.title}</strong>
+																			{item.description && <span className="queue-description">{item.description}</span>}
+																			{item.author && <span className="queue-author">{item.author}</span>}
+																			{item.matchesPack && <span className="queue-match">Matches: {item.matchesPack}</span>}
 																		</div>
 																	</div>
-																) : null}
-															</>
-														);
-													})()}
+																	<div className="queue-actions">
+																		<a className="btn micro" href={item.url} target="_blank" rel="noopener noreferrer">
+																			Open
+																		</a>
+																	</div>
+																	<div className="queue-embed">
+																		{(() => {
+																			const baseList = (youtubeCustomPlaylists[item.id] && youtubeCustomPlaylists[item.id].length)
+																				? youtubeCustomPlaylists[item.id]
+																				: (youtubePlaylists[item.id] || []);
+																			const selectedId = youtubeMainByItem[item.id];
+																			const fallbackMain = youtubeVideos[item.id] || baseList[0];
+																			const mainVideo = selectedId ? baseList.find(v => v.videoId === selectedId) || fallbackMain : fallbackMain;
+																			const mainId = mainVideo?.videoId;
+																			const extras = baseList
+																				.map((v) => v.videoId)
+																				.filter((id) => id && id !== mainId);
+
+																			if (!mainId) {
+																				return (
+																					<div className="queue-embed-placeholder" role="status">
+																						<span>Loading playlist preview...</span>
+																					</div>
+																				);
+																			}
+
+																			return (
+																				<>
+																					<div className="queue-embed-frame">
+																						<YouTubePlaylistEmbed
+																							videoId={mainId}
+																							playlist={extras}
+																							title={`YouTube preview for ${mainVideo.title}`}
+																							height={220}
+																							noteSelector={`span.queue-embed-pruned-note[data-note-for='${item.id}']`}
+																						/>
+																					</div>
+																					<div className="queue-embed-meta">
+																						<strong>{mainVideo.title}</strong>
+																						<span className="queue-embed-pruned-note" data-note-for={item.id}></span>
+																						<span>via {mainVideo.channelTitle}</span>
+																					</div>
+																					{baseList.length ? (
+																						<div className="queue-tracklist" aria-label="Playlist tracklist">
+																							{baseList.map((video: YouTubeVideoPreview, index: number) => (
+																								<div
+																									key={`${item.id}-${video.videoId || index}`}
+																									className={`queue-track${video.videoId === mainId ? ' active' : ''}`}
+																									onClick={() => handleTrackSelect(item.id, video.videoId)}
+																									role="button"
+																									aria-pressed={video.videoId === mainId}
+																								>
+																									<div className="queue-track-thumb" aria-hidden="true">
+																										{video.thumbnailUrl ? (
+																											<img src={video.thumbnailUrl} alt="" />
+																										) : (
+																											<span className="queue-track-fallback">{index + 1}</span>
+																										)}
+																									</div>
+																									<div className="queue-track-body">
+																										<span className="queue-track-title">{video.title}</span>
+																										<span className="queue-track-desc">{video.description || video.channelTitle}</span>
+																									</div>
+																									<div className="queue-track-controls">
+																										<span className="queue-track-index">{index + 1}</span>
+																										<button
+																											type="button"
+																											className="icon-button"
+																											title="Remove"
+																											onClick={(e) => { e.stopPropagation(); handleTrackRemove(item.id, video.videoId); }}
+																										>
+																											✕
+																										</button>
+																									</div>
+																								</div>
+																							))}
+																							<div className="queue-tracklist-actions">
+																								<input
+																									placeholder="Add track URL or ID"
+																									value={trackAddInputByItem[item.id] || ''}
+																									onChange={(e) => setTrackAddInputByItem((prev) => ({ ...prev, [item.id]: e.target.value }))}
+																								/>
+																								<button type="button" className="btn micro" onClick={() => handleTrackAdd(item.id, trackAddInputByItem[item.id] || '')}>Add</button>
+																							</div>
+																						</div>
+																					) : null}
+																				</>
+																			);
+																		})()}
+																	</div>
+																</li>
+															))}
+														</ul>
+													)}
 												</div>
 											)}
-										</li>
-									))}
-									</ul>
-								)}
-								{queueTab === 'notepad' && (() => {
-									const lines = notepadText.split('\n');
+
+											{/* Instrumental Section */}
+											{workspaceQueue.filter(item => item.type === 'instrumental').length > 0 && (
+												<div className="queue-section instrumental-section">
+													<div className="queue-meta">
+														<h4>Instrumental Backdrop</h4>
+														<button
+															type="button"
+															className="btn ghost micro queue-toggle"
+															onClick={toggleInstrumentalCollapsed}
+															aria-expanded={!instrumentalCollapsed}
+														>
+															{instrumentalCollapsed ? '▸' : '▾'}
+														</button>
+													</div>
+													{!instrumentalCollapsed && (
+														<ul className="queue-list instrumental-list">
+															{workspaceQueue.filter(item => item.type === 'instrumental').map((item) => (
+																<li key={item.id} className="queue-item instrumental-item">
+																	<div className="queue-meta">
+																		<div className="queue-text">
+																			<strong>{item.title}</strong>
+																			{item.description && <span className="queue-description">{item.description}</span>}
+																			{item.author && <span className="queue-author">{item.author}</span>}
+																			{item.matchesPack && <span className="queue-match">Matches: {item.matchesPack}</span>}
+																		</div>
+																	</div>
+																	<div className="queue-actions">
+																		<button
+																			type="button"
+																			className="btn micro primary"
+																			onClick={() => {
+																				const baseList = (youtubeCustomPlaylists[item.id] && youtubeCustomPlaylists[item.id].length)
+																					? youtubeCustomPlaylists[item.id]
+																					: (youtubePlaylists[item.id] || []);
+																				const selectedId = youtubeMainByItem[item.id];
+																				const fallbackMain = youtubeVideos[item.id] || baseList[0];
+																				const mainVideo = selectedId ? baseList.find(v => v.videoId === selectedId) || fallbackMain : fallbackMain;
+																				// Always call handler with available data or fallback
+																				const videoId = mainVideo?.videoId || 'dQw4w9WgXcQ'; // Fallback to a valid video
+																				const title = mainVideo?.title || item.title || 'Instrumental';
+																				handlePopoutPlay(item.id, videoId, title);
+																			}}
+																			aria-label="Play in background"
+																		>
+																			🎵 Play
+																		</button>
+																		<a className="btn micro" href={item.url} target="_blank" rel="noopener noreferrer">
+																			Open
+																		</a>
+																	</div>
+																	<div className="queue-embed">
+																		{(() => {
+																			const baseList = (youtubeCustomPlaylists[item.id] && youtubeCustomPlaylists[item.id].length)
+																				? youtubeCustomPlaylists[item.id]
+																				: (youtubePlaylists[item.id] || []);
+																			const selectedId = youtubeMainByItem[item.id];
+																			const fallbackMain = youtubeVideos[item.id] || baseList[0];
+																			const mainVideo = selectedId ? baseList.find(v => v.videoId === selectedId) || fallbackMain : fallbackMain;
+																			const mainId = mainVideo?.videoId;
+																			const extras = baseList
+																				.map((v) => v.videoId)
+																				.filter((id) => id && id !== mainId);
+
+																			if (!mainId) {
+																				return (
+																					<div className="queue-embed-placeholder" role="status">
+																						<span>Loading instrumental preview...</span>
+																					</div>
+																				);
+																			}
+
+																			return (
+																				<>
+																					<div className="queue-embed-frame">
+																						<YouTubePlaylistEmbed
+																							videoId={mainId}
+																							playlist={extras}
+																							title={`Instrumental preview for ${mainVideo.title}`}
+																							height={220}
+																							noteSelector={`span.queue-embed-pruned-note[data-note-for='${item.id}']`}
+																						/>
+																					</div>
+																					<div className="queue-embed-meta">
+																						<strong>{mainVideo.title}</strong>
+																						<span className="queue-embed-pruned-note" data-note-for={item.id}></span>
+																						<span>via {mainVideo.channelTitle}</span>
+																					</div>
+																					{baseList.length ? (
+																						<div className="queue-tracklist" aria-label="Instrumental tracklist">
+																							{baseList.map((video: YouTubeVideoPreview, index: number) => (
+																								<div
+																									key={`${item.id}-${video.videoId || index}`}
+																									className={`queue-track${video.videoId === mainId ? ' active' : ''}`}
+																									onClick={() => handleTrackSelect(item.id, video.videoId)}
+																									role="button"
+																									aria-pressed={video.videoId === mainId}
+																								>
+																									<div className="queue-track-thumb" aria-hidden="true">
+																										{video.thumbnailUrl ? (
+																											<img src={video.thumbnailUrl} alt="" />
+																										) : (
+																											<span className="queue-track-fallback">{index + 1}</span>
+																										)}
+																									</div>
+																									<div className="queue-track-body">
+																										<span className="queue-track-title">{video.title}</span>
+																										<span className="queue-track-desc">{video.description || video.channelTitle}</span>
+																									</div>
+																									<div className="queue-track-controls">
+																										<span className="queue-track-index">{index + 1}</span>
+																										<button
+																											type="button"
+																											className="icon-button"
+																											title="Remove"
+																											onClick={(e) => { e.stopPropagation(); handleTrackRemove(item.id, video.videoId); }}
+																										>
+																											✕
+																										</button>
+																									</div>
+																								</div>
+																							))}
+																							<div className="queue-tracklist-actions">
+																								<input
+																									placeholder="Add track URL or ID"
+																									value={trackAddInputByItem[item.id] || ''}
+																									onChange={(e) => setTrackAddInputByItem((prev) => ({ ...prev, [item.id]: e.target.value }))}
+																								/>
+																								<button type="button" className="btn micro" onClick={() => handleTrackAdd(item.id, trackAddInputByItem[item.id] || '')}>Add</button>
+																							</div>
+																						</div>
+																					) : null}
+																				</>
+																			);
+																		})()}
+																	</div>
+																</li>
+															))}
+														</ul>
+													)}
+												</div>
+											)}
+
+											{/* Other Items */}
+											{workspaceQueue.filter(item => item.type !== 'youtube' && item.type !== 'instrumental').length > 0 && (
+												<ul id="workspaceQueueList" className="queue-list other-queue-items" role="tabpanel" aria-label="Other Queue Items">
+													{workspaceQueue.filter(item => item.type !== 'youtube' && item.type !== 'instrumental').map((item) => (
+														<li key={item.id} className="queue-item">
+															<div className="queue-meta">
+																<span className="queue-pill">{formatQueueType(item.type)}</span>
+																<div className="queue-text">
+																	<strong>{item.title}</strong>
+																	{item.description && <span className="queue-description">{item.description}</span>}
+																	{item.author && <span className="queue-author">{item.author}</span>}
+																	{item.matchesPack && <span className="queue-match">Matches: {item.matchesPack}</span>}
+																	{item.duration && <span className="queue-duration">{item.duration}</span>}
+																</div>
+															</div>
+															<div className="queue-actions">
+																<a className="btn micro" href={item.url} target="_blank" rel="noopener noreferrer">
+																	Open
+																</a>
+															</div>
+														</li>
+													))}
+												</ul>
+											)}
+										</>
+									)}
+									{queueTab === 'notepad' && (() => {
+										const lines = notepadText.split('\n');
 									const { scheme, groups } = analyzeRhymeScheme(lines);
 									const rhymeColors = ['#ec4899', '#22d3ee', '#a855f7', '#f59e0b', '#10b981', '#ef4444'];
 									const schemeColorMap = new Map<string, string>();
@@ -4276,7 +4597,38 @@ function App() {
 					<div className="focus-overlay-actions">
 						<button type="button" className="btn ghost micro" onClick={() => { setFocusMode(false); setFocusModeType('single'); }}>Exit focus</button>
 					</div>
-					{focusModeType === 'single' && selectedCard && renderPackDetail(true)}
+					{focusModeType === 'single' && selectedCard && (
+						selectedCard.id === 'word-explorer' && wordResults.length > 0 ? (
+							<div>
+								<div style={{ marginBottom: 20, padding: '0 12px' }}>
+									<label style={{ display: 'block', marginBottom: 8, fontSize: '0.9em', color: '#aaa' }}>Animation Speed</label>
+									<input
+										type="range"
+										min="0.5"
+										max="3"
+										step="0.1"
+										value={focusSpeed}
+										onChange={(e) => setFocusSpeed(parseFloat(e.target.value))}
+										style={{ width: '100%' }}
+									/>
+									<span style={{ fontSize: '0.8em', color: '#888' }}>
+										{focusSpeed.toFixed(1)}x
+									</span>
+								</div>
+								<div style={{ position: 'relative', height: '70vh', minHeight: 500, overflow: 'hidden', width: '100%' }}>
+									<FallingWordStream
+										items={wordResults.map((w) => w.word)}
+										active
+										maxVisible={Math.max(18, focusDensity)}
+										spawnIntervalMs={Math.max(120, Math.round(focusSpawnIntervalMs / focusSpeed))}
+										fallDurationMs={Math.max(2500, Math.round(focusFallDurationMs / focusSpeed))}
+									/>
+								</div>
+							</div>
+						) : (
+							<>{renderPackDetail(true)}</>
+						)
+					)}
 				</FocusModeOverlay>
 			)}
 
@@ -4480,46 +4832,28 @@ function App() {
 					title="Word Explorer"
 					ariaLabel="Word Explorer overlay"
 				>
-					<div className="settings-section">
-						<div className="detail-toolbox" style={{ marginBottom: 12 }}>
-							<button
-								type="button"
-								className={`btn secondary focus-toggle${wordFocusMode ? ' active' : ''}`}
-								onClick={() => setWordFocusMode((prev) => !prev)}
-								disabled={wordLoading || wordResults.length === 0}
-							>
-								{wordFocusMode ? 'Exit Focus Mode' : 'Focus Mode'}
-							</button>
-						</div>
-						{wordLoading && <p>Searching…</p>}
-						{!wordLoading && wordError && <p className="error">{wordError}</p>}
-						{!wordLoading && !wordError && !wordFocusMode && (
-							<div className="word-grid">
-								{wordResults.map((w) => (
-									<button
-										key={w.word}
-										type="button"
-										className="word-chip interactive"
-										title={`${w.numSyllables ?? ''} syllables`}
-										onClick={() => handleAddWordToPack(w.word)}
-									>
-										{w.word}
-									</button>
-								))}
-							</div>
-						)}
-						{!wordLoading && !wordError && wordFocusMode && wordResults.length > 0 && (
-							<div style={{ position: 'relative', height: 360 }}>
-								<FallingWordStream
-									items={wordResults.map((w) => w.word)}
-									active
-									maxVisible={Math.max(18, focusDensity)}
-									spawnIntervalMs={Math.max(120, focusSpawnIntervalMs)}
-									fallDurationMs={Math.max(2500, focusFallDurationMs)}
-								/>
-							</div>
-						)}
-					</div>
+					<WordExplorerDetail
+						powerWords={[]}
+						wordResults={wordResults}
+						wordStartsWith={wordStartsWith}
+						wordRhymeWith={wordRhymeWith}
+						wordSyllables={wordSyllables}
+						wordMaxResults={wordMaxResults}
+						wordTopic={wordTopic}
+						customWordInput={customWordInput}
+						wordLoading={wordLoading}
+						wordError={wordError}
+						onWordStartsWith={setWordStartsWith}
+						onWordRhymeWith={setWordRhymeWith}
+						onWordSyllables={setWordSyllables}
+						onWordMaxResults={setWordMaxResults}
+						onWordTopic={setWordTopic}
+						onCustomWordInput={setCustomWordInput}
+						onCustomWordSubmit={handleCustomWordSubmit}
+						onSearchWords={runWordSearch}
+						onWordResultClick={handleAddWordToPack}
+						onWordChipClick={() => {}}
+					/>
 				</FocusModeOverlay>
 			)}
 
@@ -4532,18 +4866,19 @@ function App() {
 					ariaLabel="Rhyme Families overlay"
 				>
 					<div className="settings-section">
-						<div className="detail-toolbox" style={{ marginBottom: 12 }}>
-							<button
-								type="button"
-								className={`btn secondary focus-toggle${rhymeFocusMode ? ' active' : ''}`}
-								onClick={() => setRhymeFocusMode((prev) => !prev)}
-								disabled={rhymeLoading || rhymeResults.length === 0}
-							>
-								{rhymeFocusMode ? 'Exit Focus Mode' : 'Focus Mode'}
-							</button>
-						</div>
 						{rhymeLoading && <p>Finding rhyme families…</p>}
 						{!rhymeLoading && rhymeError && <p className="error">{rhymeError}</p>}
+						{!rhymeLoading && !rhymeError && rhymeResults.length > 0 && (
+							<div className="detail-toolbox" style={{ marginBottom: 12 }}>
+								<button
+									type="button"
+									className={`btn secondary focus-toggle${rhymeFocusMode ? ' active' : ''}`}
+									onClick={() => setRhymeFocusMode((prev) => !prev)}
+								>
+									{rhymeFocusMode ? 'Exit Focus Mode' : 'Focus Mode'}
+								</button>
+							</div>
+						)}
 						{!rhymeLoading && !rhymeError && !rhymeFocusMode && (
 							<div className="word-grid">
 								{rhymeResults.map((w) => (
@@ -4605,6 +4940,66 @@ function App() {
 								Browse studios
 							</button>
 						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Popout Player */}
+			{popoutPlayer && (
+				<div className="popout-player" role="region" aria-label="Background player">
+					<div className="popout-player-header">
+						<div className="popout-player-info">
+							<strong>{popoutPlayer.title}</strong>
+							{popoutPlayer.syncedToBeat && popoutPlayer.bpm && (
+								<span className="sync-badge">♪ Synced to {popoutPlayer.bpm} BPM</span>
+							)}
+						</div>
+						<button
+							type="button"
+							className="btn ghost micro"
+							onClick={handlePopoutClose}
+							aria-label="Close player"
+						>
+							✕
+						</button>
+					</div>
+					<div className="popout-player-video">
+						<div id="popout-player-container"></div>
+					</div>
+					<div className="popout-player-controls">
+						<button
+							type="button"
+							className="btn micro"
+							onClick={() => handlePopoutRewind(10)}
+							aria-label="Rewind 10 seconds"
+						>
+							⏪ 10s
+						</button>
+						<button
+							type="button"
+							className="btn micro"
+							onClick={handlePopoutTogglePlay}
+							aria-label={popoutPlayer.isPlaying ? 'Pause' : 'Play'}
+						>
+							{popoutPlayer.isPlaying ? '⏸' : '▶'}
+						</button>
+						<button
+							type="button"
+							className="btn micro"
+							onClick={() => handlePopoutRewind(5)}
+							aria-label="Rewind 5 seconds"
+						>
+							⏪ 5s
+						</button>
+						<button
+							type="button"
+							className={`btn micro${popoutPlayer.syncedToBeat ? ' active' : ''}`}
+							onClick={() => handlePopoutSyncBeat(120)}
+							aria-label="Sync to beat"
+							title="Sync playback to your beat tempo"
+						>
+							{popoutPlayer.syncedToBeat ? '♪ Synced' : '♪ Sync Beat'}
+						</button>
 					</div>
 				</div>
 			)}
