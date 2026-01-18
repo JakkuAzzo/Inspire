@@ -24,6 +24,7 @@ import { FlowPrompts } from './components/FlowPrompts';
 import { MemeSoundCard } from './components/MemeSoundCard';
 import { CreatorSettingsModal } from './components/workspace/CreatorSettingsModal';
 import { FocusModeControls } from './components/workspace/FocusModeControls';
+import { AudioIOControls } from './components/daw/AudioIOControls';
 import { CollaborativeSessionDetail } from './pages/CollaborativeSession';
 import { trackEvent } from './utils/analytics';
 import * as authService from './services/authService';
@@ -39,6 +40,7 @@ import type {
   InspireAnyPack,
   LyricistModePack,
   ProducerModePack,
+	DAWModePack,
   EditorModePack,
   FuelPack,
   CommunityPost,
@@ -836,6 +838,10 @@ function isProducerPack(pack: InspireAnyPack | null): pack is ProducerModePack {
 	return isModePack(pack) && pack.mode === 'producer';
 }
 
+function isDawPack(pack: InspireAnyPack | null): pack is DAWModePack {
+	return isModePack(pack) && pack.mode === 'producer' && Array.isArray((pack as any).samples);
+}
+
 function isEditorPack(pack: InspireAnyPack | null): pack is EditorModePack {
 	return isModePack(pack) && pack.mode === 'editor';
 }
@@ -940,6 +946,9 @@ function App() {
 		bpm?: number;
 	} | null>(null);
 	const popoutPlayerRef = useRef<any>(null);
+	const [bpmInput, setBpmInput] = useState<number>(120); // Default BPM for sync beat
+	const [metronomeEnabled, setMetronomeEnabled] = useState<boolean>(false);
+	const metronomeIntervalRef = useRef<number | null>(null);
 
 	useEffect(() => {
 		try {
@@ -1428,6 +1437,17 @@ function App() {
 				events: {
 					onReady: (event: any) => {
 						event.target.playVideo();
+						// Apply BPM sync if already enabled
+						if (popoutPlayer.syncedToBeat && popoutPlayer.bpm) {
+							try {
+								const rate = popoutPlayer.bpm / 120;
+								const clampedRate = Math.min(2, Math.max(0.25, rate));
+								event.target.setPlaybackRate(clampedRate);
+								console.log(`[Sync Beat] Initial playback rate set to ${clampedRate.toFixed(2)}x`);
+							} catch (err) {
+								console.warn('[Sync Beat] Failed to set initial playback rate:', err);
+							}
+						}
 					},
 					onStateChange: (event: any) => {
 						const isPlaying = event.data === w.YT.PlayerState.PLAYING;
@@ -1737,13 +1757,48 @@ function App() {
 		}
 	}, []);
 
-	const handlePopoutSyncBeat = useCallback((bpm: number) => {
+	const handlePopoutSyncBeat = useCallback(() => {
+		const newSyncState = !popoutPlayer?.syncedToBeat;
+		
 		setPopoutPlayer(prev => prev ? { 
 			...prev, 
-			syncedToBeat: !prev.syncedToBeat,
-			bpm: !prev.syncedToBeat ? bpm : undefined 
+			syncedToBeat: newSyncState,
+			bpm: newSyncState ? bpmInput : undefined 
 		} : null);
-	}, []);
+
+		// Apply playback rate immediately
+		if (popoutPlayerRef.current) {
+			try {
+				if (newSyncState) {
+					// Calculate playback rate: target BPM / assumed original BPM (120)
+					const rate = bpmInput / 120;
+					// Clamp to YouTube's supported range (0.25x to 2x)
+					const clampedRate = Math.min(2, Math.max(0.25, rate));
+					popoutPlayerRef.current.setPlaybackRate(clampedRate);
+					console.log(`[Sync Beat] Playback rate set to ${clampedRate.toFixed(2)}x (${bpmInput} BPM)`);
+				} else {
+					// Reset to normal speed
+					popoutPlayerRef.current.setPlaybackRate(1);
+					console.log('[Sync Beat] Playback rate reset to 1x');
+				}
+			} catch (err) {
+				console.warn('[Sync Beat] Failed to set playback rate:', err);
+			}
+		}
+	}, [bpmInput, popoutPlayer?.syncedToBeat]);
+
+	// Apply BPM changes in real-time when sync is active
+	useEffect(() => {
+		if (popoutPlayer?.syncedToBeat && popoutPlayer?.bpm && popoutPlayerRef.current) {
+			try {
+				const rate = bpmInput / 120;
+				const clampedRate = Math.min(2, Math.max(0.25, rate));
+				popoutPlayerRef.current.setPlaybackRate(clampedRate);
+			} catch (err) {
+				console.warn('[Sync Beat] Failed to update playback rate:', err);
+			}
+		}
+	}, [bpmInput, popoutPlayer?.syncedToBeat, popoutPlayer?.bpm]);
 
 	const handlePopoutClose = useCallback(() => {
 		if (popoutPlayerRef.current) {
@@ -1751,8 +1806,72 @@ function App() {
 				popoutPlayerRef.current.stopVideo();
 			} catch {}
 		}
+		// Stop metronome
+		if (metronomeIntervalRef.current) {
+			clearInterval(metronomeIntervalRef.current);
+			metronomeIntervalRef.current = null;
+		}
+		setMetronomeEnabled(false);
 		setPopoutPlayer(null);
 	}, []);
+
+	const handleMetronomeToggle = useCallback(() => {
+		setMetronomeEnabled(prev => !prev);
+	}, []);
+
+	// Metronome click sound generator
+	const playMetronomeClick = useCallback(() => {
+		if (!audioContextRef.current) {
+			audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+		}
+		const ctx = audioContextRef.current;
+		const oscillator = ctx.createOscillator();
+		const gainNode = ctx.createGain();
+
+		oscillator.connect(gainNode);
+		gainNode.connect(ctx.destination);
+
+		// High-pitched click sound
+		oscillator.frequency.value = 1000;
+		oscillator.type = 'sine';
+
+		// Quick envelope for click sound
+		const now = ctx.currentTime;
+		gainNode.gain.setValueAtTime(0.3, now);
+		gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+
+		oscillator.start(now);
+		oscillator.stop(now + 0.05);
+	}, []);
+
+	// Metronome interval effect
+	useEffect(() => {
+		if (metronomeEnabled && popoutPlayer) {
+			// Calculate interval in milliseconds from BPM
+			const intervalMs = (60 / bpmInput) * 1000;
+			
+			// Play initial click
+			playMetronomeClick();
+			
+			// Set up interval for subsequent clicks
+			metronomeIntervalRef.current = window.setInterval(() => {
+				playMetronomeClick();
+			}, intervalMs);
+
+			return () => {
+				if (metronomeIntervalRef.current) {
+					clearInterval(metronomeIntervalRef.current);
+					metronomeIntervalRef.current = null;
+				}
+			};
+		} else {
+			// Clean up interval when disabled
+			if (metronomeIntervalRef.current) {
+				clearInterval(metronomeIntervalRef.current);
+				metronomeIntervalRef.current = null;
+			}
+		}
+	}, [metronomeEnabled, bpmInput, popoutPlayer, playMetronomeClick]);
 
 	const handleNotepadChange = useCallback((value: string) => {
 		setNotepadText(value);
@@ -2616,6 +2735,65 @@ function App() {
 		}
 
 		if (isProducerPack(fuelPack)) {
+			const dawCards: Array<DeckCard | null> = [];
+			if (isDawPack(fuelPack)) {
+				const samplePreview = fuelPack.samples?.slice(0, 3).map((sample) => sample.name).filter(Boolean).join(' · ') || 'Sample crate warming up';
+				const chordPreview = fuelPack.chordProgression?.length ? fuelPack.chordProgression.join(' → ') : `${fuelPack.key} progression`;
+				const drumPreview = (fuelPack.drumPattern ?? []).slice(0, 4).map((step) => `${step.drum}@${step.step}`).join(' · ') || 'Drum grid seeded';
+				dawCards.push({
+					id: 'daw-session',
+					label: 'DAW Session',
+					preview: `${fuelPack.tempo} BPM • ${fuelPack.key} • ${fuelPack.samples.length} samples`,
+					detail: (
+							<div className="card-detail-copy">
+								<p>{fuelPack.title}</p>
+								<p>{chordPreview}</p>
+								<p>{renderInteractiveText(fuelPack.challenge ?? 'Flip the grid and resample creatively.')}</p>
+								{(fuelPack.moodTags ?? []).length > 0 && (
+									<div className="tags">
+										{(fuelPack.moodTags ?? []).map((tag) => (
+											<span key={tag} className="tag">{tag}</span>
+										))}
+									</div>
+								)}
+								<AudioIOControls />
+							</div>
+					)
+				} as DeckCard);
+				dawCards.push({
+					id: 'daw-samples',
+					label: 'Sample Crate',
+					preview: samplePreview,
+					detail: (
+						<ul className="focus-list">
+							{(fuelPack.samples ?? []).slice(0, 8).map((sample) => (
+								<li key={sample.id}>
+									<strong>{sample.name}</strong>
+									<span className="meta">{sample.tags?.slice(0, 3).join(' · ') || sample.source} {sample.duration ? `· ${sample.duration.toFixed(1)}s` : ''}</span>
+								</li>
+							))}
+						</ul>
+					)
+				} as DeckCard);
+				dawCards.push({
+					id: 'daw-drums',
+					label: 'Drum Pattern',
+					preview: drumPreview,
+					detail: (
+						fuelPack.drumPattern?.length ? (
+							<ul className="focus-list">
+								{fuelPack.drumPattern.map((step) => (
+									<li key={`${step.drum}-${step.step}`}>
+										<strong>{step.drum.toUpperCase()}</strong> · Step {step.step} · Vel {step.velocity}
+									</li>
+								))}
+							</ul>
+						) : (
+							<p className="hint">Drum grid will seed when you load the DAW.</p>
+						)
+					)
+				} as DeckCard);
+			}
 			const constraints = fuelPack.constraints ?? [];
 			const fxIdeas = fuelPack.fxIdeas ?? [];
 			const palette = fuelPack.instrumentPalette ?? [];
@@ -2625,6 +2803,7 @@ function App() {
 			const previewFx = fxIdeas.length ? fxIdeas.slice(0, 2).join(' · ') : 'No FX ideas available';
 			const previewPalette = palette.length ? palette.slice(0, 3).join(' · ') : 'Palette warming up';
 			const producerCards = [
+				...dawCards,
 				{
 					id: 'main-sample',
 					label: 'Main Sample',
@@ -3017,6 +3196,14 @@ function App() {
 				{ label: memeStimuli[0]?.name ?? 'Swap meme', type: 'meme' }
 			];
 		}
+		if (isDawPack(fuelPack)) {
+			const sampleLabel = fuelPack.samples?.[0]?.name ?? 'Sample crate';
+			return [
+				{ label: `${fuelPack.tempo} BPM`, type: 'sample' },
+				{ label: fuelPack.key ?? 'Key TBD', type: 'sample' },
+				{ label: sampleLabel, type: 'sample' }
+			];
+		}
 		if (isProducerPack(fuelPack)) {
 			return [
 				{ label: fuelPack.sample?.title ?? 'Swap sample', type: 'sample' },
@@ -3069,6 +3256,20 @@ function App() {
 
 		if (isProducerPack(pack)) {
 			switch (cardId) {
+				case 'daw-session':
+					return isDawPack(pack)
+						? [
+							`${pack.tempo} BPM`,
+							pack.key,
+							...(pack.chordProgression ?? []),
+							...(pack.challenge ? [pack.challenge] : []),
+							...(pack.moodTags ?? [])
+						]
+						: [];
+				case 'daw-samples':
+					return isDawPack(pack) ? pack.samples.map((sample) => sample.name) : [];
+				case 'daw-drums':
+					return isDawPack(pack) ? (pack.drumPattern ?? []).map((step) => `${step.drum}@${step.step}`) : [];
 				case 'main-sample':
 					return [pack.sample?.title ?? '', pack.sample?.source ?? ''].filter(Boolean);
 				case 'constraints':
@@ -3152,6 +3353,20 @@ function App() {
 			}
 			if (isProducerPack(pack)) {
 				switch (cardId) {
+					case 'daw-session':
+						return isDawPack(pack)
+							? [
+								`${pack.tempo} BPM`,
+								pack.key,
+								...(pack.chordProgression ?? []),
+								...(pack.challenge ? [pack.challenge] : []),
+								...(pack.moodTags ?? [])
+							]
+							: [];
+					case 'daw-samples':
+						return isDawPack(pack) ? pack.samples.map((sample) => sample.name) : [];
+					case 'daw-drums':
+						return isDawPack(pack) ? (pack.drumPattern ?? []).map((step) => `${step.drum}@${step.step}`) : [];
 					case 'main-sample':
 						return [pack.sample?.title ?? '', pack.sample?.source ?? ''].filter(Boolean);
 					case 'constraints':
@@ -4991,15 +5206,45 @@ function App() {
 						>
 							⏪ 5s
 						</button>
-						<button
-							type="button"
-							className={`btn micro${popoutPlayer.syncedToBeat ? ' active' : ''}`}
-							onClick={() => handlePopoutSyncBeat(120)}
-							aria-label="Sync to beat"
-							title="Sync playback to your beat tempo"
-						>
-							{popoutPlayer.syncedToBeat ? '♪ Synced' : '♪ Sync Beat'}
-						</button>
+						<div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+							<input
+								type="number"
+								min="40"
+								max="200"
+								value={bpmInput}
+								onChange={(e) => setBpmInput(Math.min(200, Math.max(40, parseInt(e.target.value) || 120)))}
+								style={{
+									width: '55px',
+									padding: '4px 6px',
+									fontSize: '0.85rem',
+									border: '1px solid rgba(255, 255, 255, 0.1)',
+									background: 'rgba(0, 0, 0, 0.3)',
+									color: 'white',
+									borderRadius: '4px',
+									textAlign: 'center'
+								}}
+								aria-label="BPM input"
+								title="Set your desired BPM (40-200)"
+							/>
+							<button
+								type="button"
+								className={`btn micro${popoutPlayer.syncedToBeat ? ' active' : ''}`}
+								onClick={handlePopoutSyncBeat}
+								aria-label="Sync to beat"
+								title={`Sync playback to ${bpmInput} BPM`}
+							>
+								{popoutPlayer.syncedToBeat ? `♪ ${popoutPlayer.bpm} BPM` : '♪ Sync Beat'}
+							</button>
+							<button
+								type="button"
+								className={`btn micro${metronomeEnabled ? ' active' : ''}`}
+								onClick={handleMetronomeToggle}
+								aria-label="Toggle metronome"
+								title={`Metronome at ${bpmInput} BPM`}
+							>
+								{metronomeEnabled ? '🎵 On' : '🎵 Metro'}
+							</button>
+						</div>
 					</div>
 				</div>
 			)}
