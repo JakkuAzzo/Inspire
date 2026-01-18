@@ -33,25 +33,53 @@ export function Home({
 	onJoinSession,
 	onForkCommunityPost
 }: HomeProps) {
+	const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 	const [modeCards] = useState([
 		{
 			id: 'lyricist' as const,
 			label: 'Writer Lab',
-			description: 'Storytelling, hooks, rhyme families, and emotions.'
+			description: 'Storytelling, hooks, rhyme families, and emotions.',
+			detailedDescription: 'Spin packs with power words, rhyme families, story arcs, emotional prompts, trending hooks from news/memes, and genre-specific inspiration. Perfect for rappers, singers, and songwriters looking for creative fuel.',
+			packIncludes: [
+				'Power words & phrases',
+				'Rhyme families & sound-alikes',
+				'Story arc prompts',
+				'Emotional journey maps',
+				'Trending news hooks',
+				'Meme culture references'
+			]
 		},
 		{
 			id: 'producer' as const,
 			label: 'Producer Lab',
-			description: 'Samples, FX, constraints, and sonic experiments.'
+			description: 'Samples, FX, constraints, and sonic experiments.',
+			detailedDescription: 'Generate packs with curated samples, FX chains, key/tempo suggestions, instrumental snippets, and creative constraints. Built for musicians, samplers, and sound designers.',
+			packIncludes: [
+				'Curated audio samples',
+				'FX chain ideas',
+				'Key & tempo suggestions',
+				'Instrumental references',
+				'Creative production constraints',
+				'Sonic texture prompts'
+			]
 		},
 		{
 			id: 'editor' as const,
 			label: 'Editor Suite',
-			description: 'Visual storytelling, pacing, and timeline beats.'
+			description: 'Visual storytelling, pacing, and timeline beats.',
+			detailedDescription: 'Create packs with visual references, color palettes, pacing guides, B-roll suggestions, and editorial prompts. Ideal for video editors, image editors, and audio post-production.',
+			packIncludes: [
+				'Visual reference images',
+				'Color palette suggestions',
+				'Pacing & rhythm guides',
+				'B-roll & clip ideas',
+				'Editorial constraints',
+				'Timeline beat markers'
+			]
 		}
 	]);
 
-	const handleModeCardParallax = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+	const handleModeCardParallax = useCallback((event: React.PointerEvent<HTMLButtonElement>, cardId: string) => {
 		const target = event.currentTarget;
 		const rect = target.getBoundingClientRect();
 		const pointerX = event.clientX - rect.left;
@@ -65,6 +93,7 @@ export function Home({
 		target.style.setProperty('--glow-x', `${pointerX}px`);
 		target.style.setProperty('--glow-y', `${pointerY}px`);
 		target.classList.add('hovering');
+		setHoveredCard(cardId);
 	}, []);
 
 	const handleModeCardLeave = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
@@ -74,6 +103,7 @@ export function Home({
 		target.style.removeProperty('--glow-x');
 		target.style.removeProperty('--glow-y');
 		target.classList.remove('hovering');
+		setHoveredCard(null);
 	}, []);
 
 	return (
@@ -185,18 +215,34 @@ export function Home({
 				<>
 					<section className="mode-selector">
 						{modeCards.map((entry) => (
-							<button
-								key={entry.id}
-								type="button"
-								className="mode-card"
-								onClick={() => onModeSelect(entry.id)}
-								onPointerMove={handleModeCardParallax}
-								onPointerLeave={handleModeCardLeave}
-							>
-								<span className="mode-card-glow" aria-hidden="true" />
-								<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
-								<p>{entry.description}</p>
-							</button>
+							<div key={entry.id} className="mode-card-container">
+								<button
+									type="button"
+									className="mode-card"
+									onClick={() => onModeSelect(entry.id)}
+									onPointerMove={(e) => handleModeCardParallax(e, entry.id)}
+									onPointerLeave={handleModeCardLeave}
+								>
+									<span className="mode-card-glow" aria-hidden="true" />
+									<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
+									<p>{entry.description}</p>
+								</button>
+								<div className={`mode-card-dropdown ${hoveredCard === entry.id ? 'visible' : ''}`}>
+									<div className="mode-card-dropdown-content">
+										<p className="dropdown-description">{entry.detailedDescription}</p>
+										<div className="dropdown-pack-includes">
+											<h4>Pack includes:</h4>
+											<ul>
+												{entry.packIncludes.map((item, idx) => (
+													<li key={idx}>
+														<span className="check-icon">✓</span> {item}
+													</li>
+												))}
+											</ul>
+										</div>
+									</div>
+								</div>
+							</div>
 						))}
 					</section>
 				</>
