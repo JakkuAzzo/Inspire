@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/476</span>
+                <span class='fraction'>0/468</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/476</span>
+                <span class='fraction'>0/468</span>
             </div>
         
             
@@ -669,16 +669,7 @@
 <a name='L604'></a><a href='#L604'>604</a>
 <a name='L605'></a><a href='#L605'>605</a>
 <a name='L606'></a><a href='#L606'>606</a>
-<a name='L607'></a><a href='#L607'>607</a>
-<a name='L608'></a><a href='#L608'>608</a>
-<a name='L609'></a><a href='#L609'>609</a>
-<a name='L610'></a><a href='#L610'>610</a>
-<a name='L611'></a><a href='#L611'>611</a>
-<a name='L612'></a><a href='#L612'>612</a>
-<a name='L613'></a><a href='#L613'>613</a>
-<a name='L614'></a><a href='#L614'>614</a>
-<a name='L615'></a><a href='#L615'>615</a>
-<a name='L616'></a><a href='#L616'>616</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L607'></a><a href='#L607'>607</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -752,7 +743,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -798,7 +788,6 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -945,6 +934,7 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -975,6 +965,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1014,16 +1005,7 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1339,7 +1321,6 @@ interface WorkspaceProps {
 	onCardExpanded: (cardId: string | null) =&gt; void;
 	focusMode: boolean;
 	onFocusModeToggle: () =&gt; void;
-	onOpenWordExplorer: () =&gt; void;
 	onOpenSavedPacks: () =&gt; void;
 	workspaceQueue: WorkspaceQueueItem[];
 	youtubeVideos: Record&lt;string, YouTubeVideoPreview&gt;;
@@ -1411,7 +1392,6 @@ interface WorkspaceProps {
 <span class="cstat-no" title="statement not covered" >	onLookupIdChange,</span>
 <span class="cstat-no" title="statement not covered" >	onLoadById,</span>
 <span class="cstat-no" title="statement not covered" >	onFocusModeToggle,</span>
-<span class="cstat-no" title="statement not covered" >	onOpenWordExplorer,</span>
 <span class="cstat-no" title="statement not covered" >	onOpenSavedPacks</span>
 <span class="cstat-no" title="statement not covered" >}: WorkspaceProps) {</span>
 	// Local interactive state for playlist operations in Workspace context
@@ -1574,22 +1554,24 @@ interface WorkspaceProps {
 <span class="cstat-no" title="statement not covered" >							&lt;span className="label"&gt;Prompt Challenge&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >							&lt;p&gt;{challengeText}&lt;/p&gt;</span>
 <span class="cstat-no" title="statement not covered" >						&lt;/div&gt;</span>
-<span class="cstat-no" title="statement not covered" >						&lt;div className="news-headlines"&gt;</span>
-<span class="cstat-no" title="statement not covered" >							&lt;span className="label"&gt;Linked Headlines&lt;/span&gt;</span>
-<span class="cstat-no" title="statement not covered" >							{newsLoading &amp;&amp; &lt;p className="hint"&gt;Loading headlines…&lt;/p&gt;}</span>
-<span class="cstat-no" title="statement not covered" >							{!newsLoading &amp;&amp; newsError &amp;&amp; &lt;p className="error"&gt;{newsError}&lt;/p&gt;}</span>
-<span class="cstat-no" title="statement not covered" >							{!newsLoading &amp;&amp; !newsError &amp;&amp; newsHeadlines.length &gt; 0 &amp;&amp; (</span>
-<span class="cstat-no" title="statement not covered" >								&lt;ul&gt;</span>
-<span class="cstat-no" title="statement not covered" >									{newsHeadlines.map((item, idx) =&gt; (</span>
-<span class="cstat-no" title="statement not covered" >										&lt;li key={`${item.url}-${idx}`}&gt;</span>
-<span class="cstat-no" title="statement not covered" >											&lt;a href={item.url} target="_blank" rel="noreferrer"&gt;{item.title}&lt;/a&gt;</span>
-<span class="cstat-no" title="statement not covered" >											{item.source &amp;&amp; &lt;span className="news-source"&gt; · {item.source}&lt;/span&gt;}</span>
-<span class="cstat-no" title="statement not covered" >										&lt;/li&gt;</span>
-<span class="cstat-no" title="statement not covered" >									))}</span>
-<span class="cstat-no" title="statement not covered" >								&lt;/ul&gt;</span>
-							)}
-<span class="cstat-no" title="statement not covered" >							{!newsLoading &amp;&amp; !newsError &amp;&amp; !newsHeadlines.length &amp;&amp; &lt;p className="hint"&gt;No linked headlines yet.&lt;/p&gt;}</span>
-<span class="cstat-no" title="statement not covered" >						&lt;/div&gt;</span>
+<span class="cstat-no" title="statement not covered" >						{selectedCard.id === 'headline' &amp;&amp; (</span>
+<span class="cstat-no" title="statement not covered" >							&lt;div className="news-headlines"&gt;</span>
+<span class="cstat-no" title="statement not covered" >								&lt;span className="label"&gt;Linked Headlines&lt;/span&gt;</span>
+<span class="cstat-no" title="statement not covered" >								{newsLoading &amp;&amp; &lt;p className="hint"&gt;Loading headlines…&lt;/p&gt;}</span>
+<span class="cstat-no" title="statement not covered" >								{!newsLoading &amp;&amp; newsError &amp;&amp; &lt;p className="error"&gt;{newsError}&lt;/p&gt;}</span>
+<span class="cstat-no" title="statement not covered" >								{!newsLoading &amp;&amp; !newsError &amp;&amp; newsHeadlines.length &gt; 0 &amp;&amp; (</span>
+<span class="cstat-no" title="statement not covered" >									&lt;ul&gt;</span>
+<span class="cstat-no" title="statement not covered" >										{newsHeadlines.map((item, idx) =&gt; (</span>
+<span class="cstat-no" title="statement not covered" >											&lt;li key={`${item.url}-${idx}`}&gt;</span>
+<span class="cstat-no" title="statement not covered" >												&lt;a href={item.url} target="_blank" rel="noreferrer"&gt;{item.title}&lt;/a&gt;</span>
+<span class="cstat-no" title="statement not covered" >												{item.source &amp;&amp; &lt;span className="news-source"&gt; · {item.source}&lt;/span&gt;}</span>
+<span class="cstat-no" title="statement not covered" >											&lt;/li&gt;</span>
+<span class="cstat-no" title="statement not covered" >										))}</span>
+<span class="cstat-no" title="statement not covered" >									&lt;/ul&gt;</span>
+								)}
+<span class="cstat-no" title="statement not covered" >								{!newsLoading &amp;&amp; !newsError &amp;&amp; !newsHeadlines.length &amp;&amp; &lt;p className="hint"&gt;No linked headlines yet.&lt;/p&gt;}</span>
+<span class="cstat-no" title="statement not covered" >							&lt;/div&gt;</span>
+						)}
 <span class="cstat-no" title="statement not covered" >					&lt;/&gt;</span>
 				)}
 <span class="cstat-no" title="statement not covered" >			&lt;/div&gt;</span>
@@ -1648,15 +1630,6 @@ interface WorkspaceProps {
 <span class="cstat-no" title="statement not covered" >							onClick={onOpenSavedPacks}</span>
 <span class="cstat-no" title="statement not covered" >						&gt;</span>
 							📁
-<span class="cstat-no" title="statement not covered" >						&lt;/button&gt;</span>
-<span class="cstat-no" title="statement not covered" >						&lt;button</span>
-<span class="cstat-no" title="statement not covered" >							type="button"</span>
-<span class="cstat-no" title="statement not covered" >							className="icon-button"</span>
-<span class="cstat-no" title="statement not covered" >							title="Word Explorer"</span>
-<span class="cstat-no" title="statement not covered" >							aria-label="Open Word Explorer"</span>
-<span class="cstat-no" title="statement not covered" >							onClick={onOpenWordExplorer}</span>
-<span class="cstat-no" title="statement not covered" >						&gt;</span>
-							🔤
 <span class="cstat-no" title="statement not covered" >						&lt;/button&gt;</span>
 <span class="cstat-no" title="statement not covered" >						&lt;button</span>
 <span class="cstat-no" title="statement not covered" >							type="button"</span>
@@ -1915,7 +1888,7 @@ interface WorkspaceProps {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-31T21:19:36.375Z
+                at 2026-01-18T17:07:10.240Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

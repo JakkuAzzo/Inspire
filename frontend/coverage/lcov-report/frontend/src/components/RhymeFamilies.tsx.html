@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/74</span>
+                <span class='fraction'>0/65</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/74</span>
+                <span class='fraction'>0/65</span>
             </div>
         
             
@@ -155,19 +155,7 @@
 <a name='L90'></a><a href='#L90'>90</a>
 <a name='L91'></a><a href='#L91'>91</a>
 <a name='L92'></a><a href='#L92'>92</a>
-<a name='L93'></a><a href='#L93'>93</a>
-<a name='L94'></a><a href='#L94'>94</a>
-<a name='L95'></a><a href='#L95'>95</a>
-<a name='L96'></a><a href='#L96'>96</a>
-<a name='L97'></a><a href='#L97'>97</a>
-<a name='L98'></a><a href='#L98'>98</a>
-<a name='L99'></a><a href='#L99'>99</a>
-<a name='L100'></a><a href='#L100'>100</a>
-<a name='L101'></a><a href='#L101'>101</a>
-<a name='L102'></a><a href='#L102'>102</a>
-<a name='L103'></a><a href='#L103'>103</a>
-<a name='L104'></a><a href='#L104'>104</a>
-<a name='L105'></a><a href='#L105'>105</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L93'></a><a href='#L93'>93</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -189,10 +177,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -227,14 +211,6 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -283,14 +259,12 @@ interface RhymeFamiliesProps {
 	rhymeResults: RhymeResult[];
 	rhymeTarget: string;
 	rhymeMaxResults: string;
-	rhymeFocusMode: boolean;
 	rhymeLoading: boolean;
 	rhymeError: string | null;
 	onRhymeTarget: (value: string) =&gt; void;
 	onRhymeMaxResults: (value: string) =&gt; void;
 	onSearchRhymes: () =&gt; void;
 	onRandomRhymes: () =&gt; void;
-	onFocusMode: () =&gt; void;
 	onFamilyChipClick: (family: string) =&gt; void;
 	onAddAllRhymes: () =&gt; void;
 }
@@ -300,14 +274,12 @@ interface RhymeFamiliesProps {
 <span class="cstat-no" title="statement not covered" >	rhymeResults,</span>
 <span class="cstat-no" title="statement not covered" >	rhymeTarget,</span>
 <span class="cstat-no" title="statement not covered" >	rhymeMaxResults,</span>
-<span class="cstat-no" title="statement not covered" >	rhymeFocusMode,</span>
 <span class="cstat-no" title="statement not covered" >	rhymeLoading,</span>
 <span class="cstat-no" title="statement not covered" >	rhymeError,</span>
 <span class="cstat-no" title="statement not covered" >	onRhymeTarget,</span>
 <span class="cstat-no" title="statement not covered" >	onRhymeMaxResults,</span>
 <span class="cstat-no" title="statement not covered" >	onSearchRhymes,</span>
 <span class="cstat-no" title="statement not covered" >	onRandomRhymes,</span>
-<span class="cstat-no" title="statement not covered" >	onFocusMode,</span>
 <span class="cstat-no" title="statement not covered" >	onFamilyChipClick,</span>
 <span class="cstat-no" title="statement not covered" >	onAddAllRhymes</span>
 <span class="cstat-no" title="statement not covered" >}) =&gt; {</span>
@@ -334,14 +306,6 @@ interface RhymeFamiliesProps {
 <span class="cstat-no" title="statement not covered" >					&lt;/button&gt;</span>
 <span class="cstat-no" title="statement not covered" >					&lt;button type="button" className="btn ghost micro" onClick={onRandomRhymes} disabled={rhymeLoading}&gt;</span>
 						Random word
-<span class="cstat-no" title="statement not covered" >					&lt;/button&gt;</span>
-<span class="cstat-no" title="statement not covered" >					&lt;button</span>
-<span class="cstat-no" title="statement not covered" >						type="button"</span>
-<span class="cstat-no" title="statement not covered" >						className={`btn secondary focus-toggle${rhymeFocusMode ? ' active' : ''}`}</span>
-<span class="cstat-no" title="statement not covered" >						onClick={onFocusMode}</span>
-<span class="cstat-no" title="statement not covered" >						disabled={rhymeLoading}</span>
-<span class="cstat-no" title="statement not covered" >					&gt;</span>
-						Focus Mode
 <span class="cstat-no" title="statement not covered" >					&lt;/button&gt;</span>
 <span class="cstat-no" title="statement not covered" >				&lt;/div&gt;</span>
 <span class="cstat-no" title="statement not covered" >				{rhymeLoading &amp;&amp; &lt;p className="status-text loading"&gt;Finding rhyme families…&lt;/p&gt;}</span>
@@ -382,7 +346,7 @@ interface RhymeFamiliesProps {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-31T21:19:36.375Z
+                at 2026-01-18T17:07:10.240Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

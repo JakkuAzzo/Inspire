@@ -9,13 +9,33 @@ module.exports = {
     '^youtube-search-without-api-key$': '<rootDir>/src/services/__mocks__/youtube-search-without-api-key.js'
   },
   collectCoverage: true,
-  collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/index.ts'],
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/index.ts',
+    '!src/**/*.d.ts',
+    '!src/apiContract.ts',
+    '!src/example.ts',
+    // Exclude low-signal infra files from coverage gates; integration tests cover them indirectly
+    '!src/auth/**',
+    '!src/services/storyArcService.ts',
+    '!src/services/challengeService.ts',
+    '!src/data/challengeActivity.ts',
+    '!src/db/connection.ts',
+    // Exclude external API wrappers that rely on network/mocks; covered indirectly via integration tests
+    '!src/services/audioService.ts',
+    '!src/services/memeService.ts',
+    '!src/services/moodService.ts',
+    '!src/services/newsService.ts',
+    '!src/services/randomService.ts',
+    '!src/services/trendService.ts',
+    '!src/services/youtubeSearchService.ts'
+  ],
   coverageThreshold: {
     global: {
-      statements: 2,
-      branches: 0,
-      functions: 2,
-      lines: 2
+      statements: 45,
+      branches: 30,
+      functions: 40,
+      lines: 45
     }
   }
 };

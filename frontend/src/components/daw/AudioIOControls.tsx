@@ -9,7 +9,7 @@ interface RecordedClip {
 }
 
 export const AudioIOControls: React.FC = () => {
-  const [supported, setSupported] = useState(() => typeof window !== 'undefined' && typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/mpeg'));
+  const [supported] = useState(() => typeof window !== 'undefined' && typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/mpeg'));
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
   const [recording, setRecording] = useState(false);
   const [clips, setClips] = useState<RecordedClip[]>([]);

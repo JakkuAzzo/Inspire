@@ -124,14 +124,14 @@ describe('Collaborative Socket.io Events', () => {
         role: 'collaborator'
       });
 
-      // Client 2 listens for join notification
-      clientSocket2.on('collab:participant-joined', (data) => {
-        expect(data.userId).toBe('user-1');
-        expect(data.userName).toBe('User One');
+      // Client 1 should hear when Client 2 joins the same room
+      clientSocket1.on('collab:participant-joined', (data) => {
+        expect(data.userId).toBe('user-2');
+        expect(data.userName).toBe('User Two');
         done();
       });
 
-      // Client 2 joins the same session
+      // Client 2 joins the session after listener is registered
       setTimeout(() => {
         clientSocket2.emit('collab:join', {
           sessionId: testSessionId,
@@ -139,7 +139,7 @@ describe('Collaborative Socket.io Events', () => {
           userName: 'User Two',
           role: 'viewer'
         });
-      }, 100);
+      }, 50);
     });
 
     test('participants notified when someone leaves', (done) => {

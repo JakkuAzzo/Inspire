@@ -1,6 +1,6 @@
 import http from 'http';
 import { io as Client, Socket } from 'socket.io-client';
-import { app, server, io } from '../../dist/index';
+import { app, server, io } from '../../src/index';
 
 let httpServer: http.Server;
 let clientSocket: Socket;

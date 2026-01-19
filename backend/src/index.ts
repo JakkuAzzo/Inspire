@@ -1289,31 +1289,30 @@ function buildApiRouter() {
    */
   router.post('/sessions/collaborate', (req: Request, res: Response) => {
     try {
-      const { title, description, mode, submode, maxParticipants = 4, maxStreams = 4, isGuest = false } = req.body || {};
+      const { title, description, mode, submode, maxParticipants = 4, maxStreams = 4, isGuest = false, hostId } = req.body || {};
 
       if (!title || !mode || !submode) {
         return res.status(400).json({ error: 'title, mode, and submode required' });
       }
 
-      // Guests can create sessions but they expire after 1 hour
       if (isGuest) {
         console.log('[Collab] Guest creating temporary collaboration session (1 hour expiry)');
       }
 
       const sessionId = createId('collab-session');
       const now = Date.now();
-      const expiresAt = isGuest ? now + (60 * 60 * 1000) : undefined; // 1 hour for guests, unlimited for authenticated
-      
+      const expiresAt = isGuest ? now + 60 * 60 * 1000 : undefined; // 1 hour for guests, unlimited for authenticated
+
       const session: any = {
         id: sessionId,
         title,
         description: description || '',
         mode,
         submode,
-        hostId: 'user-' + Date.now(), // In production, get from auth
+        hostId: hostId || 'user-' + Date.now(), // In production, get from auth
         hostUsername: 'Creator',
         createdAt: now,
-        expiresAt, // Expiry timestamp for guest sessions
+        expiresAt,
         isGuestSession: isGuest,
         status: 'waiting',
         maxParticipants,
@@ -1346,7 +1345,7 @@ function buildApiRouter() {
       };
 
       collaborativeSessions.set(sessionId, session);
-      res.status(201).json({ id: sessionId, session });
+      res.status(201).json(session);
     } catch (err) {
       console.error('[Collab] Failed to create session:', err);
       res.status(500).json({ error: 'Failed to create session' });
@@ -1375,10 +1374,16 @@ function buildApiRouter() {
       // Calculate remaining time for guest sessions
       const remainingMs = session.expiresAt ? Math.max(0, session.expiresAt - Date.now()) : null;
       
-      res.json({ 
-        session,
-        ...(remainingMs !== null && { remainingMs, remainingMinutes: Math.ceil(remainingMs / 60000) })
-      });
+      const responsePayload: any = {
+        ...session
+      };
+
+      if (remainingMs !== null) {
+        responsePayload.remainingMs = remainingMs;
+        responsePayload.remainingMinutes = Math.ceil(remainingMs / 60000);
+      }
+
+      res.json(responsePayload);
     } catch (err) {
       console.error('[Collab] Failed to retrieve session:', err);
       res.status(500).json({ error: 'Failed to retrieve session' });
@@ -1406,7 +1411,7 @@ function buildApiRouter() {
       if (status) session.status = status;
 
       collaborativeSessions.set(sessionId, session);
-      res.json({ session });
+      res.json(session);
     } catch (err) {
       console.error('[Collab] Failed to update session:', err);
       res.status(500).json({ error: 'Failed to update session' });
@@ -1426,7 +1431,7 @@ function buildApiRouter() {
         return res.status(404).json({ error: 'Session not found' });
       }
 
-      res.json({ comments: session.comments || [] });
+      res.json(session.comments || []);
     } catch (err) {
       console.error('[Collab] Failed to retrieve comments:', err);
       res.status(500).json({ error: 'Failed to retrieve comments' });
@@ -1440,18 +1445,26 @@ function buildApiRouter() {
   router.post('/sessions/:sessionId/votes', (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;
-      const { targetId, targetType, voteType, userId } = req.body || {};
+      const { targetId, targetType, voteType, userId, commentId } = req.body || {};
 
-      if (!targetId || !targetType || !voteType) {
-        return res.status(400).json({ error: 'targetId, targetType, and voteType required' });
+      const session = collaborativeSessions.get(sessionId);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
       }
 
-      // In production, save to database
+      const resolvedTargetId = commentId || targetId;
+      const resolvedTargetType = targetType || (commentId ? 'comment' : 'session');
+
+      if (!resolvedTargetId || !voteType) {
+        return res.status(400).json({ error: 'voteType and target id are required' });
+      }
+
       res.json({
+        success: true,
         voteId: createId('vote'),
         sessionId,
-        targetId,
-        targetType,
+        targetId: resolvedTargetId,
+        targetType: resolvedTargetType,
         voteType,
         userId,
         createdAt: Date.now()
@@ -1466,10 +1479,16 @@ function buildApiRouter() {
    * GET /api/sessions
    * List all active collaborative sessions
    */
-  router.get('/sessions', (_req: Request, res: Response) => {
+  router.get('/sessions', (req: Request, res: Response) => {
     try {
-      const sessions = Array.from(collaborativeSessions.values()).filter(s => s.status !== 'ended');
-      res.json({ sessions, count: sessions.length });
+      const statusFilter = (req.query.status as string) || null;
+      let sessions = Array.from(collaborativeSessions.values()).filter((s) => s.status !== 'ended');
+
+      if (statusFilter) {
+        sessions = sessions.filter((session) => session.status === statusFilter);
+      }
+
+      res.json(sessions);
     } catch (err) {
       console.error('[Collab] Failed to list sessions:', err);
       res.status(500).json({ error: 'Failed to list sessions' });
