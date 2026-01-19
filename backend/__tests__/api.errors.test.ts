@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { app } from '../dist/index';
+import { app } from '../src/index';
 
 describe('Inspire API error cases and saved packs', () => {
   test('POST /dev/api/assets/upload-url missing fields returns 400', async () => {

@@ -1,8 +1,8 @@
 /// <reference types="jest" />
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import request from 'supertest';
-import { app } from '../dist/index';
-import { CollaborativeSession, CollaborativeSessionRequest } from '../dist/types';
+import { app } from '../src/index';
+import { CollaborativeSession, CollaborativeSessionRequest } from '../src/types';
 
 describe('Collaborative Session API', () => {
   let createdSessionId: string;

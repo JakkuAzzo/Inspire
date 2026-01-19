@@ -1,6 +1,6 @@
-import { MemeService } from '../dist/services/memeService';
-import * as apiClientModule from '../dist/services/apiClient';
-import { mockMemes } from '../dist/mocks/memeMocks';
+import { MemeService } from '../src/services/memeService';
+import * as apiClientModule from '../src/services/apiClient';
+import { mockMemes } from '../src/mocks/memeMocks';
 
 describe('MemeService', () => {
   afterEach(() => {
