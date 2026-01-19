@@ -79,7 +79,7 @@ export function Home({
 		}
 	]);
 
-	const handleModeCardParallax = useCallback((event: React.PointerEvent<HTMLButtonElement>, cardId: string) => {
+	const handleModeCardParallax = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
 		const target = event.currentTarget;
 		const rect = target.getBoundingClientRect();
 		const pointerX = event.clientX - rect.left;
@@ -93,7 +93,6 @@ export function Home({
 		target.style.setProperty('--glow-x', `${pointerX}px`);
 		target.style.setProperty('--glow-y', `${pointerY}px`);
 		target.classList.add('hovering');
-		setHoveredCard(cardId);
 	}, []);
 
 	const handleModeCardLeave = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
@@ -103,7 +102,6 @@ export function Home({
 		target.style.removeProperty('--glow-x');
 		target.style.removeProperty('--glow-y');
 		target.classList.remove('hovering');
-		setHoveredCard(null);
 	}, []);
 
 	return (
@@ -215,12 +213,17 @@ export function Home({
 				<>
 					<section className="mode-selector">
 						{modeCards.map((entry) => (
-							<div key={entry.id} className="mode-card-container">
+							<div 
+								key={entry.id} 
+								className="mode-card-container"
+								onMouseEnter={() => setHoveredCard(entry.id)}
+								onMouseLeave={() => setHoveredCard(null)}
+							>
 								<button
 									type="button"
 									className="mode-card"
 									onClick={() => onModeSelect(entry.id)}
-									onPointerMove={(e) => handleModeCardParallax(e, entry.id)}
+									onPointerMove={handleModeCardParallax}
 									onPointerLeave={handleModeCardLeave}
 								>
 									<span className="mode-card-glow" aria-hidden="true" />

@@ -112,6 +112,42 @@ const FALLBACK_MODE_DEFINITIONS: ModeDefinition[] = [
 	}
 ];
 
+const MODE_CARD_DETAILS: Record<CreativeMode, { detailedDescription: string; packIncludes: string[] }> = {
+	lyricist: {
+		detailedDescription: 'Spin packs with power words, rhyme families, story arcs, emotional prompts, trending hooks from news/memes, and genre-specific inspiration. Perfect for rappers, singers, and songwriters looking for creative fuel.',
+		packIncludes: [
+			'Power words & phrases',
+			'Rhyme families & sound-alikes',
+			'Story arc prompts',
+			'Emotional journey maps',
+			'Trending news hooks',
+			'Meme culture references'
+		]
+	},
+	producer: {
+		detailedDescription: 'Generate packs with curated samples, FX chains, key/tempo suggestions, instrumental snippets, and creative constraints. Built for musicians, samplers, and sound designers.',
+		packIncludes: [
+			'Curated audio samples',
+			'FX chain ideas',
+			'Key & tempo suggestions',
+			'Instrumental references',
+			'Creative production constraints',
+			'Sonic texture prompts'
+		]
+	},
+	editor: {
+		detailedDescription: 'Create packs with visual references, color palettes, pacing guides, B-roll suggestions, and editorial prompts. Ideal for video editors, image editors, and audio post-production.',
+		packIncludes: [
+			'Visual reference images',
+			'Color palette suggestions',
+			'Pacing & rhythm guides',
+			'B-roll & clip ideas',
+			'Editorial constraints',
+			'Timeline beat markers'
+		]
+	}
+};
+
 const LYRICIST_GENRES = [
 	{ value: 'r&b', label: 'R&B' },
 	{ value: 'drill', label: 'Drill' },
@@ -1001,6 +1037,7 @@ function App() {
 	const [challengeActivity, setChallengeActivity] = useState<ChallengeActivity[]>([]);
 	const [challengeActivityError, setChallengeActivityError] = useState<string | null>(null);
 	const [showModePicker, setShowModePicker] = useState(false);
+	const [hoveredModeCard, setHoveredModeCard] = useState<CreativeMode | null>(null);
 
 	// Saved packs overlay
 	const [showSavedOverlay, setShowSavedOverlay] = useState(false);
@@ -3932,21 +3969,44 @@ function App() {
 				showModePicker ? (
 					<section className="mode-selector">
 						{modeDefinitions.map((entry) => (
-							<button
+							<div
 								key={entry.id}
-								type="button"
-								className="mode-card"
-								onClick={() => handleModeSelect(entry.id)}
-								onPointerMove={handleModeCardParallax}
-								onPointerLeave={handleModeCardLeave}
-								style={{
-									backgroundImage: `url(${entry.backgroundImage || MODE_BG_BY_ID[entry.id] || ''})`
-								}}
+								className="mode-card-container"
+								onMouseEnter={() => setHoveredModeCard(entry.id)}
+								onMouseLeave={() => setHoveredModeCard(null)}
 							>
-								<span className="mode-card-glow" aria-hidden="true" />
-								<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
-								<p>{entry.description}</p>
-							</button>
+								<button
+									type="button"
+									className="mode-card"
+									onClick={() => handleModeSelect(entry.id)}
+									onPointerMove={handleModeCardParallax}
+									onPointerLeave={handleModeCardLeave}
+									style={{
+										backgroundImage: `url(${entry.backgroundImage || MODE_BG_BY_ID[entry.id] || ''})`
+									}}
+								>
+									<span className="mode-card-glow" aria-hidden="true" />
+									<h2 className={entry.id === 'lyricist' ? 'pulse-text' : ''}>{entry.label}</h2>
+									<p>{entry.description}</p>
+								</button>
+								{MODE_CARD_DETAILS[entry.id] && (
+									<div className={`mode-card-dropdown ${hoveredModeCard === entry.id ? 'visible' : ''}`}>
+										<div className="mode-card-dropdown-content">
+											<p className="dropdown-description">{MODE_CARD_DETAILS[entry.id].detailedDescription}</p>
+											<div className="dropdown-pack-includes">
+												<h4>Pack includes:</h4>
+												<ul>
+													{MODE_CARD_DETAILS[entry.id].packIncludes.map((item, idx) => (
+														<li key={idx}>
+															<span className="check-icon">✓</span> {item}
+														</li>
+													))}
+												</ul>
+											</div>
+										</div>
+									</div>
+								)}
+							</div>
 						))}
 					</section>
 				) : null
