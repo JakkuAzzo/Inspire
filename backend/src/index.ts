@@ -32,7 +32,9 @@ import {
   NewsPrompt,
   SampleReference,
   InspirationClip,
-  RemixMeta
+  RemixMeta,
+  CommentThread,
+  CollaborativeSessionParticipant
 } from './types';
 import {
   generateModePack,
@@ -1281,6 +1283,61 @@ function buildApiRouter() {
   // In-memory store for collaborative sessions (production would use DB)
   const collaborativeSessions = new Map<string, any>();
 
+  // Initialize mock sessions for spectating
+  const mockSessions = [
+    {
+      id: 'session-producer-01',
+      title: 'Texture Flip Collab',
+      description: 'Live texture flip session with kitchen percussion and DX7 chords.',
+      mode: 'producer',
+      submode: 'musician',
+      hostId: 'user-midnightloops',
+      hostUsername: '@midnightloops',
+      createdAt: Date.now() - 5 * 60 * 1000,
+      expiresAt: undefined,
+      isGuestSession: false,
+      status: 'active',
+      maxParticipants: 4,
+      maxStreams: 4,
+      participants: [
+        { id: 'user-1', username: '@midnightloops', role: 'host', joinedAt: Date.now() - 5 * 60 * 1000 }
+      ],
+      viewers: [],
+      daw: {
+        id: 'daw-session-producer-01',
+        bpm: 110,
+        timeSignature: '4/4',
+        key: 'D',
+        scale: 'minor',
+        notes: [],
+        tempo: 110,
+        currentBeat: 0,
+        isPlaying: true,
+        lastUpdatedBy: 'host',
+        lastUpdatedAt: Date.now()
+      },
+      audioSyncState: {
+        serverTimestamp: Date.now(),
+        playbackPosition: 32000,
+        isPlaying: true,
+        tempo: 110,
+        clientLatency: 50
+      },
+      comments: [],
+      isPersisted: false,
+      recordingUrl: undefined,
+      liveDestinations: {
+        tiktok: false,
+        instagram: true
+      }
+    }
+  ];
+
+  // Populate mock sessions
+  mockSessions.forEach(session => {
+    collaborativeSessions.set(session.id, session);
+  });
+
   /**
    * POST /api/sessions/collaborate
    * Create a new collaborative session
@@ -1392,7 +1449,7 @@ function buildApiRouter() {
 
   /**
    * PUT /api/sessions/:sessionId
-   * Update a collaborative session (DAW state, comments, etc)
+   * Update a collaborative session (DAW state, comments, live destinations, etc)
    */
   router.put('/sessions/:sessionId', (req: Request, res: Response) => {
     try {
@@ -1403,12 +1460,13 @@ function buildApiRouter() {
         return res.status(404).json({ error: 'Session not found' });
       }
 
-      const { daw, comments, audioSyncState, status } = req.body || {};
+      const { daw, comments, audioSyncState, status, liveDestinations } = req.body || {};
 
       if (daw) session.daw = { ...session.daw, ...daw };
       if (comments) session.comments = comments;
       if (audioSyncState) session.audioSyncState = { ...session.audioSyncState, ...audioSyncState };
       if (status) session.status = status;
+      if (liveDestinations) session.liveDestinations = liveDestinations;
 
       collaborativeSessions.set(sessionId, session);
       res.json(session);
@@ -1472,6 +1530,120 @@ function buildApiRouter() {
     } catch (err) {
       console.error('[Collab] Failed to record vote:', err);
       res.status(500).json({ error: 'Failed to record vote' });
+    }
+  });
+
+  /**
+   * POST /api/sessions/:sessionId/reactions
+   * Add a reaction (emoji) to a session
+   */
+  router.post('/sessions/:sessionId/reactions', (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.params;
+      const { userId, emoji, username } = req.body || {};
+
+      if (!emoji || !userId) {
+        return res.status(400).json({ error: 'emoji and userId are required' });
+      }
+
+      const session = collaborativeSessions.get(sessionId);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      res.json({
+        success: true,
+        reactionId: createId('reaction'),
+        sessionId,
+        userId,
+        username,
+        emoji,
+        createdAt: Date.now()
+      });
+    } catch (err) {
+      console.error('[Collab] Failed to record reaction:', err);
+      res.status(500).json({ error: 'Failed to record reaction' });
+    }
+  });
+
+  /**
+   * POST /api/sessions/:sessionId/request-join
+   * Request to join a session as a collaborator
+   */
+  router.post('/sessions/:sessionId/request-join', (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.params;
+      const { userId, username, role } = req.body || {};
+
+      if (!userId || !username) {
+        return res.status(400).json({ error: 'userId and username are required' });
+      }
+
+      const session = collaborativeSessions.get(sessionId);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      // Check if user is already a participant or viewer
+      const isAlreadyParticipant = session.participants.some((p: CollaborativeSessionParticipant) => p.userId === userId);
+      const isAlreadyViewer = session.viewers.some((v: CollaborativeSessionParticipant) => v.userId === userId);
+
+      if (isAlreadyParticipant) {
+        return res.status(409).json({ error: 'User is already a collaborator' });
+      }
+
+      res.json({
+        success: true,
+        requestId: createId('request'),
+        sessionId,
+        userId,
+        username,
+        requestedRole: role || 'collaborator',
+        status: 'pending',
+        createdAt: Date.now()
+      });
+    } catch (err) {
+      console.error('[Collab] Failed to create join request:', err);
+      res.status(500).json({ error: 'Failed to request join' });
+    }
+  });
+
+  /**
+   * POST /api/sessions/:sessionId/message
+   * Send a message in session comments
+   */
+  router.post('/sessions/:sessionId/message', (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.params;
+      const { userId, username, content } = req.body || {};
+
+      if (!userId || !username || !content) {
+        return res.status(400).json({ error: 'userId, username, and content are required' });
+      }
+
+      const session = collaborativeSessions.get(sessionId);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      const comment: CommentThread = {
+        id: createId('comment'),
+        userId,
+        username,
+        content,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        isEdited: false,
+        voteCount: 0
+      };
+
+      session.comments.push(comment);
+      collaborativeSessions.set(sessionId, session);
+
+      res.status(201).json(comment);
+    } catch (err) {
+      console.error('[Collab] Failed to create message:', err);
+      res.status(500).json({ error: 'Failed to create message' });
     }
   });
 

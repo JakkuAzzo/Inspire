@@ -957,6 +957,7 @@ function App() {
 	const [deckOrder, setDeckOrder] = useState<string[]>([]);
 	const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
 	const [spectateSearch, setSpectateSearch] = useState('');
+	const [collabSearch, setCollabSearch] = useState('');
 	const [communitySearch, setCommunitySearch] = useState('');
 	const [customWordInput, setCustomWordInput] = useState('');
 	const [chipPicker, setChipPicker] = useState<{ type: 'powerWord' | 'instrument' | 'headline' | 'meme' | 'sample'; index?: number } | null>(null);
@@ -1216,6 +1217,13 @@ function App() {
 			session.title.toLowerCase().includes(term) || session.owner.toLowerCase().includes(term)
 		);
 	}, [liveSessions, spectateSearch]);
+	const filteredCollabSessions = useMemo(() => {
+		const term = collabSearch.trim().toLowerCase();
+		if (!term) return collaborativeSessions;
+		return collaborativeSessions.filter((session) =>
+			session.title.toLowerCase().includes(term) || session.owner.toLowerCase().includes(term)
+		);
+	}, [collaborativeSessions, collabSearch]);
 	const filteredCommunityPosts = useMemo(() => {
 		const term = communitySearch.trim().toLowerCase();
 		if (!term) return communityPosts;
@@ -1684,26 +1692,7 @@ function App() {
 		}
 	}, [collaborativeSessionTitle, collaborativeSessionMode, collaborativeSessionSubmode, userId, authUser]);
 
-	const handleJoinCollaborativeSession = useCallback(async (sessionId: string, role: 'collaborator' | 'viewer' = 'collaborator') => {
-		try {
-			setStatus('Joining collaboration room...');
-			const res = await fetch(`/api/sessions/${sessionId}`);
-			if (!res.ok) throw new Error('Session not found');
-			const session: CollaborativeSession = await res.json();
-			
-			setActiveCollaborativeSession(session);
-			setUserRole(role);
-			setStatus(`Joined ${session.title}!`);
-			trackEvent('collaborative_session_joined', {
-				sessionId,
-				role
-			});
-		} catch (err) {
-			console.error('Failed to join session:', err);
-			setError('Unable to join session. Check the session ID and try again.');
-		}
-	}, []);
-
+	// handleJoinCollaborativeSession merged into handleRequestJoinCollaborativeSession below
 	const handleLeaveCollaborativeSession = useCallback(() => {
 		setActiveCollaborativeSession(null);
 		setUserRole('host');
@@ -2007,17 +1996,92 @@ function App() {
         }, []);
 
         const handleSpectateSession = useCallback((sessionId: string) => {
-                const targetSession = activeSessions.find((session) => session.id === sessionId);
-                if (!targetSession) return;
-                setSelectedSessionId(sessionId);
-		setViewerMode('spectating');
-		setCollaborationMode('solo');
-		setMode(targetSession.mode);
-		setSubmode(targetSession.submode);
-		setFuelPack(null);
-		setExpandedCard(null);
-		setStatus(`Spectating ${targetSession.owner}'s ${targetSession.title}`);
-	}, [activeSessions]);
+		// Fetch the session details from the backend
+		fetch(`/api/sessions/${sessionId}`)
+			.then(res => res.json())
+			.then((data) => {
+				const session = data.session || data;
+				setActiveCollaborativeSession(session);
+				setUserRole('viewer');
+				setStatus(`Spectating ${session.owner}'s ${session.title}`);
+			})
+			.catch(err => {
+				console.error('Failed to load session:', err);
+				setError('Unable to load session');
+			});
+	}, []);
+
+		const handleRequestToJoinCollab = useCallback((sessionId: string) => {
+			const targetSession = activeSessions.find((session) => session.id === sessionId);
+			if (!targetSession) return;
+			
+			// Send request to backend
+			fetch(`/api/sessions/${sessionId}/request-join`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					userId: userId || 'guest',
+					username: 'Spectator',
+					role: 'collaborator'
+				})
+			}).then(res => res.json())
+			  .then(() => {
+				setStatus(`Request to join ${targetSession.title} sent`);
+				setSelectedSessionId(sessionId);
+				setViewerMode('joining');
+			  })
+			  .catch(err => {
+				console.error('Failed to send join request:', err);
+				setStatus('Unable to send join request. Try again.');
+			  });
+		}, [activeSessions, userId]);
+
+		const handleSpectatorEngagement = useCallback((sessionId: string, type: 'like' | 'react' | 'message') => {
+			const targetSession = activeSessions.find((session) => session.id === sessionId);
+			if (!targetSession) return;
+			const label = type === 'like' ? 'liked' : type === 'message' ? 'messaged' : 'reacted to';
+			
+			// Send engagement to backend
+			if (type === 'react') {
+				// Send emoji reaction
+				const emojis = ['👍', '❤️', '🔥', '🎉'];
+				const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+				fetch(`/api/sessions/${sessionId}/reactions`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						userId: userId || 'guest',
+						username: 'Spectator',
+						emoji
+					})
+				}).catch(err => console.error('Failed to send reaction:', err));
+			} else if (type === 'message') {
+				// Send a quick message
+				fetch(`/api/sessions/${sessionId}/message`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						userId: userId || 'guest',
+						username: 'Spectator',
+						content: '🎵 Loving this collaboration!'
+					})
+				}).catch(err => console.error('Failed to send message:', err));
+			} else if (type === 'like') {
+				// Send a like/vote
+				fetch(`/api/sessions/${sessionId}/votes`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						userId: userId || 'guest',
+						voteType: 'upvote',
+						targetType: 'session',
+						targetId: sessionId
+					})
+				}).catch(err => console.error('Failed to send like:', err));
+			}
+			
+			setStatus(`${label} ${targetSession.title}`);
+		}, [activeSessions, userId]);
 
 	const handleLeaveViewerMode = useCallback(() => {
 		setSelectedSessionId(null);
@@ -3868,16 +3932,26 @@ function App() {
 						</section>
 
 						{/* Join Collab Peak */}
-						{isAuthenticated && (
-							<section 
-								className={`session-peak glass ${expandedPeak === 'collab' ? 'expanded' : ''}`}
-								onMouseEnter={() => setExpandedPeak('collab')}
-								onMouseLeave={() => setExpandedPeak(null)}
-							>
-								<div className="session-peak-header">
-									<h3>Collaborate</h3>
-									<p>Build alongside other artists.</p>
-								</div>
+						<section 
+							className={`session-peak glass ${expandedPeak === 'collab' ? 'expanded' : ''}`}
+							onMouseEnter={() => setExpandedPeak('collab')}
+							onMouseLeave={() => setExpandedPeak(null)}
+						>
+							<div className="session-peak-header">
+								<h3>Public collabs</h3>
+								<p>Search, spectate, react, or request to join.</p>
+							</div>
+							<div className="session-search">
+								<span aria-hidden="true">⌕</span>
+								<input
+									type="search"
+									value={collabSearch}
+									onChange={(e) => setCollabSearch(e.target.value)}
+									placeholder="Search collab rooms"
+									aria-label="Search collaboration sessions"
+								/>
+							</div>
+							{isAuthenticated && (
 								<button 
 									type="button" 
 									className="btn primary full-width"
@@ -3886,27 +3960,43 @@ function App() {
 								>
 									🎬 Start
 								</button>
-								<ul className="session-peak-list">
-									{collaborativeSessions.length === 0 && <li className="session-empty">Create a session to invite others</li>}
-									{collaborativeSessions.map((session) => (
-										<li key={session.id}>
-											<div className="session-meta">
-												<strong>{session.title}</strong>
-												<span>{session.owner} · {session.participants} participants</span>
-											</div>
+							)}
+							<ul className="session-peak-list">
+								{filteredCollabSessions.length === 0 && <li className="session-empty">No public collabs match your search</li>}
+								{filteredCollabSessions.map((session) => (
+									<li key={session.id}>
+										<div className="session-meta">
+											<strong>{session.title}</strong>
+											<span>{session.owner} · {session.participants} participants</span>
+										</div>
+										<div className="session-peak-actions">
+											<button type="button" className="btn micro" onClick={() => handleSpectateSession(session.id)}>
+												Spectate
+											</button>
 											<button 
 												type="button" 
-												className="btn micro blue"
-												onClick={() => handleJoinCollaborativeSession(session.id, 'collaborator')}
-												title="Join this collaborative session"
+												className="btn micro halo"
+												onClick={() => handleRequestToJoinCollab(session.id)}
+												title="Request to join"
 											>
-												Join
+												Request
 											</button>
-										</li>
-									))}
-								</ul>
-							</section>
-						)}
+											<div className="session-peak-reactions">
+												<button type="button" className="icon-button" title="Like" onClick={() => handleSpectatorEngagement(session.id, 'like')}>
+													❤️
+												</button>
+												<button type="button" className="icon-button" title="React" onClick={() => handleSpectatorEngagement(session.id, 'react')}>
+													👏
+												</button>
+												<button type="button" className="icon-button" title="Message" onClick={() => handleSpectatorEngagement(session.id, 'message')}>
+													💬
+												</button>
+											</div>
+										</div>
+									</li>
+								))}
+							</ul>
+						</section>
 
 					{/* Community Feed Peak */}
 					<section 

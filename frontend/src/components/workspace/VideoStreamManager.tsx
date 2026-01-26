@@ -19,6 +19,7 @@ export interface VideoStreamManagerProps {
   onStreamJoin?: (userId: string, stream: MediaStream) => void;
   onStreamLeave?: (userId: string) => void;
   onControlChange?: (userId: string, control: 'audio' | 'video', enabled: boolean) => void;
+  layoutMode?: 'grid' | 'corners';
 }
 
 interface StreamTrack {
@@ -49,7 +50,8 @@ export function VideoStreamManager({
   maxStreams = 4,
   onStreamJoin,
   onStreamLeave,
-  onControlChange
+  onControlChange,
+  layoutMode = 'grid'
 }: VideoStreamManagerProps) {
   const [streams, setStreams] = useState<Map<string, StreamTrack>>(new Map());
   const [layout, setLayout] = useState<1 | 2 | 3 | 4>(1);
@@ -313,11 +315,11 @@ export function VideoStreamManager({
     onStreamLeave?.(localUserId);
   }, [localStream, localUserId, onStreamLeave, streams]);
 
-  const layoutClass = GRID_LAYOUTS[layout];
+  const layoutClass = layoutMode === 'corners' ? 'corner-grid' : GRID_LAYOUTS[layout];
   const activeStreamCount = streams.size;
 
   return (
-    <div className="video-stream-manager">
+    <div className={`video-stream-manager ${layoutMode === 'corners' ? 'corner-mode' : ''}`}>
       {/* Error banner with helpful instructions */}
       {error && (
         <div className="video-error-banner">
