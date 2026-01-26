@@ -64,6 +64,17 @@
   box-shadow: 0 4px 15px rgba(168, 85, 247, 0.2);
 }
 
+.transport-btn.record {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border-color: rgba(239, 68, 68, 0.6);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+
+.transport-btn.record.armed {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  border-color: rgba(249, 115, 22, 0.7);
+}
+
 .tempo-control {
   display: flex;
   align-items: center;
@@ -225,6 +236,189 @@
   50% {
     opacity: 0.3;
   }
+}
+
+/* Track lanes / import */
+.track-import-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 15, 30, 0.7);
+  border-bottom: 1px dashed rgba(100, 150, 255, 0.35);
+}
+
+.track-import-bar small {
+  color: #94a3b8;
+}
+
+.track-import-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.record-pill {
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  font-weight: 600;
+}
+
+.record-pill.armed {
+  background: rgba(249, 115, 22, 0.15);
+  border-color: rgba(249, 115, 22, 0.5);
+  color: #fb923c;
+}
+
+.track-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem 1rem;
+  background: rgba(10, 10, 20, 0.65);
+  border-bottom: 1px solid rgba(100, 150, 255, 0.15);
+}
+
+.track-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 3fr;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: rgba(30, 30, 50, 0.6);
+  border: 1px solid rgba(100, 150, 255, 0.15);
+}
+
+.track-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.track-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.35);
+}
+
+.track-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.track-title strong {
+  color: #e2e8f0;
+  font-size: 0.95rem;
+}
+
+.track-type {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+}
+
+.track-buttons {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.pill-btn {
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(100, 150, 255, 0.35);
+  background: rgba(100, 150, 255, 0.12);
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pill-btn.active {
+  background: rgba(34, 211, 238, 0.2);
+  border-color: #22d3ee;
+  color: #22d3ee;
+}
+
+.pill-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.track-volume {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #cbd5e1;
+}
+
+.track-volume input[type="range"] {
+  flex: 1;
+  accent-color: #22d3ee;
+}
+
+.volume-value {
+  color: #22d3ee;
+  font-weight: 600;
+  min-width: 3ch;
+  text-align: right;
+}
+
+.track-clips {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.clip-pill {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(100, 150, 255, 0.2);
+  background: rgba(100, 150, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clip-pill.audio {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.clip-pill.midi {
+  border-color: rgba(236, 72, 153, 0.35);
+  background: rgba(236, 72, 153, 0.12);
+}
+
+.clip-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
+}
+
+.clip-name {
+  font-weight: 600;
+}
+
+.clip-meta {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.clip-empty {
+  color: #64748b;
+  font-size: 0.85rem;
+  font-style: italic;
 }
 
 /* Piano roll container */

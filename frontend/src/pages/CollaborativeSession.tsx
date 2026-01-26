@@ -14,6 +14,8 @@ import type {
 } from '../types';
 import { VideoStreamManager } from '../components/workspace/VideoStreamManager';
 import { CollaborativeDAW } from '../components/workspace/CollaborativeDAW';
+import { useAuth } from '../context/AuthContext';
+import { liveExportService } from '../services/liveExportService';
 import './CollaborativeSessionDetail.css';
 
 interface SessionTimer {
@@ -47,8 +49,15 @@ export function CollaborativeSessionDetail({
   const [newComment, setNewComment] = useState<NewComment>({ content: '' });
   const [showComments, setShowComments] = useState(true);
   const [userVotes, setUserVotes] = useState<Map<string, 'upvote' | 'downvote'>>(new Map());
-  const [expandedLayout, setExpandedLayout] = useState<'video' | 'daw' | 'split'>('split');
   const [sessionTimer, setSessionTimer] = useState<SessionTimer>({ minutes: 0, seconds: 0, isExpired: false });
+  const { user, loading: authLoading } = useAuth();
+  const [activeHubTab, setActiveHubTab] = useState<'daw' | 'packs' | 'analytics' | 'create'>('daw');
+  const [liveDestinations, setLiveDestinations] = useState<{ tiktok: boolean; instagram: boolean }>({ tiktok: false, instagram: false });
+  const [recentPacks, setRecentPacks] = useState<any[]>([]);
+  const isHost = userRole === 'host';
+  const canCollaborate = isHost || userRole === 'collaborator';
+
+  const isAuthorized = !!user || !!localUserId || Boolean((session as any).isGuestSession);
 
   // Timer for guest sessions
   useEffect(() => {
@@ -79,7 +88,72 @@ export function CollaborativeSessionDetail({
     setComments(session.comments);
   }, [session.comments]);
 
-  const isHost = userRole === 'host';
+  // Fetch recent packs for the Packs tab
+  useEffect(() => {
+    const fetchRecentPacks = async () => {
+      try {
+        const response = await fetch(`/api/packs/recent?limit=5`);
+        if (response.ok) {
+          const packs = await response.json();
+          setRecentPacks(Array.isArray(packs) ? packs : []);
+        }
+      } catch (err) {
+        console.warn('Failed to load recent packs:', err);
+        // Fallback to empty list
+        setRecentPacks([]);
+      }
+    };
+    
+    if (activeHubTab === 'packs') {
+      void fetchRecentPacks();
+    }
+  }, [activeHubTab]);
+
+  // Keyboard shortcuts for tab navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === ' ' && e.target === document.body) {
+        e.preventDefault();
+        const updatedSession = { ...session, daw: { ...session.daw, isPlaying: !session.daw.isPlaying } };
+        onSessionUpdate?.(updatedSession);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [session, onSessionUpdate]);
+
+  // Sync live exports with playback and destination toggles
+  useEffect(() => {
+    if (!isHost) return;
+
+    // Start/stop exports based on playback state and enabled destinations
+    if (session.daw.isPlaying) {
+      if (liveDestinations.tiktok) {
+        liveExportService.startExport({
+          sessionId: session.id,
+          destination: 'tiktok',
+          isEnabled: true
+        }).catch(err => console.error('Failed to start TikTok export:', err));
+      }
+      if (liveDestinations.instagram) {
+        liveExportService.startExport({
+          sessionId: session.id,
+          destination: 'instagram',
+          isEnabled: true
+        }).catch(err => console.error('Failed to start Instagram export:', err));
+      }
+    } else {
+      // Stop exports when playback stops
+      liveExportService.stopExport(session.id, 'tiktok');
+      liveExportService.stopExport(session.id, 'instagram');
+    }
+
+    return () => {
+      // Cleanup on unmount
+      liveExportService.stopSessionExports(session.id);
+    };
+  }, [session.daw.isPlaying, liveDestinations, session.id, isHost]);
 
   // Add a comment
   const handleAddComment = useCallback(async () => {
@@ -182,6 +256,64 @@ export function CollaborativeSessionDetail({
     [session, onSessionUpdate]
   );
 
+  const handleTracksChange = useCallback(
+    (tracks: DAWSession['tracks']) => {
+      const updatedSession = {
+        ...session,
+        daw: { ...session.daw, tracks }
+      };
+      
+      // Persist to backend
+      fetch(`/api/sessions/${session.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ daw: updatedSession.daw })
+      }).catch(err => console.error('Failed to persist tracks:', err));
+      
+      // Update UI
+      onSessionUpdate?.(updatedSession);
+    },
+    [session, onSessionUpdate]
+  );
+
+  const handleRecordToggle = useCallback(
+    (isRecording: boolean) => {
+      const updatedSession = {
+        ...session,
+        daw: { ...session.daw, isRecording }
+      };
+      
+      // Persist to backend
+      fetch(`/api/sessions/${session.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ daw: updatedSession.daw })
+      }).catch(err => console.error('Failed to persist record state:', err));
+      
+      // Update UI
+      onSessionUpdate?.(updatedSession);
+    },
+    [session, onSessionUpdate]
+  );
+
+  const handleLiveToggle = useCallback((destination: 'tiktok' | 'instagram') => {
+    setLiveDestinations(prev => {
+      const next = { ...prev, [destination]: !prev[destination] };
+      const updatedSession = { ...session, liveDestinations: next } as unknown as CollaborativeSession;
+      
+      // Persist to backend
+      fetch(`/api/sessions/${session.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ liveDestinations: next })
+      }).catch(err => console.error('Failed to persist live destinations:', err));
+      
+      // Update UI
+      onSessionUpdate?.(updatedSession);
+      return next;
+    });
+  }, [onSessionUpdate, session]);
+
   return (
     <div className="collaborative-session-detail">
       {/* Header */}
@@ -229,78 +361,205 @@ export function CollaborativeSessionDetail({
 
       {/* Main content area */}
       <div className="session-body">
-        {/* Layout selector */}
-        <div className="layout-controls">
-          <label htmlFor="layout-toggle">Layout:</label>
-          <div className="toggle-group">
-            <button
-              id="layout-toggle"
-              type="button"
-              className={`btn small ${expandedLayout === 'video' ? 'active' : ''}`}
-              onClick={() => setExpandedLayout('video')}
-            >
-              Video
-            </button>
-            <button
-              type="button"
-              className={`btn small ${expandedLayout === 'daw' ? 'active' : ''}`}
-              onClick={() => setExpandedLayout('daw')}
-            >
-              DAW
-            </button>
-            <button
-              type="button"
-              className={`btn small ${expandedLayout === 'split' ? 'active' : ''}`}
-              onClick={() => setExpandedLayout('split')}
-            >
-              Split
-            </button>
+        {!isAuthorized && !authLoading && (
+          <div className="auth-gate">
+            <h3>Sign in or continue as guest</h3>
+            <p>Collaboration controls unlock when you are authenticated.</p>
+            <div className="auth-gate-actions">
+              <a className="btn primary" href="/login">Sign in</a>
+              <button type="button" className="btn secondary" onClick={() => window.location.assign('/guest')}>Enter as guest</button>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className={`content-grid layout-${expandedLayout}`}>
-          {/* Video streams section */}
-          {(expandedLayout === 'video' || expandedLayout === 'split') && (
-            <section className="video-section" aria-label="Video streams">
-              <VideoStreamManager
-                localUserId={localUserId}
-                localUsername={localUsername}
-                participants={session.participants}
-                viewers={session.viewers}
-                maxStreams={session.maxStreams}
-                onStreamJoin={() => {
-                  // Emit to server
-                }}
-                onStreamLeave={() => {
-                  // Emit to server
-                }}
-                onControlChange={() => {
-                  // Emit to server
-                }}
-              />
-            </section>
-          )}
+        <div className={`session-stage ${!isAuthorized ? 'locked' : ''}`}>
+          <div className="corner-video-layer">
+            <VideoStreamManager
+              localUserId={localUserId}
+              localUsername={localUsername}
+              participants={session.participants}
+              viewers={session.viewers}
+              maxStreams={session.maxStreams}
+              layoutMode="corners"
+            />
+          </div>
 
-          {/* DAW section */}
-          {(expandedLayout === 'daw' || expandedLayout === 'split') && (
-            <section className="daw-section" aria-label="Shared DAW">
-              <CollaborativeDAW
-                sessionId={session.id}
-                dawSession={session.daw}
-                audioSyncState={session.audioSyncState}
-                isHost={isHost}
-                onNoteAdd={handleNoteAdd}
-                onNoteRemove={handleNoteRemove}
-                onPlaybackStateChange={handlePlaybackStateChange}
-                onTempoChange={tempo => {
-                  onSessionUpdate?.({
-                    ...session,
-                    daw: { ...session.daw, bpm: tempo }
-                  });
-                }}
-              />
-            </section>
-          )}
+            {canCollaborate ? (
+              <div className="center-hub">
+                <div className="hub-header">
+                  <div className="hub-tabs" role="tablist" aria-label="Collaboration workspace tabs">
+                    {(['daw', 'packs', 'analytics', 'create'] as const).map(tab => (
+                      <button
+                        key={tab}
+                        type="button"
+                        role="tab"
+                        className={`hub-tab ${activeHubTab === tab ? 'active' : ''}`}
+                        onClick={() => setActiveHubTab(tab)}
+                        aria-selected={activeHubTab === tab}
+                        aria-controls={`tab-panel-${tab}`}
+                        tabIndex={activeHubTab === tab ? 0 : -1}
+                      >
+                        {tab === 'daw' && '🎹 DAW'}
+                        {tab === 'packs' && '📦 Packs'}
+                        {tab === 'analytics' && '📊 Analytics'}
+                        {tab === 'create' && '➕ Create'}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="live-destinations" aria-label="Live export destinations">
+                    <span className="live-label">Multi-stream</span>
+                    <button
+                      type="button"
+                      className={`live-toggle ${liveDestinations.tiktok ? 'on' : ''}`}
+                      onClick={() => isHost ? handleLiveToggle('tiktok') : null}
+                      disabled={!isHost}
+                      title={isHost ? 'Toggle TikTok export' : 'Only host can enable exports'}
+                    >
+                      TikTok
+                    </button>
+                    <button
+                      type="button"
+                      className={`live-toggle ${liveDestinations.instagram ? 'on' : ''}`}
+                      onClick={() => isHost ? handleLiveToggle('instagram') : null}
+                      disabled={!isHost}
+                      title={isHost ? 'Toggle Instagram export' : 'Only host can enable exports'}
+                    >
+                      Instagram
+                    </button>
+                    <span className="sync-pill">Playback sync locked</span>
+                  </div>
+                </div>
+
+                <div className="hub-panels">
+                  {activeHubTab === 'daw' && (
+                    <section className="hub-panel" aria-label="DAW">
+                      {!isAuthorized && (
+                        <div className="interaction-warning">
+                          <p>⚠️ Sign in or continue as guest to edit the DAW.</p>
+                        </div>
+                      )}
+                      <CollaborativeDAW
+                        sessionId={session.id}
+                        dawSession={session.daw}
+                        audioSyncState={session.audioSyncState}
+                        isHost={isHost && isAuthorized}
+                        onNoteAdd={isAuthorized ? handleNoteAdd : undefined}
+                        onNoteRemove={isAuthorized ? handleNoteRemove : undefined}
+                        onPlaybackStateChange={isAuthorized ? handlePlaybackStateChange : undefined}
+                        onTempoChange={isAuthorized ? (tempo => {
+                          onSessionUpdate?.({
+                            ...session,
+                            daw: { ...session.daw, bpm: tempo }
+                          });
+                        }) : undefined}
+                        onTracksChange={isAuthorized ? handleTracksChange : undefined}
+                        onRecordToggle={isAuthorized ? handleRecordToggle : undefined}
+                      />
+                    </section>
+                  )}
+
+                  {activeHubTab === 'packs' && (
+                    <section className="hub-panel" aria-label="Packs">
+                      <div className="packs-panel">
+                        <h3>Pack Deck</h3>
+                        <p>Quick access to recently generated packs and remix seeds. Drag into the DAW to audition.</p>
+                        {recentPacks.length > 0 ? (
+                          <ul className="packs-list">
+                            {recentPacks.map((pack: any) => (
+                              <li
+                                key={pack.id}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.effectAllowed = 'copy';
+                                  e.dataTransfer.setData('application/json', JSON.stringify(pack));
+                                }}
+                                className="pack-item"
+                              >
+                                <span className="pack-info">
+                                  <strong>{pack.title || 'Untitled Pack'}</strong>
+                                  <span className="pack-subtitle">{pack.mode}</span>
+                                </span>
+                                <button type="button" className="btn micro">Audition</button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <ul className="packs-list">
+                            <li><span>No recent packs</span><button type="button" className="btn micro">Generate</button></li>
+                            <li><span>Import MIDI</span><button type="button" className="btn micro">Upload</button></li>
+                          </ul>
+                        )}
+                      </div>
+                    </section>
+                  )}
+
+                  {activeHubTab === 'analytics' && (
+                    <section className="hub-panel" aria-label="Analytics">
+                      <div className="analytics-grid">
+                        <div className="stat-card">
+                          <span className="label">Session Duration</span>
+                          <strong>
+                            {session.startedAt
+                              ? Math.floor((Date.now() - session.startedAt) / 60000) + ' min'
+                              : 'Not started'}
+                          </strong>
+                        </div>
+                        <div className="stat-card">
+                          <span className="label">Collaborators</span>
+                          <strong>{session.participants.length}</strong>
+                        </div>
+                        <div className="stat-card">
+                          <span className="label">Viewers</span>
+                          <strong>{session.viewers.length}</strong>
+                        </div>
+                        <div className="stat-card">
+                          <span className="label">Clips Added</span>
+                          <strong>
+                            {session.daw.tracks?.reduce((acc, track) => acc + (track.clips?.length || 0), 0) || 0}
+                          </strong>
+                        </div>
+                        <div className="stat-card">
+                          <span className="label">Notes Recorded</span>
+                          <strong>{session.daw.notes.length}</strong>
+                        </div>
+                        <div className="stat-card">
+                          <span className="label">Tempo</span>
+                          <strong>{session.daw.bpm} BPM</strong>
+                        </div>
+                        <div className="stat-card">
+                          <span className="label">Live Destinations</span>
+                          <strong>{[liveDestinations.tiktok ? 'TikTok' : null, liveDestinations.instagram ? 'Instagram' : null].filter(Boolean).join(' • ') || 'Off'}</strong>
+                        </div>
+                        <div className="stat-card">
+                          <span className="label">Recording Status</span>
+                          <strong className={session.daw.isRecording ? 'recording' : ''}>{session.daw.isRecording ? '⚫ Recording' : 'Idle'}</strong>
+                        </div>
+                      </div>
+                      <p className="hint">Real-time stats. Reload to see latest metrics. Live exports stay frame-locked to the playhead.</p>
+                    </section>
+                  )}
+
+                  {activeHubTab === 'create' && (
+                    <section className="hub-panel" aria-label="Quick actions">
+                      <div className="quick-create">
+                        <h3>Quick Actions</h3>
+                        <p>Start a new track lane, invite collaborators, or drop stems.</p>
+                        <div className="quick-actions">
+                          <button type="button" className="btn primary small" onClick={() => setActiveHubTab('daw')}>+ Add Track Lane</button>
+                          <button type="button" className="btn secondary small">Invite collaborator</button>
+                          <button type="button" className="btn tertiary small">Upload stems</button>
+                        </div>
+                      </div>
+                    </section>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="center-hub spectator-locked" role="note">
+                <p>You're spectating. Only the host and collaborators can access the workspace and live export settings.</p>
+              </div>
+            )}
         </div>
       </div>
 

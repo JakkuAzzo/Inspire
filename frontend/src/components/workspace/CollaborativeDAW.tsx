@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import type { DAWSession, DAWNote, AudioSyncState } from '../../types';
+import type { DAWSession, DAWNote, AudioSyncState, DAWTrack, DAWClip } from '../../types';
 import audioSyncService, { type SyncMetrics } from '../../services/audioSyncService';
 import getSynthesizer from '../../services/audioSynthesizer';
 import './CollaborativeDAW.css';
@@ -22,12 +22,25 @@ export interface CollaborativeDAwProps {
   onTempoChange?: (tempo: number) => void;
   onPlaybackStateChange?: (isPlaying: boolean) => void;
   onSync?: (metrics: SyncMetrics) => void;
+  onTracksChange?: (tracks: DAWTrack[]) => void;
+  onRecordToggle?: (isRecording: boolean) => void;
 }
 
 const PIANO_KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const OCTAVE_MIN = 2;
 const OCTAVE_MAX = 6;
 const OCTAVES = Array.from({ length: OCTAVE_MAX - OCTAVE_MIN + 1 }, (_, i) => i + OCTAVE_MIN);
+const DEFAULT_TRACK: DAWTrack = {
+  id: 'track-1',
+  name: 'Main Track',
+  type: 'hybrid',
+  color: '#22d3ee',
+  volume: 0.8,
+  isMuted: false,
+  isSolo: false,
+  isArmed: true,
+  clips: []
+};
 
 // Get MIDI note number for a key/octave
 function getMidiNote(keyName: string, octave: number): number {
@@ -50,16 +63,21 @@ export function CollaborativeDAW({
   onNoteRemove,
   onTempoChange,
   onPlaybackStateChange,
-  onSync
+  onSync,
+  onTracksChange,
+  onRecordToggle
 }: CollaborativeDAwProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pianoRollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const playedNotesRef = useRef<Set<string>>(new Set()); // Track played note IDs to avoid re-triggering
+  const audioPlayersRef = useRef<Map<string, HTMLAudioElement>>(new Map());
 
   const [tempo, setTempo] = useState(dawSession.bpm);
   const [isPlaying, setIsPlaying] = useState(dawSession.isPlaying);
+  const [isRecording, setIsRecording] = useState<boolean>(dawSession.isRecording ?? false);
   const [notes, setNotes] = useState<DAWNote[]>(dawSession.notes);
+  const [tracks, setTracks] = useState<DAWTrack[]>(dawSession.tracks?.length ? dawSession.tracks : [DEFAULT_TRACK]);
   const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [gridSize, setGridSize] = useState(0.25); // 1/4 note
@@ -76,6 +94,17 @@ export function CollaborativeDAW({
   useEffect(() => {
     setNotes(dawSession.notes);
   }, [dawSession.notes]);
+
+  // Sync tracks when DAW session changes
+  useEffect(() => {
+    setTracks(dawSession.tracks && dawSession.tracks.length ? dawSession.tracks : [DEFAULT_TRACK]);
+    setIsRecording(dawSession.isRecording ?? false);
+  }, [dawSession.tracks, dawSession.isRecording]);
+
+  // Emit track changes upward
+  useEffect(() => {
+    onTracksChange?.(tracks);
+  }, [tracks, onTracksChange]);
 
   // Audio sync listener
   useEffect(() => {
@@ -186,13 +215,114 @@ export function CollaborativeDAW({
   const togglePlayback = useCallback(() => {
     const newState = !isPlaying;
     setIsPlaying(newState);
+    if (!newState && isRecording) {
+      setIsRecording(false);
+      onRecordToggle?.(false);
+    }
     onPlaybackStateChange?.(newState);
-  }, [isPlaying, onPlaybackStateChange]);
+  }, [isPlaying, isRecording, onPlaybackStateChange, onRecordToggle]);
 
   const handleTempoChange = useCallback((newTempo: number) => {
     setTempo(newTempo);
     onTempoChange?.(newTempo);
   }, [onTempoChange]);
+
+  const toggleRecord = useCallback(() => {
+    if (!isHost) return;
+    const next = !isRecording;
+    setIsRecording(next);
+    onRecordToggle?.(next);
+  }, [isHost, isRecording, onRecordToggle]);
+
+  const handleAddTrack = useCallback(() => {
+    if (!isHost) return;
+    const nextTrackIndex = tracks.length + 1;
+    const newTrack: DAWTrack = {
+      id: `track-${nextTrackIndex}-${Date.now()}`,
+      name: `Track ${nextTrackIndex}`,
+      type: 'hybrid',
+      color: ['#22d3ee', '#ec4899', '#a855f7', '#10b981'][nextTrackIndex % 4],
+      volume: 0.8,
+      isMuted: false,
+      isSolo: false,
+      isArmed: false,
+      clips: []
+    };
+    setTracks(prev => [...prev, newTrack]);
+  }, [isHost, tracks.length]);
+
+  const updateTrack = useCallback((trackId: string, updater: (track: DAWTrack) => DAWTrack) => {
+    setTracks(prev => prev.map(track => (track.id === trackId ? updater(track) : track)));
+  }, []);
+
+  const handleFileDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (!isHost) return;
+      const droppedFiles = Array.from(event.dataTransfer.files || []);
+      if (!droppedFiles.length) return;
+
+      // Ensure at least one track exists
+      if (!tracks.length) {
+        setTracks([DEFAULT_TRACK]);
+      }
+
+      setTracks(prevTracks => {
+        const targetTrack = prevTracks[0];
+        const now = Date.now();
+        const updatedTrack: DAWTrack = {
+          ...targetTrack,
+          clips: [
+            ...targetTrack.clips,
+            ...droppedFiles.map((file, idx): DAWClip => ({
+              id: `clip-${now}-${idx}`,
+              trackId: targetTrack.id,
+              type: file.type.includes('audio') ? 'audio' : 'midi',
+              startBeat: playheadPosition,
+              durationBeats: 4,
+              fileName: file.name,
+              fileType: file.type,
+              previewUrl: URL.createObjectURL(file),
+              createdAt: now,
+              addedBy: isHost ? 'host' : 'collaborator'
+            }))
+          ]
+        };
+
+        return [updatedTrack, ...prevTracks.slice(1)];
+      });
+    },
+    [isHost, playheadPosition, tracks.length]
+  );
+
+  const handleClipPreview = useCallback((clip: DAWClip) => {
+    if (!clip.previewUrl || clip.type !== 'audio') return;
+    const existing = audioPlayersRef.current.get(clip.id);
+    if (existing) {
+      existing.currentTime = 0;
+      void existing.play();
+      return;
+    }
+    const audio = new Audio(clip.previewUrl);
+    audioPlayersRef.current.set(clip.id, audio);
+    void audio.play();
+  }, []);
+
+  const toggleSolo = useCallback((trackId: string) => {
+    updateTrack(trackId, track => ({ ...track, isSolo: !track.isSolo }));
+  }, [updateTrack]);
+
+  const toggleMute = useCallback((trackId: string) => {
+    updateTrack(trackId, track => ({ ...track, isMuted: !track.isMuted }));
+  }, [updateTrack]);
+
+  const toggleArm = useCallback((trackId: string) => {
+    updateTrack(trackId, track => ({ ...track, isArmed: !track.isArmed }));
+  }, [updateTrack]);
+
+  const handleTrackVolumeChange = useCallback((trackId: string, volume: number) => {
+    updateTrack(trackId, track => ({ ...track, volume }));
+  }, [updateTrack]);
 
   const addNote = useCallback((pitch: number, startBeat: number, duration: number = 0.5) => {
     const note: DAWNote = {
@@ -273,20 +403,36 @@ export function CollaborativeDAW({
     }
   }, []);
 
-  // Calculate max beat for grid sizing
-  const maxBeat = Math.max(...notes.map(n => n.startTime + n.duration), 16);
+  // Calculate max beat for grid sizing (notes + clips)
+  const noteExtent = notes.length ? Math.max(...notes.map(n => n.startTime + n.duration)) : 0;
+  const clipExtent = tracks.length
+    ? Math.max(...tracks.flatMap(track => track.clips.map(clip => clip.startBeat + clip.durationBeats)), 0)
+    : 0;
+  const maxBeat = Math.max(noteExtent, clipExtent, 16);
 
   return (
     <div
       className="collaborative-daw"
       ref={containerRef}
       onKeyDown={handleKeyDown}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={handleFileDrop}
       role="region"
       aria-label="Collaborative DAW"
     >
       {/* Control panel */}
       <div className="daw-controls">
         <div className="transport-controls">
+          <button
+            type="button"
+            className={`btn transport-btn record ${isRecording ? 'armed' : ''}`}
+            onClick={toggleRecord}
+            disabled={!isHost}
+            title={isHost ? 'Arm/Disarm record' : 'Only host can record'}
+            aria-label={isRecording ? 'Stop recording' : 'Arm record'}
+          >
+            {isRecording ? '⏺︎' : '●'}
+          </button>
           <button
             type="button"
             className={`btn transport-btn ${isPlaying ? 'playing' : ''}`}
@@ -353,6 +499,75 @@ export function CollaborativeDAW({
             </span>
           </div>
         )}
+      </div>
+
+      {/* Track lanes + drag/drop surface */}
+      <div className="track-import-bar">
+        <div>
+          <p className="hint">Drag MIDI or audio (MP3/WAV) files anywhere in this area to add as clips.</p>
+          <small>Clips align to the current playhead at {playheadPosition.toFixed(1)} beats.</small>
+        </div>
+        <div className="track-import-actions">
+          <button type="button" className="btn secondary small" onClick={handleAddTrack} disabled={!isHost}>
+            + Track
+          </button>
+          <span className={`record-pill ${isRecording ? 'armed' : ''}`}>{isRecording ? 'Recording armed' : 'Record idle'}</span>
+        </div>
+      </div>
+
+      <div className="track-lanes" role="list">
+        {tracks.map(track => (
+          <div className="track-row" key={track.id} role="listitem">
+            <div className="track-meta">
+              <span className="track-dot" style={{ background: track.color || '#22d3ee' }} aria-hidden="true" />
+              <div className="track-title">
+                <strong>{track.name}</strong>
+                <span className="track-type">{track.type.toUpperCase()}</span>
+              </div>
+              <div className="track-buttons">
+                <button type="button" className={`pill-btn ${track.isArmed ? 'active' : ''}`} onClick={() => toggleArm(track.id)} disabled={!isHost}>
+                  ● Rec
+                </button>
+                <button type="button" className={`pill-btn ${track.isSolo ? 'active' : ''}`} onClick={() => toggleSolo(track.id)} disabled={!isHost}>
+                  Solo
+                </button>
+                <button type="button" className={`pill-btn ${track.isMuted ? 'active' : ''}`} onClick={() => toggleMute(track.id)} disabled={!isHost}>
+                  Mute
+                </button>
+              </div>
+            </div>
+
+            <div className="track-volume">
+              <label>Vol</label>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={track.volume}
+                onChange={(e) => handleTrackVolumeChange(track.id, Number(e.target.value))}
+                disabled={!isHost}
+              />
+              <span className="volume-value">{Math.round(track.volume * 100)}%</span>
+            </div>
+
+            <div className="track-clips" onClick={(e) => e.stopPropagation()}>
+              {track.clips.map(clip => (
+                <button
+                  key={clip.id}
+                  type="button"
+                  className={`clip-pill ${clip.type}`}
+                  onClick={() => handleClipPreview(clip)}
+                  title={clip.fileName || 'Clip'}
+                >
+                  <span className="clip-name">{clip.fileName || clip.type.toUpperCase()}</span>
+                  <span className="clip-meta">{clip.durationBeats}b • {clip.type}</span>
+                </button>
+              ))}
+              {track.clips.length === 0 && <span className="clip-empty">Drop MIDI/MP3 to populate this track</span>}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Piano roll viewport */}

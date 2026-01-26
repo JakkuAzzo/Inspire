@@ -10,6 +10,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 CERTS_DIR="$ROOT_DIR/.certs"
+FRONTEND_PORT=3000
+
+# Detect the en0 IP (primary Wi‑Fi/Ethernet on macOS) so the dev server is reachable on the LAN
+HOST_IP=$(ipconfig getifaddr en0 2>/dev/null || true)
+if [[ -z "$HOST_IP" ]]; then
+  echo "Warning: Could not detect en0 IP. Falling back to 0.0.0.0" >&2
+  HOST_IP="0.0.0.0"
+fi
 
 # Generate self-signed HTTPS certificate if it doesn't exist
 setup_https_certs() {
@@ -89,7 +97,7 @@ PIDS=()
 setup_https_certs || exit 1
 
 kill_port 3001
-kill_port 8080
+kill_port "$FRONTEND_PORT"
 
 echo "Starting Inspire backend on :3001"
 NODE_ENV=development npm run dev --prefix backend &
@@ -98,8 +106,8 @@ PIDS+=($!)
 # Give the backend a short moment to boot before starting the frontend proxy
 sleep 2
 
-echo "Starting Inspire frontend on https://localhost:8080"
-VITE_CERT_PATH="$CERTS_DIR/cert.pem" VITE_KEY_PATH="$CERTS_DIR/key.pem" npm run dev --prefix frontend -- --host localhost --port 8080 --strictPort &
+echo "Starting Inspire frontend on https://$HOST_IP:$FRONTEND_PORT"
+VITE_CERT_PATH="$CERTS_DIR/cert.pem" VITE_KEY_PATH="$CERTS_DIR/key.pem" npm run dev --prefix frontend -- --host "$HOST_IP" --port "$FRONTEND_PORT" --strictPort &
 PIDS+=($!)
 
 while true; do

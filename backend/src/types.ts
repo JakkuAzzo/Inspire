@@ -310,6 +310,31 @@ export interface DAWNote {
   track: number; // which track/instrument
 }
 
+export interface DAWClip {
+  id: string;
+  trackId: string;
+  type: 'midi' | 'audio';
+  startBeat: number;
+  durationBeats: number;
+  fileName?: string;
+  fileType?: string;
+  previewUrl?: string;
+  addedBy?: string;
+  createdAt?: number;
+}
+
+export interface DAWTrack {
+  id: string;
+  name: string;
+  color?: string;
+  type: 'midi' | 'audio' | 'hybrid';
+  volume: number; // 0-1
+  isMuted: boolean;
+  isSolo: boolean;
+  isArmed: boolean;
+  clips: DAWClip[];
+}
+
 export interface DAWSession {
   id: string;
   bpm: number;
@@ -317,6 +342,9 @@ export interface DAWSession {
   key: string;
   scale: string;
   notes: DAWNote[];
+  tracks?: DAWTrack[];
+  isRecording?: boolean;
+  masterVolume?: number;
   tempo: number;
   currentBeat: number; // playhead position
   isPlaying: boolean;
@@ -384,6 +412,7 @@ export interface CollaborativeSession {
   comments: CommentThread[];
   isPersisted: boolean; // whether to save to database
   recordingUrl?: string; // link to recording if available
+  liveDestinations?: { tiktok: boolean; instagram: boolean }; // multi-destination live export
 }
 
 export interface CollaborativeSessionRequest {

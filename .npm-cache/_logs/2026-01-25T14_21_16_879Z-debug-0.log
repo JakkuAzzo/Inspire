@@ -5,9 +5,9 @@
 4 silly config load:file:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/frontend/.npmrc
 5 silly config load:file:/Users/nathanbrown-bennett/.npmrc
 6 silly config load:file:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/frontend/etc/npmrc
-7 verbose title npm run dev --host localhost --port 8080 --strictPort
-8 verbose argv "run" "dev" "--prefix" "frontend" "--" "--host" "localhost" "--port" "8080" "--strictPort"
-9 verbose logfile logs-max:10 dir:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-01-19T20_22_19_442Z-
-10 verbose logfile /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-01-19T20_22_19_442Z-debug-0.log
+7 verbose title npm run dev --host 192.168.10.120 --port 3000 --strictPort
+8 verbose argv "run" "dev" "--prefix" "frontend" "--" "--host" "192.168.10.120" "--port" "3000" "--strictPort"
+9 verbose logfile logs-max:10 dir:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-01-25T14_21_16_879Z-
+10 verbose logfile /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-01-25T14_21_16_879Z-debug-0.log
 11 silly logfile start cleaning logs, removing 1 files
 12 silly logfile done cleaning log files
