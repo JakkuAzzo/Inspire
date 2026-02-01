@@ -99,6 +99,11 @@ setup_https_certs || exit 1
 kill_port 3001
 kill_port "$FRONTEND_PORT"
 
+# Write server URL to a file so VST can read it
+SERVER_URL="https://$HOST_IP:$FRONTEND_PORT"
+echo "$SERVER_URL" > "$ROOT_DIR/.vst-server-url"
+echo "ℹ VST Server URL: $SERVER_URL (written to .vst-server-url)"
+
 echo "Starting Inspire backend on :3001"
 NODE_ENV=development npm run dev --prefix backend &
 PIDS+=($!)

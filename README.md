@@ -100,6 +100,16 @@ npm run dev:backend
 - npm 10+
 - API keys for Unsplash, Freesound, Jamendo, NewsAPI, and Imgflip (username + password) to unlock live data.
 
+## Firebase Cloud Functions Endpoints
+
+Deployed endpoints for the Firebase VST backend:
+
+- createRoom: https://us-central1-inspire-8c6e8.cloudfunctions.net/createRoom
+- joinRoom: https://joinroom-kfjkqn5ysq-uc.a.run.app
+- listFiles: https://listfiles-kfjkqn5ysq-uc.a.run.app
+- getDownloadUrl: https://getdownloadurl-kfjkqn5ysq-uc.a.run.app
+- helloWorld: https://helloworld-kfjkqn5ysq-uc.a.run.app
+
 ### Configure Environment Variables
 
 `backend/.env.example` documents every supported key. Create your local file and populate the secrets before starting the servers.
@@ -162,6 +172,132 @@ npm test                # Run backend Jest suite
 npm run build           # Build backend (tsc) and frontend (vite)
 npx playwright test     # Run E2E (builds + serves the app)
 ```
+
+## Building InspireVST (VST3 Plugin)
+
+InspireVST is a VST3 audio plugin for Ableton Live that syncs creative content from Inspire collaboration sessions. Use the automated build script to compile and install the plugin.
+
+### Prerequisites for VST3 Build
+
+- macOS 11.0+
+- Xcode Command Line Tools: `xcode-select --install`
+- CMake 3.18+: `brew install cmake`
+- Apple Clang compiler (included with Xcode)
+
+### Quick Build
+
+```bash
+# From the repository root, run the build script
+./inspirevst-build.sh
+```
+
+This automatically:
+1. Configures CMake with JUCE 8.0.4
+2. Compiles all source files (PluginProcessor, PluginEditor, NetworkClient)
+3. Builds the VST3 bundle
+4. Installs to `~/Library/Audio/Plug-Ins/VST3/InspireVST.vst3`
+5. Verifies the installation
+
+**Build time**: ~10-15 seconds (incremental), ~60-90 seconds (clean rebuild)
+
+### Build Variants
+
+```bash
+# Release build (optimized, default)
+./inspirevst-build.sh
+
+# Clean rebuild
+./inspirevst-build.sh clean
+
+# Debug build (with symbols)
+./inspirevst-build.sh debug
+
+# Clean debug rebuild
+./inspirevst-build.sh clean debug
+```
+
+### After Building: Load in Ableton Live
+
+1. Open **Ableton Live 12+**
+2. Go to **Browser** → **Audio Effects**
+3. Search for **"InspireVST"**
+4. Drag the plugin to an audio track
+
+If the plugin doesn't appear:
+- Run `./inspirevst-build.sh` again
+- Restart Ableton Live
+- Go to **Preferences** → **Plugins** → **Rescan**
+
+### Build Output
+
+**Installation location**: `~/Library/Audio/Plug-Ins/VST3/InspireVST.vst3`
+
+**Binary details**:
+```
+├── Contents/
+│   ├── MacOS/InspireVST    (7.6M executable)
+│   ├── Info.plist          (plugin metadata)
+│   ├── PkgInfo
+│   └── Resources/
+│       └── moduleinfo.json
+```
+
+### Plugin Features
+
+- **Room Join**: Enter collaboration room ID and code to sync with other users
+- **File Sync**: Real-time file list with delta polling (via `?since` parameter)
+- **Audio Download**: Download audio files from the collaboration room
+- **Live Status**: Visual feedback for room connection, file updates, and errors
+
+### Source Code
+
+All plugin source files are in `InspireVST/Source/`:
+
+| File | Purpose |
+|------|---------|
+| `PluginProcessor.h/.cpp` | VST3 AudioProcessor base; MIDI/audio I/O |
+| `PluginEditor.h/.cpp` | UI with room join, file sync, downloads |
+| `NetworkClient.h/.cpp` | Cloud Functions integration (joinRoom, listFiles, getDownloadUrl) |
+| `CMakeLists.txt` | Build configuration |
+
+### Development Workflow
+
+**Edit and rebuild rapidly**:
+
+```bash
+# 1. Edit source code
+vim InspireVST/Source/PluginEditor.cpp
+
+# 2. Rebuild (incremental, ~10 seconds)
+./inspirevst-build.sh
+
+# 3. Restart Ableton Live and test
+# 4. Repeat
+```
+
+### Troubleshooting
+
+**"Permission denied" when running script**:
+```bash
+chmod +x ./inspirevst-build.sh
+```
+
+**"CMake not found"**:
+```bash
+brew install cmake
+```
+
+**Plugin not visible in Ableton after rebuild**:
+1. Ensure build completed successfully
+2. Restart Ableton Live completely
+3. Go to **Preferences** → **Plugins** → **Rescan**
+
+**Compilation errors**:
+- Try a clean rebuild: `./inspirevst-build.sh clean`
+- Ensure Xcode Command Line Tools are installed: `xcode-select --install`
+- Check that `InspireVST/` directory exists with `CMakeLists.txt`
+
+**More details**: See [INSPIREVST_BUILD_SCRIPT_GUIDE.md](./INSPIREVST_BUILD_SCRIPT_GUIDE.md) for comprehensive build documentation and CI/CD integration.
 
 ## Product Walkthrough
 

@@ -3716,19 +3716,6 @@ function App() {
 			<div className="noise-overlay" aria-hidden="true" />
 
 			<div className="app-foreground">
-				{!mode && (
-					<button
-						type="button"
-						className="user-handle"
-						onClick={handleUserHandleClick}
-						aria-label={handleTriggerLabel}
-					>
-						<span>{formattedHandle}</span>
-						<span className="handle-indicator" aria-hidden="true">↗</span>
-					</button>
-				)}
-
-
 				{fatalError && (
 					<div className="fatal-fallback glass" role="alert">
 						<h2>Something went wrong</h2>
@@ -3886,9 +3873,15 @@ function App() {
 					{!showModePicker && (
 						<div className="mode-gate-row">
 							<div className="mode-gate">
-								<button type="button" className="btn primary" onClick={() => setShowModePicker(true)}>
-									Get Started - Pick a Lab
-								</button>
+								{isAuthenticated ? (
+									<button type="button" className="btn primary" onClick={() => setShowModePicker(true)}>
+										Get Started - Pick a Lab
+									</button>
+								) : (
+									<button type="button" className="btn primary" onClick={() => setShowAccountModal(true)}>
+										Sign Up / Log in
+									</button>
+								)}
 							</div>
 						</div>
 					)}
