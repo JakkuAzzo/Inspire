@@ -8,6 +8,7 @@ interface AuthModalProps {
   onClose: () => void;
   onSignup: (email: string, password: string, displayName?: string) => Promise<void>;
   onVerifyOtp: (email: string, otpCode: string) => Promise<void>;
+  onVerifyLoginOtp: (email: string, otpCode: string) => Promise<void>;
   onLogin: (email: string, password: string) => Promise<void>;
   onGuestMode: () => Promise<void>;
 }
@@ -17,10 +18,12 @@ export function AuthModal({
   onClose,
   onSignup,
   onVerifyOtp,
+  onVerifyLoginOtp,
   onLogin,
   onGuestMode
 }: AuthModalProps) {
   const [mode, setMode] = useState<AuthMode>('signup');
+  const [otpFlow, setOtpFlow] = useState<'signup' | 'login'>('signup');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -37,6 +40,7 @@ export function AuthModal({
 
     try {
       await onSignup(email, password, displayName);
+      setOtpFlow('signup');
       setMode('verify-otp');
     } catch (err: any) {
       setError(err.message || 'Signup failed');
@@ -51,7 +55,11 @@ export function AuthModal({
     setLoading(true);
 
     try {
-      await onVerifyOtp(email, otpCode);
+      if (otpFlow === 'login') {
+        await onVerifyLoginOtp(email, otpCode);
+      } else {
+        await onVerifyOtp(email, otpCode);
+      }
       // Success - modal will close automatically when auth state updates
     } catch (err: any) {
       setError(err.message || 'Invalid OTP code');
@@ -67,6 +75,8 @@ export function AuthModal({
 
     try {
       await onLogin(email, password);
+      setOtpFlow('login');
+      setMode('verify-otp');
       // Success - modal will close automatically when auth state updates
     } catch (err: any) {
       setError(err.message || 'Login failed');
@@ -117,6 +127,7 @@ export function AuthModal({
               className={`auth-tab ${mode === 'signup' ? 'active' : ''}`}
               onClick={() => {
                 setMode('signup');
+                setOtpFlow('signup');
                 setError('');
               }}
             >
@@ -126,6 +137,7 @@ export function AuthModal({
               className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
               onClick={() => {
                 setMode('login');
+                setOtpFlow('login');
                 setError('');
               }}
             >
@@ -221,7 +233,7 @@ export function AuthModal({
               </div>
 
               <button type="submit" className="auth-submit-btn" disabled={loading || otpCode.length !== 6}>
-                {loading ? 'Verifying...' : 'Verify & Complete Signup'}
+                {loading ? 'Verifying...' : otpFlow === 'login' ? 'Verify & Log In' : 'Verify & Complete Signup'}
               </button>
 
               <button
@@ -272,8 +284,12 @@ export function AuthModal({
               </div>
 
               <button type="submit" className="auth-submit-btn" disabled={loading}>
-                {loading ? 'Logging in...' : 'Login'}
+                {loading ? 'Sending...' : 'Send Verification Code'}
               </button>
+
+              <p className="auth-info-text">
+                We'll email a verification code to complete login.
+              </p>
             </form>
           )}
 

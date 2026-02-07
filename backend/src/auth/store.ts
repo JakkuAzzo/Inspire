@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
-import { UserProfile, PendingUser, GuestSession } from './types';
+import { UserProfile, PendingUser, PendingLogin, GuestSession } from './types';
 
 const USERS_FILE = path.join(__dirname, '..', 'data', 'users.json');
 const PENDING_USERS_FILE = path.join(__dirname, '..', 'data', 'pendingUsers.json');
+const PENDING_LOGINS_FILE = path.join(__dirname, '..', 'data', 'pendingLogins.json');
 const GUEST_SESSIONS_FILE = path.join(__dirname, '..', 'data', 'guestSessions.json');
 
 function readUsers(): UserProfile[] {
@@ -48,6 +49,26 @@ function writePendingUsers(users: PendingUser[]) {
   }
 }
 
+function readPendingLogins(): PendingLogin[] {
+  try {
+    const raw = fs.readFileSync(PENDING_LOGINS_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed as PendingLogin[];
+  } catch (err) {
+    // ignore and fall through to default
+  }
+  return [];
+}
+
+function writePendingLogins(logins: PendingLogin[]) {
+  try {
+    fs.mkdirSync(path.dirname(PENDING_LOGINS_FILE), { recursive: true });
+    fs.writeFileSync(PENDING_LOGINS_FILE, JSON.stringify(logins, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Unable to persist pending logins', err);
+  }
+}
+
 function readGuestSessions(): GuestSession[] {
   try {
     const raw = fs.readFileSync(GUEST_SESSIONS_FILE, 'utf8');
@@ -70,6 +91,7 @@ function writeGuestSessions(sessions: GuestSession[]) {
 
 let cachedUsers = readUsers();
 let cachedPendingUsers = readPendingUsers();
+let cachedPendingLogins = readPendingLogins();
 let cachedGuestSessions = readGuestSessions();
 
 export function findUserByEmail(email: string): UserProfile | undefined {
@@ -192,6 +214,65 @@ export function cleanupExpiredPendingUsers(): number {
   cachedPendingUsers = cachedPendingUsers.filter(u => u.expiresAt > now);
   writePendingUsers(cachedPendingUsers);
   return before - cachedPendingUsers.length;
+}
+
+// ============= Pending Logins (OTP verification) =============
+
+export function findPendingLoginByEmail(email: string): PendingLogin | undefined {
+  return cachedPendingLogins.find((login) => login.email.toLowerCase() === email.toLowerCase());
+}
+
+export async function createPendingLogin(user: UserProfile, otpCode: string): Promise<PendingLogin> {
+  const normalizedEmail = user.email.toLowerCase();
+
+  cachedPendingLogins = cachedPendingLogins.filter(l => l.email !== normalizedEmail);
+
+  const otpCodeHash = await bcrypt.hash(otpCode, 10);
+  const now = Date.now();
+  const OTP_EXPIRY = 10 * 60 * 1000; // 10 minutes
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+
+  const pendingLogin: PendingLogin = {
+    id: uuid(),
+    email: normalizedEmail,
+    userId: user.id,
+    otpCodeHash,
+    otpExpiry: now + OTP_EXPIRY,
+    createdAt: now,
+    expiresAt: now + ONE_DAY
+  };
+
+  cachedPendingLogins = [...cachedPendingLogins, pendingLogin];
+  writePendingLogins(cachedPendingLogins);
+  return pendingLogin;
+}
+
+export async function verifyLoginOtp(email: string, otpCode: string): Promise<UserProfile | null> {
+  const pendingLogin = findPendingLoginByEmail(email);
+  if (!pendingLogin) return null;
+
+  if (Date.now() > pendingLogin.otpExpiry) {
+    return null;
+  }
+
+  const valid = await bcrypt.compare(otpCode, pendingLogin.otpCodeHash);
+  if (!valid) return null;
+
+  const user = findUserById(pendingLogin.userId);
+  if (!user) return null;
+
+  cachedPendingLogins = cachedPendingLogins.filter(l => l.id !== pendingLogin.id);
+  writePendingLogins(cachedPendingLogins);
+
+  return user;
+}
+
+export function cleanupExpiredPendingLogins(): number {
+  const now = Date.now();
+  const before = cachedPendingLogins.length;
+  cachedPendingLogins = cachedPendingLogins.filter(l => l.expiresAt > now);
+  writePendingLogins(cachedPendingLogins);
+  return before - cachedPendingLogins.length;
 }
 
 // ============= Guest Sessions =============

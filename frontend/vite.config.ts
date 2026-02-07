@@ -15,7 +15,16 @@ export default defineConfig({
             key: fs.readFileSync(process.env.VITE_KEY_PATH, 'utf-8'),
           }
         : undefined),
-    host: 'localhost', // Explicitly use localhost
+    host: process.env.VITE_DEV_HOST || 'localhost',
+    hmr: process.env.VITE_DEV_HOST || process.env.VITE_DEV_PORT
+      ? {
+          host: process.env.VITE_DEV_HOST || 'localhost',
+          clientPort: process.env.VITE_DEV_PORT
+            ? Number(process.env.VITE_DEV_PORT)
+            : undefined,
+          protocol: process.env.VITE_DISABLE_HTTPS === 'true' ? 'ws' : 'wss',
+        }
+      : undefined,
     proxy: {
       '/api': {
         target: 'http://localhost:3001',

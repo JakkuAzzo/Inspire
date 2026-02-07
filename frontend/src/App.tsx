@@ -911,6 +911,8 @@ function App() {
 	});
 	const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
 	const [showAccountModal, setShowAccountModal] = useState(false);
+	const [showAccountDetails, setShowAccountDetails] = useState(false);
+	const [vstRedirectUri, setVstRedirectUri] = useState<string | null>(null);
 	const [showCommunityOverlay, setShowCommunityOverlay] = useState(false);
         const [controlsCollapsed, setControlsCollapsed] = useState<boolean>(() => {
                 if (typeof window === 'undefined') return true;
@@ -1257,6 +1259,7 @@ function App() {
 		}
 	}, [dailyChallenge.expiresAt]);
 
+	const isSignedIn = useMemo(() => Boolean(authUser), [authUser]);
 	const isAuthenticated = useMemo(() => Boolean(authUser && !authUser.isGuest), [authUser]);
 
 	// Auth handlers
@@ -1275,21 +1278,35 @@ function App() {
 			setAuthUser(user);
 			setUserId(user.displayName || user.id);
 			setShowAccountModal(false);
+			if (vstRedirectUri && typeof window !== 'undefined') {
+				window.location.href = `/api/auth/callback?vst_uri=${encodeURIComponent(vstRedirectUri)}`;
+			}
 		} catch (err: any) {
 			throw new Error(err.message || 'OTP verification failed');
 		}
-	}, []);
+	}, [vstRedirectUri]);
 
-	const handleLogin = useCallback(async (email: string, password: string) => {
+	const handleVerifyLoginOtp = useCallback(async (email: string, otpCode: string) => {
 		try {
-			const user = await authService.login(email, password);
+			const user = await authService.verifyLoginOtp(email, otpCode);
 			setAuthUser(user);
 			setUserId(user.displayName || user.id);
 			setShowAccountModal(false);
+			if (vstRedirectUri && typeof window !== 'undefined') {
+				window.location.href = `/api/auth/callback?vst_uri=${encodeURIComponent(vstRedirectUri)}`;
+			}
+		} catch (err: any) {
+			throw new Error(err.message || 'OTP verification failed');
+		}
+	}, [vstRedirectUri]);
+
+	const handleLogin = useCallback(async (email: string, password: string) => {
+		try {
+			await authService.requestLoginOtp(email, password);
 		} catch (err: any) {
 			throw new Error(err.message || 'Login failed');
 		}
-	}, []);
+	}, [vstRedirectUri]);
 
 	const handleGuestMode = useCallback(async () => {
 		try {
@@ -1297,10 +1314,13 @@ function App() {
 			setAuthUser(user);
 			setUserId(user.displayName || user.id);
 			setShowAccountModal(false);
+			if (vstRedirectUri && typeof window !== 'undefined') {
+				window.location.href = `/api/auth/callback?vst_uri=${encodeURIComponent(vstRedirectUri)}`;
+			}
 		} catch (err: any) {
 			throw new Error(err.message || 'Guest mode failed');
 		}
-	}, []);
+	}, [vstRedirectUri]);
 
 	const handleSignOut = useCallback(async () => {
 		try {
@@ -1320,6 +1340,14 @@ function App() {
 
 	// Load current user on mount
 	useEffect(() => {
+		// Check for VST redirect URI in query params
+		if (typeof window !== 'undefined') {
+			const params = new URLSearchParams(window.location.search);
+			const vst = params.get('vst_uri') || params.get('redirect_uri');
+			if (vst) {
+				setVstRedirectUri(vst);
+			}
+		}
 		authService.getCurrentUser().then(user => {
 			if (user) {
 				setAuthUser(user);
@@ -3241,7 +3269,11 @@ function App() {
 		return name.startsWith('@') ? name : `@${name}`;
 	}, [authUser]);
 	
-	const handleTriggerLabel = isAuthenticated ? 'Open creator dashboard' : 'Sign up or log in to Inspire';
+	const handleTriggerLabel = isAuthenticated
+		? 'Open creator dashboard'
+		: isSignedIn
+			? 'Open account options'
+			: 'Sign up or log in to Inspire';
 	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
 	// Inline custom property for mood accent so tests can detect changes via getComputedStyle
 	const appStyle = useMemo(() => ({ ['--mood-accent' as any]: moodAccent }) as React.CSSProperties, [moodAccent]);
@@ -3842,7 +3874,7 @@ function App() {
 						>
 							⚙️
 						</button>
-						{isAuthenticated && (
+						{isSignedIn && (
 							<button
 								type="button"
 								className="nav-signout"
@@ -3857,6 +3889,59 @@ function App() {
 				</header>
 			) : (
 				<>
+					{isSignedIn && (
+						<div className="hero-user-card glass">
+							<button
+								type="button"
+								className="user-card-header"
+								onClick={() => setShowAccountDetails(!showAccountDetails)}
+								aria-label="Toggle account menu"
+							>
+								<span className="user-card-name">{formattedHandle}</span>
+								{authUser?.email && <span className="user-card-email">{authUser.email}</span>}
+								<span className="user-card-toggle">{showAccountDetails ? '▼' : '▶'}</span>
+							</button>
+							{showAccountDetails && (
+								<div className="user-card-menu">
+									<div className="user-card-info">
+										<p className="info-label">Account Type</p>
+										<p className="info-value">{authUser?.isGuest ? 'Guest Session' : 'Member'}</p>
+										{authUser?.email && (
+											<>
+												<p className="info-label">Email</p>
+												<p className="info-value">{authUser.email}</p>
+											</>
+										)}
+									</div>
+									<div className="user-card-actions">
+										{isAuthenticated && (
+											<button
+												type="button"
+												className="btn micro"
+												onClick={() => {
+													if (typeof window !== 'undefined') {
+														window.location.assign('/dashboard');
+													}
+												}}
+											>
+												My Dashboard
+											</button>
+										)}
+										<button
+											type="button"
+											className="btn micro"
+											onClick={() => {
+												setShowAccountDetails(false);
+												handleSignOut();
+											}}
+										>
+											Sign Out
+										</button>
+									</div>
+								</div>
+							)}
+						</div>
+					)}
 					<header className="hero">
 						<div className="hero-copy">
 							<div className="hero-heading">
@@ -3873,7 +3958,7 @@ function App() {
 					{!showModePicker && (
 						<div className="mode-gate-row">
 							<div className="mode-gate">
-								{isAuthenticated ? (
+								{isSignedIn ? (
 									<button type="button" className="btn primary" onClick={() => setShowModePicker(true)}>
 										Get Started - Pick a Lab
 									</button>
@@ -5132,6 +5217,7 @@ function App() {
 					onClose={() => setShowAccountModal(false)}
 					onSignup={handleSignup}
 					onVerifyOtp={handleVerifyOtp}
+					onVerifyLoginOtp={handleVerifyLoginOtp}
 					onLogin={handleLogin}
 					onGuestMode={handleGuestMode}
 				/>

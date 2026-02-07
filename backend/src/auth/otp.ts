@@ -8,6 +8,12 @@ export interface OTPResult {
   message?: string;
 }
 
+const mockOtpByEmail = new Map<string, string>();
+
+export function getLastMockOtp(email: string): string | null {
+  return mockOtpByEmail.get(email.toLowerCase()) || null;
+}
+
 /**
  * Generate a 6-digit OTP code
  */
@@ -72,6 +78,7 @@ export async function sendOTPEmail(recipientEmail: string, otpCode: string): Pro
     
     // Fallback: Log OTP to console in development
     if (process.env.NODE_ENV === 'development') {
+      mockOtpByEmail.set(recipientEmail.toLowerCase(), otpCode);
       console.log('\n===========================================');
       console.log('🔐 DEVELOPMENT MODE - OTP CODE');
       console.log('===========================================');
@@ -89,6 +96,7 @@ export async function sendOTPEmail(recipientEmail: string, otpCode: string): Pro
  * Mock OTP sender for testing
  */
 export async function sendOTPEmailMock(recipientEmail: string, otpCode: string): Promise<OTPResult> {
+  mockOtpByEmail.set(recipientEmail.toLowerCase(), otpCode);
   console.log('\n===========================================');
   console.log('📧 MOCK EMAIL - OTP CODE');
   console.log('===========================================');

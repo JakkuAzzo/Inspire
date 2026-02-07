@@ -21,6 +21,12 @@ export interface SignupRequestResponse {
   expiresIn: number;
 }
 
+export interface LoginRequestResponse {
+  message: string;
+  email: string;
+  expiresIn: number;
+}
+
 export class AuthError extends Error {
   constructor(message: string) {
     super(message);
@@ -87,6 +93,46 @@ export async function login(email: string, password: string): Promise<AuthUser> 
 
   if (!response.ok) {
     throw new AuthError(data.error || 'Login failed');
+  }
+
+  return data.user;
+}
+
+/**
+ * Request login OTP after validating credentials
+ */
+export async function requestLoginOtp(email: string, password: string): Promise<LoginRequestResponse> {
+  const response = await fetch(`${API_BASE}/auth/login-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, password })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new AuthError(data.error || 'Login request failed');
+  }
+
+  return data;
+}
+
+/**
+ * Verify OTP code and complete login
+ */
+export async function verifyLoginOtp(email: string, otpCode: string): Promise<AuthUser> {
+  const response = await fetch(`${API_BASE}/auth/login-verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, otpCode })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new AuthError(data.error || 'OTP verification failed');
   }
 
   return data.user;

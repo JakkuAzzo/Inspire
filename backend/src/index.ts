@@ -60,6 +60,7 @@ import { buildAuthRouter } from './auth/routes';
 import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 import { startCleanupJob } from './auth/cleanup';
 import { generateStoryArcScaffold } from './services/storyArcService';
+import { initFirebaseAdmin } from './firebase/admin';
 
 const app = express();
 const server = http.createServer(app);
@@ -77,6 +78,9 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
   console.log(`[request] ${req.method} ${req.url}`);
   next();
 });
+
+// Initialize Firebase
+initFirebaseAdmin();
 
 // Simple in-memory stores for MVP
 const packs = new Map<string, FuelPack | ModePack>();
@@ -925,7 +929,13 @@ function buildApiRouter() {
       return res.status(404).json({ error: 'Pack not found. Spin or craft a pack before saving.' });
     }
 
+    // Save to PostgreSQL
     await repo.savePackForUser(userId, pack);
+    
+    // Also save to Firebase for cloud sync
+    const { savePackToDb } = await import('./firebase/store');
+    await savePackToDb(userId, pack);
+    
     res.json({ saved: true, userId, packId, snapshot: pack });
   });
 

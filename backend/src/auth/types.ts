@@ -20,6 +20,16 @@ export interface PendingUser {
   expiresAt: number;
 }
 
+export interface PendingLogin {
+  id: string;
+  email: string;
+  userId: string;
+  otpCodeHash: string;
+  otpExpiry: number;
+  createdAt: number;
+  expiresAt: number;
+}
+
 export interface GuestSession {
   id: string;
   handle: string;

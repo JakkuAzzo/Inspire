@@ -5,24 +5,27 @@
  * - Expired guest sessions
  */
 
-import { cleanupExpiredPendingUsers, cleanupExpiredGuestSessions } from './store';
+import { cleanupExpiredPendingUsers, cleanupExpiredPendingLogins, cleanupExpiredGuestSessions } from './store';
 
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // Run every hour
 
 /**
  * Run cleanup job once
  */
-export function runCleanup(): { pendingUsers: number; guestSessions: number } {
+export function runCleanup(): { pendingUsers: number; pendingLogins: number; guestSessions: number } {
   console.log('[cleanup] Starting cleanup job...');
   
   const removedPendingUsers = cleanupExpiredPendingUsers();
+  const removedPendingLogins = cleanupExpiredPendingLogins();
   const removedGuestSessions = cleanupExpiredGuestSessions();
   
   console.log(`[cleanup] Removed ${removedPendingUsers} expired pending users`);
+  console.log(`[cleanup] Removed ${removedPendingLogins} expired pending logins`);
   console.log(`[cleanup] Removed ${removedGuestSessions} expired guest sessions`);
   
   return {
     pendingUsers: removedPendingUsers,
+    pendingLogins: removedPendingLogins,
     guestSessions: removedGuestSessions
   };
 }

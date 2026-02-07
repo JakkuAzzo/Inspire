@@ -7,13 +7,19 @@
 6 silly config load:file:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/frontend/etc/npmrc
 7 verbose title npm run dev --host 192.168.1.119 --port 3000 --strictPort
 8 verbose argv "run" "dev" "--prefix" "frontend" "--" "--host" "192.168.1.119" "--port" "3000" "--strictPort"
-9 verbose logfile logs-max:10 dir:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-01-31T00_54_23_763Z-
-10 verbose logfile /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-01-31T00_54_23_763Z-debug-0.log
+9 verbose logfile logs-max:10 dir:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-02-07T11_34_00_882Z-
+10 verbose logfile /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-02-07T11_34_00_882Z-debug-0.log
 11 silly logfile start cleaning logs, removing 1 files
 12 silly logfile done cleaning log files
-13 verbose cwd /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire
-14 verbose os Darwin 25.3.0
-15 verbose node v20.19.2
-16 verbose npm  v10.8.2
-17 verbose exit 143
-18 verbose code 143
+13 http fetch GET 200 https://registry.npmjs.org/npm 271ms
+14 verbose cwd /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire
+15 verbose os Darwin 25.3.0
+16 verbose node v20.19.2
+17 verbose npm  v10.8.2
+18 notice
+18 notice New major version of npm available! 10.8.2 -> 11.9.0
+18 notice Changelog: https://github.com/npm/cli/releases/tag/v11.9.0
+18 notice To update run: npm install -g npm@11.9.0
+18 notice  { force: true, [Symbol(proc-log.meta)]: true }
+19 verbose exit 143
+20 verbose code 143

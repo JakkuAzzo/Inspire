@@ -7,7 +7,7 @@
 6 silly config load:file:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/frontend/etc/npmrc
 7 verbose title npm run dev --host 10.154.75.2 --port 3000 --strictPort
 8 verbose argv "run" "dev" "--prefix" "frontend" "--" "--host" "10.154.75.2" "--port" "3000" "--strictPort"
-9 verbose logfile logs-max:10 dir:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-01-30T17_43_13_780Z-
-10 verbose logfile /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-01-30T17_43_13_780Z-debug-0.log
+9 verbose logfile logs-max:10 dir:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-02-02T13_31_35_512Z-
+10 verbose logfile /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-02-02T13_31_35_512Z-debug-0.log
 11 silly logfile start cleaning logs, removing 1 files
 12 silly logfile done cleaning log files

@@ -112,7 +112,11 @@ PIDS+=($!)
 sleep 2
 
 echo "Starting Inspire frontend on https://$HOST_IP:$FRONTEND_PORT"
-VITE_CERT_PATH="$CERTS_DIR/cert.pem" VITE_KEY_PATH="$CERTS_DIR/key.pem" npm run dev --prefix frontend -- --host "$HOST_IP" --port "$FRONTEND_PORT" --strictPort &
+VITE_CERT_PATH="$CERTS_DIR/cert.pem" \
+  VITE_KEY_PATH="$CERTS_DIR/key.pem" \
+  VITE_DEV_HOST="$HOST_IP" \
+  VITE_DEV_PORT="$FRONTEND_PORT" \
+  npm run dev --prefix frontend -- --host "$HOST_IP" --port "$FRONTEND_PORT" --strictPort &
 PIDS+=($!)
 
 while true; do
