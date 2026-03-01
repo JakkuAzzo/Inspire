@@ -34,7 +34,9 @@ import {
   InspirationClip,
   RemixMeta,
   CommentThread,
-  CollaborativeSessionParticipant
+  CollaborativeSessionParticipant,
+  DAWTrackState,
+  DAWSyncPushRequest
 } from './types';
 import {
   generateModePack,
@@ -49,6 +51,7 @@ import {
 import { createAllServices } from './services';
 import { searchYoutubeKeyless, buildYoutubeQuery } from './services/youtubeSearchService';
 import { getPool } from './db/connection';
+import { getDawSyncStore } from './db/dawSyncStore';
 import { PackRepository } from './repositories/packRepository';
 import fs from 'fs';
 import path from 'path';
@@ -73,8 +76,26 @@ const LISTEN_PORT = Number(PORT) || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));  // Parse form-encoded data
 app.use(cookieParser());
+
+// VST compatibility: extract JSON from form-encoded 'data' field
 app.use((req: Request, _res: Response, next: NextFunction) => {
+  // If request has form data with 'data' field and Content-Type is application/json,
+  // extract and parse the 'data' field as the JSON body
+  if (
+    typeof req.body === 'object' &&
+    req.body.data &&
+    typeof req.body.data === 'string' &&
+    req.get('Content-Type')?.includes('application/json')
+  ) {
+    try {
+      req.body = JSON.parse(req.body.data);
+    } catch (e) {
+      console.error('[VST] Failed to parse data field as JSON:', e);
+      // Keep original body if parsing fails
+    }
+  }
   console.log(`[request] ${req.method} ${req.url}`);
   next();
 });
@@ -88,6 +109,7 @@ const assets = new Map<string, any>();
 const magicTokens = new Map<string, { email: string; expiresAt: number }>();
 const shareTokens = new Map<string, { packId: string; createdAt: number; userId?: string }>();
 const services = createAllServices();
+const dawSyncStore = getDawSyncStore({ dbPath: process.env.LOCAL_SYNC_DB_PATH });
 let packRepoPromise: Promise<PackRepository> | null = null;
 const envValidation = validateEnvironment();
 
@@ -1286,6 +1308,229 @@ function buildApiRouter() {
   router.get('/uploader/insights', (req: Request, res: Response) => {
     const uploaderId = (req.query.uploaderId as string) || 'unknown';
     res.json({ uploaderId, impressions: Math.floor(Math.random() * 1000), downloads: Math.floor(Math.random() * 200), ctr: Math.random() });
+  });
+
+  // ============ DAW TRACK SYNC ROUTES (SQLite local store) ============
+
+  router.post('/daw-sync/push', (req: Request, res: Response) => {
+    try {
+      const body = req.body as DAWSyncPushRequest | undefined;
+      if (!body?.roomCode || !body.trackId || !body.state) {
+        return res.status(400).json({ error: 'roomCode, trackId, and state are required' });
+      }
+
+      const baseVersion = typeof body.baseVersion === 'number' ? body.baseVersion : null;
+      const updatedBy = body.updatedBy ?? 'unknown';
+      const incomingState: DAWTrackState = {
+        ...body.state,
+        roomCode: body.roomCode,
+        trackId: body.trackId
+      };
+
+      const result = dawSyncStore.upsertTrackState({
+        roomCode: body.roomCode,
+        trackId: body.trackId,
+        baseVersion,
+        updatedBy,
+        state: incomingState
+      });
+
+      if (result.status === 'conflict' && result.current) {
+        return res.status(409).json({
+          ok: false,
+          conflict: true,
+          current: {
+            version: result.current.version,
+            updatedAt: result.current.updatedAt,
+            updatedBy: result.current.updatedBy,
+            state: result.current.state
+          }
+        });
+      }
+
+      return res.status(201).json({
+        ok: true,
+        version: result.next?.version,
+        state: result.next?.state
+      });
+    } catch (err) {
+      console.error('[daw-sync] push failed', err);
+      return res.status(500).json({ error: 'Failed to push track state' });
+    }
+  });
+
+  router.get('/daw-sync/pull', (req: Request, res: Response) => {
+    try {
+      const roomCode = String(req.query.roomCode || '');
+      const trackId = String(req.query.trackId || '');
+      const sinceRaw = req.query.sinceVersion;
+      const sinceVersion = Number.isFinite(Number(sinceRaw)) ? Number(sinceRaw) : null;
+
+      if (!roomCode || !trackId) {
+        return res.status(400).json({ error: 'roomCode and trackId are required' });
+      }
+
+      const current = dawSyncStore.getTrackState(roomCode, trackId);
+      const changes = sinceVersion !== null ? dawSyncStore.listChangesSince(roomCode, trackId, sinceVersion) : [];
+
+      return res.json({
+        roomCode,
+        trackId,
+        version: current?.version ?? 0,
+        state: current?.state ?? null,
+        changes
+      });
+    } catch (err) {
+      console.error('[daw-sync] pull failed', err);
+      return res.status(500).json({ error: 'Failed to pull track state' });
+    }
+  });
+
+  router.get('/daw-sync/room/:roomCode', (req: Request, res: Response) => {
+    try {
+      const { roomCode } = req.params;
+      const tracks = dawSyncStore.listTrackStates(roomCode);
+      res.json({ roomCode, tracks });
+    } catch (err) {
+      console.error('[daw-sync] room list failed', err);
+      res.status(500).json({ error: 'Failed to list room tracks' });
+    }
+  });
+
+  // ============ VST ROOM MANAGEMENT (LOCAL) ============
+
+  // In-memory store for VST rooms (for local development, no Firebase dependency)
+  const vstRooms = new Map<string, any>();
+  const vstSessions = new Map<string, any>();
+
+  /**
+   * POST /api/vst/create-room
+   * Create a room for VST collaboration (local alternative to Firebase)
+   */
+  router.post('/vst/create-room', (req: Request, res: Response) => {
+    try {
+      const { password, name, isGuest } = req.body || {};
+      
+      const roomId = createId('room');
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const now = Date.now();
+      const ttlMs = isGuest ? 15 * 60 * 1000 : 24 * 60 * 60 * 1000; // 15 min for guest, 24h for auth
+      const expiresAt = now + ttlMs;
+
+      const room = {
+        roomId,
+        name: name || (isGuest ? 'Guest VST Room' : 'VST Collab Room'),
+        code,
+        createdAt: now,
+        expiresAt,
+        isGuest: isGuest ?? false,
+        isActive: true,
+        password: password || null,
+        participants: 0
+      };
+
+      vstRooms.set(roomId, room);
+
+      console.log(`[VST] Room created: ${roomId} (code: ${code}, guest: ${isGuest})`);
+
+      res.status(201).json({
+        roomId: room.roomId,
+        code: room.code,
+        expiresAt: room.expiresAt,
+        ttlMinutes: Math.floor(ttlMs / 60000),
+        isGuest: room.isGuest
+      });
+    } catch (err) {
+      console.error('[VST] Failed to create room:', err);
+      res.status(500).json({ error: 'Failed to create room' });
+    }
+  });
+
+  /**
+   * POST /api/vst/join-room
+   * Join a VST room with room ID and code
+   */
+  router.post('/vst/join-room', (req: Request, res: Response) => {
+    try {
+      const { roomId, code } = req.body || {};
+
+      if (!roomId || !code) {
+        return res.status(400).json({ error: 'roomId and code are required' });
+      }
+
+      const room = vstRooms.get(roomId);
+      
+      if (!room) {
+        return res.status(404).json({ error: 'Room not found' });
+      }
+
+      if (!room.isActive) {
+        return res.status(403).json({ error: 'Room is inactive' });
+      }
+
+      if (room.expiresAt && Date.now() > room.expiresAt) {
+        vstRooms.delete(roomId);
+        return res.status(410).json({ error: 'Room has expired' });
+      }
+
+      if (room.code !== code.toUpperCase()) {
+        return res.status(401).json({ error: 'Invalid room code' });
+      }
+
+      // Generate session token
+      const token = createId('session');
+      const sessionExpiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
+
+      vstSessions.set(token, {
+        roomId,
+        createdAt: Date.now(),
+        expiresAt: sessionExpiresAt
+      });
+
+      room.participants++;
+
+      console.log(`[VST] User joined room: ${roomId} (token: ${token.substring(0, 12)}...)`);
+
+      res.json({
+        token,
+        expiresAt: sessionExpiresAt,
+        roomId,
+        roomName: room.name
+      });
+    } catch (err) {
+      console.error('[VST] Failed to join room:', err);
+      res.status(500).json({ error: 'Failed to join room' });
+    }
+  });
+
+  /**
+   * POST /api/vst/guest-continue
+   * Create a guest session for VST (no signup required)
+   */
+  router.post('/vst/guest-continue', (req: Request, res: Response) => {
+    try {
+      const guestId = createId('guest');
+      const token = createId('guest-token');
+      
+      vstSessions.set(token, {
+        guestId,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 15 * 60 * 1000, // 15 minutes
+        isGuest: true
+      });
+
+      console.log(`[VST] Guest session created: ${guestId}`);
+
+      res.json({
+        token,
+        guestId,
+        expiresAt: Date.now() + 15 * 60 * 1000,
+        username: `Guest_${guestId.substring(0, 6)}`
+      });
+    } catch (err) {
+      console.error('[VST] Failed to create guest session:', err);
+      res.status(500).json({ error: 'Failed to create guest session' });
+    }
   });
 
   // ============ COLLABORATIVE SESSION ROUTES ============

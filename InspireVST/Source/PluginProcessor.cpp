@@ -1,5 +1,9 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <atomic>
+
+// file-scope storage for host transport snapshot
+static InspireVSTAudioProcessor::HostTransportInfo hostInfo;
 
 InspireVSTAudioProcessor::InspireVSTAudioProcessor()
 {
@@ -33,12 +37,67 @@ void InspireVSTAudioProcessor::releaseResources()
 
 void InspireVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
+  // Sample-time processing not used; clear buffer
   buffer.clear();
+
+  // Snapshot host transport info if available
+  if (auto* ph = getPlayHead())
+  {
+    if (auto pos = ph->getPosition())
+    {
+      // Individual fields are Optional; only copy when provided by host
+      if (auto ppq = pos->getPpqPosition())
+        hostInfo.ppqPosition = *ppq;
+
+      if (auto lastBar = pos->getPpqPositionOfLastBarStart())
+        hostInfo.ppqPositionOfLastBarStart = *lastBar;
+
+      if (auto bpm = pos->getBpm())
+        hostInfo.bpm = *bpm;
+
+      if (auto ts = pos->getTimeSignature())
+      {
+        hostInfo.timeSigNumerator = ts->numerator;
+        hostInfo.timeSigDenominator = ts->denominator;
+      }
+
+      if (auto samples = pos->getTimeInSamples())
+        hostInfo.samplePosition = static_cast<double>(*samples);
+
+      hostInfo.isPlaying = pos->getIsPlaying();
+    }
+  }
 }
 
 void InspireVSTAudioProcessor::processBlock(juce::AudioBuffer<double>& buffer, juce::MidiBuffer&)
 {
   buffer.clear();
+
+  if (auto* ph = getPlayHead())
+  {
+    if (auto pos = ph->getPosition())
+    {
+      if (auto ppq = pos->getPpqPosition())
+        hostInfo.ppqPosition = *ppq;
+
+      if (auto lastBar = pos->getPpqPositionOfLastBarStart())
+        hostInfo.ppqPositionOfLastBarStart = *lastBar;
+
+      if (auto bpm = pos->getBpm())
+        hostInfo.bpm = *bpm;
+
+      if (auto ts = pos->getTimeSignature())
+      {
+        hostInfo.timeSigNumerator = ts->numerator;
+        hostInfo.timeSigDenominator = ts->denominator;
+      }
+
+      if (auto samples = pos->getTimeInSamples())
+        hostInfo.samplePosition = static_cast<double>(*samples);
+
+      hostInfo.isPlaying = pos->getIsPlaying();
+    }
+  }
 }
 
 int InspireVSTAudioProcessor::getNumPrograms()
@@ -73,6 +132,28 @@ void InspireVSTAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 void InspireVSTAudioProcessor::setStateInformation(const void*, int)
 {
 }
+
+void InspireVSTAudioProcessor::insertPackToDAW(const juce::var& pack)
+{
+  // Minimal implementation: store the pack in processor state and log
+  lastInsertedPack = pack;
+  if (auto* obj = pack.getDynamicObject())
+  {
+    juce::Logger::getCurrentLogger()->writeToLog("[InspireVST] insertPackToDAW: " + obj->getProperty("title").toString());
+  }
+  else
+  {
+    juce::Logger::getCurrentLogger()->writeToLog("[InspireVST] insertPackToDAW: pack stored");
+  }
+}
+
+InspireVSTAudioProcessor::HostTransportInfo InspireVSTAudioProcessor::getHostTransportInfo() const
+{
+  // Return the last sampled host info; this is updated in processBlock.
+  return hostInfo;
+}
+
+// (hostInfo declared at file top)
 
 double InspireVSTAudioProcessor::getTailLengthSeconds() const
 {

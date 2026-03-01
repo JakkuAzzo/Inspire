@@ -24,12 +24,34 @@ setup_https_certs() {
   if [[ ! -f "$CERTS_DIR/cert.pem" ]] || [[ ! -f "$CERTS_DIR/key.pem" ]]; then
     echo "Generating self-signed HTTPS certificate..."
     mkdir -p "$CERTS_DIR"
+    
+    # Create a config file for Subject Alternative Names (SANs)
+    cat > "$CERTS_DIR/cert.conf" <<EOF
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = v3_req
+
+[dn]
+CN = localhost
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+IP.1 = 127.0.0.1
+IP.2 = $HOST_IP
+EOF
+    
     openssl req -x509 -newkey rsa:2048 -keyout "$CERTS_DIR/key.pem" -out "$CERTS_DIR/cert.pem" \
-      -days 365 -nodes -subj "/CN=localhost" 2>/dev/null || {
+      -days 365 -nodes -config "$CERTS_DIR/cert.conf" -extensions v3_req 2>/dev/null || {
       echo "Error: Failed to generate certificate. Make sure OpenSSL is installed." >&2
       return 1
     }
-    echo "✓ Self-signed certificate created at $CERTS_DIR"
+    echo "✓ Self-signed certificate created at $CERTS_DIR (includes localhost and $HOST_IP)"
   fi
 }
 
@@ -99,10 +121,18 @@ setup_https_certs || exit 1
 kill_port 3001
 kill_port "$FRONTEND_PORT"
 
-# Write server URL to a file so VST can read it
-SERVER_URL="https://$HOST_IP:$FRONTEND_PORT"
+# Write backend server URL to a file so VST can read it (backend is on :3001, not frontend :3000)
+# Use the detected local IP so VST can connect from other devices on the same network
+if [[ "$HOST_IP" == "0.0.0.0" ]]; then
+  # Fallback to localhost if we couldn't detect the IP
+  SERVER_URL="http://localhost:3001"
+else
+  # Use the actual local network IP
+  SERVER_URL="http://$HOST_IP:3001"
+fi
 echo "$SERVER_URL" > "$ROOT_DIR/.vst-server-url"
 echo "ℹ VST Server URL: $SERVER_URL (written to .vst-server-url)"
+echo "ℹ Other devices on your network can connect to: $SERVER_URL"
 
 echo "Starting Inspire backend on :3001"
 NODE_ENV=development npm run dev --prefix backend &
@@ -112,6 +142,21 @@ PIDS+=($!)
 sleep 2
 
 echo "Starting Inspire frontend on https://$HOST_IP:$FRONTEND_PORT"
+echo ""
+echo "════════════════════════════════════════════════════════════"
+echo "  Inspire Development Server"
+echo "════════════════════════════════════════════════════════════"
+echo "  Frontend:  https://$HOST_IP:$FRONTEND_PORT"
+echo "  Backend:   $SERVER_URL"
+echo ""
+echo "  Share with other devices on your network:"
+echo "    VST Server URL: $SERVER_URL"
+echo "    Web Interface:  https://$HOST_IP:$FRONTEND_PORT"
+echo ""
+echo "  Note: You may need to accept the self-signed certificate"
+echo "════════════════════════════════════════════════════════════"
+echo ""
+
 VITE_CERT_PATH="$CERTS_DIR/cert.pem" \
   VITE_KEY_PATH="$CERTS_DIR/key.pem" \
   VITE_DEV_HOST="$HOST_IP" \

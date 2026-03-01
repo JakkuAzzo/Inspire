@@ -5,17 +5,20 @@
  * Displays video streams, shared DAW, comments, and viewer list.
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type {
   CollaborativeSession,
   CommentThread,
   DAWNote,
-  DAWSession
+  DAWSession,
+  DAWTrack,
+  DAWTrackState
 } from '../types';
 import { VideoStreamManager } from '../components/workspace/VideoStreamManager';
 import { CollaborativeDAW } from '../components/workspace/CollaborativeDAW';
 import { useAuth } from '../context/AuthContext';
 import { liveExportService } from '../services/liveExportService';
+import { pullTrackState, pushTrackState } from '../services/dawSyncService';
 import './CollaborativeSessionDetail.css';
 
 interface SessionTimer {
@@ -54,10 +57,19 @@ export function CollaborativeSessionDetail({
   const [activeHubTab, setActiveHubTab] = useState<'daw' | 'packs' | 'analytics' | 'create'>('daw');
   const [liveDestinations, setLiveDestinations] = useState<{ tiktok: boolean; instagram: boolean }>({ tiktok: false, instagram: false });
   const [recentPacks, setRecentPacks] = useState<any[]>([]);
+  const trackVersionsRef = useRef<Map<string, number>>(new Map());
+  const [syncConflict, setSyncConflict] = useState<{
+    trackId: string;
+    server: { version: number; updatedAt: number; updatedBy?: string; state: DAWTrackState };
+    local: DAWTrackState;
+  } | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [showExpiredModal, setShowExpiredModal] = useState(false);
   const isHost = userRole === 'host';
   const canCollaborate = isHost || userRole === 'collaborator';
 
   const isAuthorized = !!user || !!localUserId || Boolean((session as any).isGuestSession);
+  const isSessionExpired = sessionTimer.isExpired && (session as any).isGuestSession;
 
   // Timer for guest sessions
   useEffect(() => {
@@ -82,6 +94,13 @@ export function CollaborativeSessionDetail({
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [session]);
+
+  // Show expired modal when session expires
+  useEffect(() => {
+    if (sessionTimer.isExpired && (session as any).isGuestSession && !showExpiredModal) {
+      setShowExpiredModal(true);
+    }
+  }, [sessionTimer.isExpired, session, showExpiredModal]);
 
   // Update comments when session changes
   useEffect(() => {
@@ -211,6 +230,163 @@ export function CollaborativeSessionDetail({
     [userVotes]
   );
 
+  const buildTrackState = useCallback(
+    (track: DAWTrack, trackIndex: number): DAWTrackState => {
+      const notesForTrack = session.daw.notes.filter((note) => note.track === trackIndex);
+      return {
+        roomCode: session.id,
+        trackId: track.id,
+        trackIndex,
+        trackName: track.name,
+        trackType: track.type,
+        bpm: session.daw.bpm,
+        tempo: session.daw.tempo ?? session.daw.bpm,
+        timeSignature: session.daw.timeSignature,
+        currentBeat: session.daw.currentBeat,
+        clips: track.clips ?? [],
+        notes: notesForTrack,
+        updatedAt: Date.now(),
+        updatedBy: localUserId || localUsername
+      };
+    },
+    [localUserId, localUsername, session]
+  );
+
+  const pushTracksToSync = useCallback(
+    async (tracksToPush: DAWTrack[]) => {
+      if (!tracksToPush.length) return;
+      await Promise.all(
+        tracksToPush.map(async (track) => {
+          const primaryIndex = tracksToPush.findIndex((item) => item.id === track.id);
+          const fallbackIndex = (session.daw.tracks ?? []).findIndex((item) => item.id === track.id);
+          const resolvedIndex = primaryIndex >= 0 ? primaryIndex : fallbackIndex >= 0 ? fallbackIndex : 0;
+          const state = buildTrackState(track, resolvedIndex);
+          const baseVersion = trackVersionsRef.current.get(track.id);
+
+          try {
+            const response = await pushTrackState({
+              roomCode: session.id,
+              trackId: track.id,
+              baseVersion,
+              state,
+              updatedBy: localUserId || localUsername
+            });
+
+            if (response.conflict && response.current) {
+              setSyncConflict({
+                trackId: track.id,
+                server: response.current,
+                local: state
+              });
+              return;
+            }
+
+            if (response.version !== undefined) {
+              trackVersionsRef.current.set(track.id, response.version);
+              setLastSyncAt(Date.now());
+            }
+          } catch (err) {
+            console.error('Failed to sync track:', err);
+          }
+        })
+      );
+    },
+    [buildTrackState, localUserId, localUsername, session.id, session.daw.tracks]
+  );
+
+  const applyServerTrackState = useCallback(
+    (trackId: string, serverState: DAWTrackState, serverVersion: number) => {
+      const existingTracks = session.daw.tracks ?? [];
+      const trackIndex = serverState.trackIndex ?? existingTracks.findIndex((track) => track.id === trackId);
+      const resolvedIndex = trackIndex >= 0 ? trackIndex : 0;
+      const existingTrack = existingTracks.find((track) => track.id === trackId);
+      const updatedTracks = existingTrack
+        ? existingTracks.map((track) =>
+            track.id === trackId
+              ? {
+                  ...track,
+                  name: serverState.trackName ?? track.name,
+                  type: serverState.trackType ?? track.type,
+                  clips: serverState.clips
+                }
+              : track
+          )
+        : [
+            ...existingTracks,
+            {
+              id: trackId,
+              name: serverState.trackName ?? 'Track',
+              type: serverState.trackType ?? 'audio',
+              volume: 0.8,
+              isMuted: false,
+              isSolo: false,
+              isArmed: false,
+              clips: serverState.clips
+            }
+          ];
+      const filteredNotes = session.daw.notes.filter((note) => note.track !== resolvedIndex);
+      const updatedNotes = [...filteredNotes, ...serverState.notes.map((note) => ({ ...note, track: resolvedIndex }))];
+      const updatedSession = {
+        ...session,
+        daw: {
+          ...session.daw,
+          bpm: serverState.bpm,
+          tempo: serverState.tempo,
+          timeSignature: serverState.timeSignature,
+          currentBeat: serverState.currentBeat ?? session.daw.currentBeat,
+          tracks: updatedTracks,
+          notes: updatedNotes
+        }
+      } as CollaborativeSession;
+
+      onSessionUpdate?.(updatedSession);
+      trackVersionsRef.current.set(trackId, serverVersion);
+      setLastSyncAt(Date.now());
+    },
+    [onSessionUpdate, session]
+  );
+
+  const handleSyncConflictResolve = useCallback(
+    async (action: 'use-server' | 'overwrite-server') => {
+      if (!syncConflict) return;
+
+      if (action === 'use-server') {
+        applyServerTrackState(syncConflict.trackId, syncConflict.server.state, syncConflict.server.version);
+        setSyncConflict(null);
+        return;
+      }
+
+      try {
+        const response = await pushTrackState({
+          roomCode: session.id,
+          trackId: syncConflict.trackId,
+          baseVersion: syncConflict.server.version,
+          state: syncConflict.local,
+          updatedBy: localUserId || localUsername
+        });
+
+        if (response.conflict && response.current) {
+          setSyncConflict({
+            trackId: syncConflict.trackId,
+            server: response.current,
+            local: syncConflict.local
+          });
+          return;
+        }
+
+        if (response.version !== undefined) {
+          trackVersionsRef.current.set(syncConflict.trackId, response.version);
+          setLastSyncAt(Date.now());
+        }
+
+        setSyncConflict(null);
+      } catch (err) {
+        console.error('Failed to overwrite server state:', err);
+      }
+    },
+    [applyServerTrackState, localUserId, localUsername, session.id, syncConflict]
+  );
+
   // Handle note added to DAW
   const handleNoteAdd = useCallback(
     (note: DAWNote) => {
@@ -222,13 +398,19 @@ export function CollaborativeSessionDetail({
         ...session,
         daw: updatedDAW
       });
+
+      const targetTrack = session.daw.tracks?.[note.track];
+      if (targetTrack) {
+        void pushTracksToSync([targetTrack]);
+      }
     },
-    [session, onSessionUpdate]
+    [onSessionUpdate, pushTracksToSync, session]
   );
 
   // Handle note removed from DAW
   const handleNoteRemove = useCallback(
     (noteId: string) => {
+      const noteToRemove = session.daw.notes.find((note) => note.id === noteId);
       const updatedDAW: DAWSession = {
         ...session.daw,
         notes: session.daw.notes.filter(n => n.id !== noteId)
@@ -237,8 +419,15 @@ export function CollaborativeSessionDetail({
         ...session,
         daw: updatedDAW
       });
+
+      if (noteToRemove) {
+        const targetTrack = session.daw.tracks?.[noteToRemove.track];
+        if (targetTrack) {
+          void pushTracksToSync([targetTrack]);
+        }
+      }
     },
-    [session, onSessionUpdate]
+    [onSessionUpdate, pushTracksToSync, session]
   );
 
   // Handle playback state change
@@ -254,6 +443,26 @@ export function CollaborativeSessionDetail({
       });
     },
     [session, onSessionUpdate]
+  );
+
+  const handleTempoChange = useCallback(
+    (tempo: number) => {
+      const updatedDAW: DAWSession = {
+        ...session.daw,
+        bpm: tempo,
+        tempo
+      };
+      onSessionUpdate?.({
+        ...session,
+        daw: updatedDAW
+      });
+
+      const tracks = updatedDAW.tracks ?? [];
+      if (tracks.length) {
+        void pushTracksToSync(tracks);
+      }
+    },
+    [onSessionUpdate, pushTracksToSync, session]
   );
 
   const handleTracksChange = useCallback(
@@ -272,8 +481,12 @@ export function CollaborativeSessionDetail({
       
       // Update UI
       onSessionUpdate?.(updatedSession);
+
+      if (tracks && tracks.length) {
+        void pushTracksToSync(tracks);
+      }
     },
-    [session, onSessionUpdate]
+    [onSessionUpdate, pushTracksToSync, session]
   );
 
   const handleRecordToggle = useCallback(
@@ -314,8 +527,123 @@ export function CollaborativeSessionDetail({
     });
   }, [onSessionUpdate, session]);
 
+  useEffect(() => {
+    if (!isAuthorized) return;
+
+    const tracks = session.daw.tracks ?? [];
+    if (!tracks.length) return;
+
+    let isActive = true;
+
+    const syncOnce = async () => {
+      await Promise.all(
+        tracks.map(async (track) => {
+          if (syncConflict?.trackId === track.id) return;
+          const sinceVersion = trackVersionsRef.current.get(track.id) ?? 0;
+
+          try {
+            const response = await pullTrackState(session.id, track.id, sinceVersion);
+            if (!isActive || !response.state) return;
+            if (response.version > sinceVersion) {
+              applyServerTrackState(track.id, response.state, response.version);
+            }
+          } catch (err) {
+            console.error('Failed to pull track state:', err);
+          }
+        })
+      );
+    };
+
+    const interval = window.setInterval(() => {
+      void syncOnce();
+    }, 1500);
+
+    void syncOnce();
+
+    return () => {
+      isActive = false;
+      window.clearInterval(interval);
+    };
+  }, [applyServerTrackState, isAuthorized, session.daw.tracks, session.id, syncConflict]);
+
   return (
     <div className="collaborative-session-detail">
+      {/* Expired Session Modal */}
+      {showExpiredModal && isSessionExpired && (
+        <div className="modal-overlay" role="dialog" aria-labelledby="expired-title" aria-modal="true">
+          <div className="modal-content expired-session-modal">
+            <div className="modal-header">
+              <h2 id="expired-title">⏱️ Guest Session Expired</h2>
+            </div>
+            <div className="modal-body">
+              <p className="expired-message">
+                Your guest collaboration session has expired after 1 hour.
+              </p>
+              <p className="expired-explanation">
+                Guest sessions are limited to help maintain server performance. 
+                To continue collaborating without time limits, please sign up for a free account.
+              </p>
+              <div className="expired-stats">
+                <div className="stat-item">
+                  <span className="stat-label">Room:</span>
+                  <strong>{session.title}</strong>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-label">Session Duration:</span>
+                  <strong>60 minutes</strong>
+                </div>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => window.location.href = '/signup'}
+              >
+                Sign Up (Unlimited Sessions)
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => {
+                  setShowExpiredModal(false);
+                  onLeaveSession?.();
+                }}
+              >
+                Leave Room
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expired Session Banner (for users who dismiss modal) */}
+      {isSessionExpired && !showExpiredModal && (
+        <div className="expired-banner" role="alert">
+          <span className="expired-banner-icon">⏱️</span>
+          <div className="expired-banner-content">
+            <strong>Session Expired</strong>
+            <span>This guest session expired after 1 hour. Actions are disabled.</span>
+          </div>
+          <div className="expired-banner-actions">
+            <button
+              type="button"
+              className="btn micro primary"
+              onClick={() => window.location.href = '/signup'}
+            >
+              Sign Up
+            </button>
+            <button
+              type="button"
+              className="btn micro secondary"
+              onClick={onLeaveSession}
+            >
+              Leave
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="session-header">
         <div className="header-content">
@@ -361,6 +689,32 @@ export function CollaborativeSessionDetail({
 
       {/* Main content area */}
       <div className="session-body">
+        {syncConflict && (
+          <div className="sync-conflict-banner" role="alert">
+            <div className="sync-conflict-text">
+              <strong>Sync conflict detected</strong>
+              <span>
+                Track {syncConflict.trackId} changed by {syncConflict.server.updatedBy ?? 'another user'}.
+              </span>
+            </div>
+            <div className="sync-conflict-actions">
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => handleSyncConflictResolve('use-server')}
+              >
+                Use server version
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => handleSyncConflictResolve('overwrite-server')}
+              >
+                Keep my version
+              </button>
+            </div>
+          </div>
+        )}
         {!isAuthorized && !authLoading && (
           <div className="auth-gate">
             <h3>Sign in or continue as guest</h3>
@@ -428,6 +782,9 @@ export function CollaborativeSessionDetail({
                       Instagram
                     </button>
                     <span className="sync-pill">Playback sync locked</span>
+                    {lastSyncAt && (
+                      <span className="sync-timestamp">Last sync {new Date(lastSyncAt).toLocaleTimeString()}</span>
+                    )}
                   </div>
                 </div>
 
@@ -445,16 +802,11 @@ export function CollaborativeSessionDetail({
                         audioSyncState={session.audioSyncState}
                         isHost={isHost && isAuthorized}
                         onNoteAdd={isAuthorized ? handleNoteAdd : undefined}
-                        onNoteRemove={isAuthorized ? handleNoteRemove : undefined}
-                        onPlaybackStateChange={isAuthorized ? handlePlaybackStateChange : undefined}
-                        onTempoChange={isAuthorized ? (tempo => {
-                          onSessionUpdate?.({
-                            ...session,
-                            daw: { ...session.daw, bpm: tempo }
-                          });
-                        }) : undefined}
-                        onTracksChange={isAuthorized ? handleTracksChange : undefined}
-                        onRecordToggle={isAuthorized ? handleRecordToggle : undefined}
+                        onNoteRemove={isAuthorized && !isSessionExpired ? handleNoteRemove : undefined}
+                        onPlaybackStateChange={isAuthorized && !isSessionExpired ? handlePlaybackStateChange : undefined}
+                        onTempoChange={isAuthorized && !isSessionExpired ? handleTempoChange : undefined}
+                        onTracksChange={isAuthorized && !isSessionExpired ? handleTracksChange : undefined}
+                        onRecordToggle={isAuthorized && !isSessionExpired ? handleRecordToggle : undefined}
                       />
                     </section>
                   )}
@@ -486,8 +838,28 @@ export function CollaborativeSessionDetail({
                           </ul>
                         ) : (
                           <ul className="packs-list">
-                            <li><span>No recent packs</span><button type="button" className="btn micro">Generate</button></li>
-                            <li><span>Import MIDI</span><button type="button" className="btn micro">Upload</button></li>
+                            <li>
+                              <span>No recent packs</span>
+                              <button 
+                                type="button" 
+                                className="btn micro" 
+                                disabled={isSessionExpired}
+                                title={isSessionExpired ? 'Session expired - please leave and create a new session' : 'Generate a new pack'}
+                              >
+                                Generate
+                              </button>
+                            </li>
+                            <li>
+                              <span>Import MIDI</span>
+                              <button 
+                                type="button" 
+                                className="btn micro" 
+                                disabled={isSessionExpired}
+                                title={isSessionExpired ? 'Session expired' : 'Upload MIDI file'}
+                              >
+                                Upload
+                              </button>
+                            </li>
                           </ul>
                         )}
                       </div>

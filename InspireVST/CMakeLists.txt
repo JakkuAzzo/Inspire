@@ -20,7 +20,7 @@ juce_add_plugin(InspireVST
   IS_MIDI_EFFECT FALSE
   PLUGIN_MANUFACTURER_CODE INSP
   PLUGIN_CODE IVST
-  FORMATS VST3
+  FORMATS VST3 AU
   PRODUCT_NAME "InspireVST"
 )
 
@@ -31,6 +31,24 @@ target_sources(InspireVST PRIVATE
   Source/PluginEditor.h
   Source/NetworkClient.cpp
   Source/NetworkClient.h
+  Source/FilterControlComponent.cpp
+  Source/FilterControlComponent.h
+  Source/PackDetailComponent.cpp
+  Source/PackDetailComponent.h
+  Source/LyricEditorComponent.cpp
+  Source/LyricEditorComponent.h
+  Source/PackDetailListener.cpp
+  Source/SuggestionPopupComponent.cpp
+  Source/SuggestionPopupComponent.h
+  Source/InspirationQueueDialog.cpp
+  Source/InspirationQueueDialog.h
+  Source/FilterDialogComponent.cpp
+  Source/FilterDialogComponent.h
+  Source/FontAudioStandalone.cpp
+)
+
+target_include_directories(InspireVST PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/fontaudio/wrappers/juce/module
 )
 
 target_compile_definitions(InspireVST PRIVATE

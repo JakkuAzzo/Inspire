@@ -28,6 +28,25 @@ public:
   void getStateInformation(juce::MemoryBlock& destData) override;
   void setStateInformation(const void* data, int sizeInBytes) override;
 
+  // DAW insertion API: called by editor to insert pack content into DAW state
+  void insertPackToDAW(const juce::var& pack);
+
+  // Host transport snapshot exposed to editor
+  struct HostTransportInfo
+  {
+    double ppqPosition = 0.0;      // quarter-note position since start
+    double ppqPositionOfLastBarStart = 0.0;
+    double bpm = 120.0;
+    int timeSigNumerator = 4;
+    int timeSigDenominator = 4;
+    bool isPlaying = false;
+    double samplePosition = 0.0;
+  };
+
+  HostTransportInfo getHostTransportInfo() const;
+
+  juce::var lastInsertedPack;
+
   bool acceptsMidi() const override { return true; }
   bool producesMidi() const override { return false; }
   bool isMidiEffect() const override { return false; }

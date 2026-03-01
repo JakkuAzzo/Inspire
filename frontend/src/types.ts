@@ -381,6 +381,74 @@ export interface DAWSession {
   lastUpdatedAt: number;
 }
 
+export interface DAWFileAsset {
+  id: string;
+  fileName: string;
+  fileType: string;
+  filePath?: string;
+  checksum?: string;
+  sizeBytes?: number;
+  durationBeats?: number;
+  source?: string;
+  updatedAt?: number;
+}
+
+export interface DAWTrackState {
+  roomCode: string;
+  trackId: string;
+  trackIndex?: number;
+  trackName?: string;
+  trackType?: 'midi' | 'audio' | 'hybrid';
+  bpm: number;
+  tempo: number;
+  timeSignature: string;
+  currentBeat?: number;
+  clips: DAWClip[];
+  notes: DAWNote[];
+  files?: DAWFileAsset[];
+  updatedAt: number;
+  updatedBy?: string;
+}
+
+export interface DAWTrackChange {
+  id: string;
+  roomCode: string;
+  trackId: string;
+  version: number;
+  updatedAt: number;
+  updatedBy?: string;
+  state: DAWTrackState;
+}
+
+export interface DAWSyncPushRequest {
+  roomCode: string;
+  trackId: string;
+  baseVersion?: number;
+  state: DAWTrackState;
+  updatedBy?: string;
+}
+
+export interface DAWSyncPushResponse {
+  ok: boolean;
+  version?: number;
+  state?: DAWTrackState;
+  conflict?: boolean;
+  current?: {
+    version: number;
+    updatedAt: number;
+    updatedBy?: string;
+    state: DAWTrackState;
+  };
+}
+
+export interface DAWSyncPullResponse {
+  roomCode: string;
+  trackId: string;
+  version: number;
+  state: DAWTrackState | null;
+  changes: DAWTrackChange[];
+}
+
 export interface AudioSyncState {
   serverTimestamp: number; // server's master clock (ms since epoch)
   playbackPosition: number; // playhead in beats

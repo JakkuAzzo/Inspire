@@ -1,9 +1,16 @@
 [
   {
-    "id": "659f1510-9eb2-47c4-8b59-756e1cbaccb3",
-    "handle": "MegaCreator8030",
-    "sessionToken": "94cfc9d4-cd66-47ed-af3e-057921ac6c6d",
-    "createdAt": 1770484705400,
-    "expiresAt": 1770571105400
+    "id": "06ea8bc2-edfc-4680-9c54-0c11d96fe341",
+    "handle": "WildHero8225",
+    "sessionToken": "22544359-531f-4279-af44-1bb580e2ed2d",
+    "createdAt": 1772318228948,
+    "expiresAt": 1772404628948
+  },
+  {
+    "id": "08a5235a-ceba-4d44-a763-20f829e1f390",
+    "handle": "AwesomeArtist984",
+    "sessionToken": "af6af9b2-bc13-49df-9eee-ad3478cb10e5",
+    "createdAt": 1772318311412,
+    "expiresAt": 1772404711412
   }
 ]

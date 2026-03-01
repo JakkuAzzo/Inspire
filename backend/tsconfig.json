@@ -18,6 +18,7 @@
       "jest",
       "pg",
       "pg-mem",
+      "better-sqlite3",
       "express-rate-limit",
       "cookie-parser",
       "bcryptjs"
