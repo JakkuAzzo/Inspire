@@ -134,7 +134,9 @@ private:
   int searchPageSize = 12;
   juce::TextButton generatePackButton{"Generate Pack"};
   juce::TextButton remixPackButton{"Remix Pack"};
-  juce::Array<juce::var> packItems; // array of DynamicObject for packs
+  juce::Array<juce::var> packItems; // submodes/search items backing ListBox
+  juce::Array<juce::var> generatedPackItems; // generated packs backing GeneratedView buttons
+  juce::String selectedSubmodeId;
   std::unique_ptr<PackDetailComponent> packDetailComponent;
   // pack-level fork button removed; forking now available in Search mode as 'Fork & Mix'
   juce::TextButton savePackButton{"Save Pack"};

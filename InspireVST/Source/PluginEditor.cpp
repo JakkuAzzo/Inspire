@@ -121,6 +121,10 @@ private:
     }
 
     selectedMode = "";
+    currentUIState = UIState::InitialView;
+    currentDisplayedPack = juce::var();
+    generatedPackItems.clear();
+    clearPackCardButtons();
     modeTitleLabel.setText("", juce::dontSendNotification);
     modeTitleLabel.setVisible(false);
     backButton.setVisible(false);
@@ -1931,6 +1935,7 @@ void InspireVSTAudioProcessorEditor::generatePackForSelection()
       else if (modeForRequest == "producer") defaultSubmode = "sampler";
       else if (modeForRequest == "editor") defaultSubmode = "image-editor";
       payload->setProperty("submode", defaultSubmode);
+      selectedSubmodeId = defaultSubmode;
       juce::DynamicObject::Ptr filters = new juce::DynamicObject();
       filters->setProperty("timeframe", currentFilters.timeframe);
       filters->setProperty("tone", currentFilters.tone);
@@ -1970,12 +1975,10 @@ void InspireVSTAudioProcessorEditor::generatePackForSelection()
             mock->setProperty("label", "Demo Pack #" + juce::String(packItems.size() + 1));
             mock->setProperty("description", "Offline generated pack");
             
-            // Add to pack list so it appears as interactive card (don't set currentDisplayedPack yet)
-            packItems.insert(0, juce::var(mock));
-            packList.updateContent();
-            packList.selectRow(0);
+              // Add to generated packs list so it appears as interactive card button
+              generatedPackItems.insert(0, juce::var(mock));
             
-            // Add to inspiration queue for reference
+              // Add to inspiration queue for reference
             inspirationQueue.insert(0, juce::var(mock));
             inspirationQueueList.updateContent();
             
@@ -2045,10 +2048,8 @@ void InspireVSTAudioProcessorEditor::generatePackForSelection()
                 }
               }
 
-              // Add to pack list so it appears as interactive card
-              packItems.insert(0, parsed);
-              packList.updateContent();
-              packList.selectRow(0);
+              // Add to generated packs list so it appears as interactive card button
+              generatedPackItems.insert(0, parsed);
               
               // Add to inspiration queue for reference
               inspirationQueue.insert(0, parsed);
@@ -2090,6 +2091,7 @@ void InspireVSTAudioProcessorEditor::generatePackForSelection()
   {
     submodeId = obj->getProperty("label").toString();
   }
+  selectedSubmodeId = submodeId;
 
   // Build a simple ModePackRequest payload
   juce::DynamicObject::Ptr payload = new juce::DynamicObject();
@@ -2138,8 +2140,18 @@ void InspireVSTAudioProcessorEditor::generatePackForSelection()
         fragments.add("I fold my feelings into a paper plane");
         fragments.add("midnight code and neon lights");
         mock->setProperty("lyricFragments", juce::var(fragments));
-        currentDisplayedPack = juce::var(mock);
-        renderGeneratedPack(currentDisplayedPack);
+        if (mock->getProperty("label").isVoid())
+          mock->setProperty("label", mock->getProperty("title").toString());
+        if (mock->getProperty("description").isVoid())
+          mock->setProperty("description", mock->getProperty("headline").toString());
+
+        generatedPackItems.insert(0, juce::var(mock));
+        inspirationQueue.insert(0, juce::var(mock));
+        inspirationQueueList.updateContent();
+
+        currentUIState = UIState::GeneratedView;
+        createPackCardButtons();
+        resized();
         setStatus("Generated local demo pack");
       }
       else
@@ -2188,8 +2200,28 @@ void InspireVSTAudioProcessorEditor::generatePackForSelection()
             if (maybePack.isObject()) parsed = maybePack;
           }
 
-          currentDisplayedPack = parsed;
-          renderGeneratedPack(parsed);
+          if (auto* packObj = parsed.getDynamicObject())
+          {
+            if (packObj->getProperty("label").isVoid())
+            {
+              juce::String title = packObj->getProperty("title").toString();
+              if (title.isEmpty()) title = "Generated Pack";
+              packObj->setProperty("label", title);
+            }
+            if (packObj->getProperty("description").isVoid())
+            {
+              juce::String headline = packObj->getProperty("headline").toString();
+              packObj->setProperty("description", headline);
+            }
+          }
+
+          generatedPackItems.insert(0, parsed);
+          inspirationQueue.insert(0, parsed);
+          inspirationQueueList.updateContent();
+
+          currentUIState = UIState::GeneratedView;
+          createPackCardButtons();
+          resized();
           setStatus("Pack generated");
         }
       }
@@ -2200,10 +2232,17 @@ void InspireVSTAudioProcessorEditor::generatePackForSelection()
 
 void InspireVSTAudioProcessorEditor::showPackDetail(int index)
 {
-  if (index < 0 || index >= packItems.size())
+  juce::Array<juce::var>* source = &packItems;
+  if ((selectedMode == "writer" || selectedMode == "producer" || selectedMode == "editor")
+      && currentUIState == UIState::GeneratedView)
+  {
+    source = &generatedPackItems;
+  }
+
+  if (index < 0 || index >= source->size())
     return;
 
-  auto var = packItems.getReference(index);
+  auto var = source->getReference(index);
   if (!var.isObject())
   {
     return;
@@ -2260,19 +2299,15 @@ void InspireVSTAudioProcessorEditor::renderGeneratedPack(const juce::var& pack)
 
 void InspireVSTAudioProcessorEditor::saveSelectedPack()
 {
-  const int row = packList.getSelectedRow();
-  if (row < 0 || row >= packItems.size())
-  {
-    setStatus("Select a pack to save.");
-    return;
-  }
-
-  auto var = packItems.getReference(row);
+  juce::var var = currentDisplayedPack;
   if (!var.isObject())
   {
-    setStatus("Invalid pack item.");
-    return;
+    const int row = packList.getSelectedRow();
+    if (row >= 0 && row < packItems.size())
+      var = packItems.getReference(row);
   }
+
+  if (!var.isObject()) { setStatus("Select a pack to save."); return; }
 
   // Save the JSON for potential retry
   currentPackToSave = juce::JSON::toString(var);
@@ -2347,19 +2382,15 @@ void InspireVSTAudioProcessorEditor::attemptSaveWithTokenRefresh()
 
 void InspireVSTAudioProcessorEditor::exportSelectedPackAsJSON()
 {
-  const int row = packList.getSelectedRow();
-  if (row < 0 || row >= packItems.size())
-  {
-    setStatus("Select a pack to export.");
-    return;
-  }
-
-  auto var = packItems.getReference(row);
+  juce::var var = currentDisplayedPack;
   if (!var.isObject())
   {
-    setStatus("Invalid pack item.");
-    return;
+    const int row = packList.getSelectedRow();
+    if (row >= 0 && row < packItems.size())
+      var = packItems.getReference(row);
   }
+
+  if (!var.isObject()) { setStatus("Select a pack to export."); return; }
 
   // Convert to pretty-printed JSON
   const juce::String json = juce::JSON::toString(var, true);
@@ -3215,6 +3246,9 @@ void InspireVSTAudioProcessorEditor::selectWriterLab()
 {
   selectedMode = "writer";
   currentUIState = UIState::InitialView;
+  generatedPackItems.clear();
+  currentDisplayedPack = juce::var();
+  selectedSubmodeId.clear();
   clearPackCardButtons();
   addErrorLog("Selected mode: Writer Lab");
   
@@ -3295,6 +3329,15 @@ void InspireVSTAudioProcessorEditor::selectWriterLab()
     }
 
     juce::MessageManager::callAsync([this] {
+      if (packItems.size() > 0)
+      {
+        auto& first = packItems.getReference(0);
+        if (first.isObject())
+        {
+          if (auto* o = first.getDynamicObject())
+            selectedSubmodeId = o->getProperty("id").toString();
+        }
+      }
       pushLogLabel.setText("Writer Lab Packs", juce::dontSendNotification);
       packList.updateContent();
       packList.repaint();
@@ -3307,6 +3350,9 @@ void InspireVSTAudioProcessorEditor::selectProducerLab()
 {
   selectedMode = "producer";
   currentUIState = UIState::InitialView;
+  generatedPackItems.clear();
+  currentDisplayedPack = juce::var();
+  selectedSubmodeId.clear();
   clearPackCardButtons();
   addErrorLog("Selected mode: Producer Lab");
   
@@ -3358,6 +3404,15 @@ void InspireVSTAudioProcessorEditor::selectProducerLab()
     }
 
     juce::MessageManager::callAsync([this] {
+      if (packItems.size() > 0)
+      {
+        auto& first = packItems.getReference(0);
+        if (first.isObject())
+        {
+          if (auto* o = first.getDynamicObject())
+            selectedSubmodeId = o->getProperty("id").toString();
+        }
+      }
       pushLogLabel.setText("Producer Lab Packs", juce::dontSendNotification);
       packList.updateContent();
       packList.repaint();
@@ -3370,6 +3425,9 @@ void InspireVSTAudioProcessorEditor::selectEditorSuite()
 {
   selectedMode = "editor";
   currentUIState = UIState::InitialView;
+  generatedPackItems.clear();
+  currentDisplayedPack = juce::var();
+  selectedSubmodeId.clear();
   clearPackCardButtons();
   addErrorLog("Selected mode: Editor Suite");
   
@@ -3421,6 +3479,15 @@ void InspireVSTAudioProcessorEditor::selectEditorSuite()
     }
 
     juce::MessageManager::callAsync([this] {
+      if (packItems.size() > 0)
+      {
+        auto& first = packItems.getReference(0);
+        if (first.isObject())
+        {
+          if (auto* o = first.getDynamicObject())
+            selectedSubmodeId = o->getProperty("id").toString();
+        }
+      }
       pushLogLabel.setText("Editor Suite Packs", juce::dontSendNotification);
       packList.updateContent();
       packList.repaint();
@@ -3717,11 +3784,26 @@ void InspireVSTAudioProcessorEditor::createPackCardButtons()
 {
   clearPackCardButtons();
   
-  // Create buttons for each pack in packItems
-  for (int i = 0; i < packItems.size(); ++i)
+  // Create buttons for each generated pack
+  for (int i = 0; i < generatedPackItems.size(); ++i)
   {
     auto* btn = new juce::TextButton();
-    btn->setButtonText("Pack " + juce::String(i + 1));
+    juce::String buttonText = "Pack " + juce::String(i + 1);
+    auto& packVar = generatedPackItems.getReference(i);
+    if (packVar.isObject())
+    {
+      if (auto* packObj = packVar.getDynamicObject())
+      {
+        juce::String title = packObj->getProperty("title").toString().trim();
+        if (title.isEmpty())
+          title = packObj->getProperty("label").toString().trim();
+        if (title.isEmpty())
+          title = packObj->getProperty("headline").toString().trim();
+        if (title.isNotEmpty())
+          buttonText = title;
+      }
+    }
+    btn->setButtonText(buttonText);
     btn->setColour(juce::TextButton::buttonColourId, juce::Colour(34, 211, 238).withAlpha(0.7f));
     btn->setColour(juce::TextButton::textColourOffId, juce::Colour(241, 245, 255));
     
