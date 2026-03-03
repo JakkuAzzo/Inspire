@@ -321,6 +321,11 @@ private:
   int lastCopiedButton = -1;  // 0 = room code, 1 = password
 
   void refreshUpdatesDisplay();
+  void appendUpdateEvent(const juce::String& source,
+                         const juce::String& actor,
+                         int version,
+                         int beat,
+                         const juce::String& detail);
   void paintSessionInfoCard(juce::Graphics& g, int x, int y, int width, int height);
   void handleSessionCardClick(juce::Point<int> pos);
   void copyToClipboard(const juce::String& text);
@@ -332,6 +337,7 @@ private:
   // DAW Sync - room code persistence and track synchronization
   juce::String pendingRoomCode;
   juce::String currentSyncRoomCode;
+  juce::String syncTrackId;
   juce::HashMap<juce::String, int> trackVersions;  // trackId -> version
   juce::Timer* syncPollTimer = nullptr;
   int64_t lastSyncAtMs = 0;

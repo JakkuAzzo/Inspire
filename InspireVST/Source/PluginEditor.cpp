@@ -46,6 +46,7 @@ private:
     
     // Generate unique plugin instance ID
     pluginInstanceID = juce::Uuid().toString().substring(0, 12).toUpperCase();
+    syncTrackId = "vst-" + pluginInstanceID;
     sessionStartTimeMs = juce::Time::currentTimeMillis();
 
     serverUrlInput.setTextToShowWhenEmpty("Server URL", juce::Colour(241, 245, 255).withAlpha(0.5f));
@@ -1033,14 +1034,45 @@ void InspireVSTAudioProcessorEditor::refreshUpdatesDisplay()
     {
       juce::DynamicObject* o = v.getDynamicObject();
       juce::String t = o->getProperty("timestamp").toString();
+      juce::String src = o->getProperty("source").toString();
       juce::String inst = o->getProperty("instance").toString();
+      juce::String version = o->getProperty("version").toString();
       juce::String beat = o->getProperty("beat").toString();
       juce::String msg = o->getProperty("message").toString();
-      txt += "[" + t + "] " + inst + " — beat:" + beat + " — " + msg + "\n";
+      txt += "[" + t + "] [" + (src.isEmpty() ? juce::String("sync") : src) + "] ";
+      txt += (inst.isEmpty() ? juce::String("unknown") : inst);
+      if (version.isNotEmpty())
+        txt += " v" + version;
+      if (beat.isNotEmpty())
+        txt += " beat:" + beat;
+      txt += " — " + msg + "\n";
     }
   }
 
   pushLogDisplay.setText(txt, false);
+}
+
+void InspireVSTAudioProcessorEditor::appendUpdateEvent(const juce::String& source,
+                                                       const juce::String& actor,
+                                                       int version,
+                                                       int beat,
+                                                       const juce::String& detail)
+{
+  auto now = juce::Time::getCurrentTime();
+  juce::DynamicObject::Ptr entry = new juce::DynamicObject();
+  entry->setProperty("timestamp", now.toString(true, true));
+  entry->setProperty("source", source);
+  entry->setProperty("instance", actor);
+  if (version > 0)
+    entry->setProperty("version", juce::String(version));
+  if (beat > 0)
+    entry->setProperty("beat", juce::String(beat));
+  entry->setProperty("message", detail);
+  updatesList.insert(0, juce::var(entry.get()));
+  if (updatesList.size() > 250)
+    updatesList.removeLast();
+  if (selectedMode == "updates")
+    refreshUpdatesDisplay();
 }
 
 void InspireVSTAudioProcessorEditor::paintSessionInfoCard(juce::Graphics& g, int x, int y, int width, int height)
@@ -1378,9 +1410,9 @@ void InspireVSTAudioProcessorEditor::InspirationListModel::listBoxItemClicked(in
 static void showJoinRoomDialog(juce::Component* parent, const juce::String& initialRoomId, const juce::String& initialCode,
                                std::function<void(juce::String, juce::String)> onAccept)
 {
-  auto* alert = new juce::AlertWindow("Join Room", "Enter your room details.", juce::AlertWindow::NoIcon, parent);
-  alert->addTextEditor("roomId", initialRoomId, "Room ID");
-  alert->addTextEditor("code", initialCode, "Room Code", true);
+  auto* alert = new juce::AlertWindow("Join Room", "Enter Room ID (or shared room code) and access code.", juce::AlertWindow::NoIcon, parent);
+  alert->addTextEditor("roomId", initialRoomId, "Room ID or Room Code");
+  alert->addTextEditor("code", initialCode, "Room Code or Password", true);
   alert->addButton("Join", 1, juce::KeyPress(juce::KeyPress::returnKey));
   alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
   alert->enterModalState(true, juce::ModalCallbackFunction::create(
@@ -1700,21 +1732,27 @@ void InspireVSTAudioProcessorEditor::startJoin()
       const auto serverUrl = serverUrlInput.getText().trim();
 
       runAsync([this, serverUrl, roomId, code] {
-        addErrorLog("Joining room: " + roomId + " with code: " + code);
+        addErrorLog("Joining room: " + roomId + " using access code: " + code);
         const auto result = client.joinRoom(serverUrl, roomId, code);
         juce::MessageManager::callAsync([this, result, code] {
           if (result.token.isNotEmpty())
           {
             sessionToken = result.token;
             lastServerTimeMs = result.expiresAtMs;
-            currentSyncRoomCode = code;
+            if (result.roomId.isNotEmpty())
+              roomIdInput.setText(result.roomId, false);
+            currentSyncRoomCode = result.roomCode.isNotEmpty() ? result.roomCode : code.toUpperCase();
+            codeInput.setText(currentSyncRoomCode, false);
             saveSessionData();
             inRoom = true;  // Mark as in a room
             saveRoomCode();
+            roomInfoLabel.setText("Room: " + roomIdInput.getText().trim(), juce::dontSendNotification);
+            if (roomPasswordLabel.getText().isEmpty())
+              roomPasswordLabel.setText("Password: (none)", juce::dontSendNotification);
             tokenLabel.setText("Session: " + sessionToken.substring(0, 12) + "...",
               juce::dontSendNotification);
-            addErrorLog("✓ Room joined successfully");
-            setStatus("Joined room. Select your mode.");
+            addErrorLog("✓ Room joined successfully (roomCode=" + currentSyncRoomCode + ")");
+            setStatus("Joined room " + currentSyncRoomCode + ". Select your mode.");
             
             // Update session info display
             updateSessionInfoDisplay();
@@ -1724,8 +1762,9 @@ void InspireVSTAudioProcessorEditor::startJoin()
           }
           else
           {
-            addErrorLog("✗ Join failed. Check room ID/code.");
-            setStatus("Join failed. Check room ID/code.");
+            juce::String reason = result.errorMessage.isNotEmpty() ? result.errorMessage : juce::String("Check room ID/code.");
+            addErrorLog("✗ Join failed: " + reason);
+            setStatus("Join failed: " + reason);
           }
           setBusy(false);
         });
@@ -2896,7 +2935,8 @@ void InspireVSTAudioProcessorEditor::saveSessionData()
   
   // Persist room/session info
   d->setProperty("inRoom", inRoom);
-  d->setProperty("roomCode", roomInfoLabel.getText());
+  d->setProperty("roomCode", currentSyncRoomCode);
+  d->setProperty("roomId", roomIdInput.getText().trim());
   d->setProperty("roomPassword", roomPasswordLabel.getText());
   d->setProperty("authStatus", authStatus);
   d->setProperty("sessionStartTimeMs", static_cast<double>(sessionStartTimeMs));
@@ -2928,21 +2968,21 @@ void InspireVSTAudioProcessorEditor::loadSessionData()
     // Restore room/session info
     inRoom = dob->getProperty("inRoom");
     juce::String savedRoomCode = dob->getProperty("roomCode").toString();
+    juce::String savedRoomId = dob->getProperty("roomId").toString();
     juce::String savedRoomPassword = dob->getProperty("roomPassword").toString();
+    currentSyncRoomCode = savedRoomCode.trim();
+    if (savedRoomCode.isNotEmpty())
+      codeInput.setText(savedRoomCode, juce::NotificationType::dontSendNotification);
+    if (savedRoomId.isNotEmpty())
+      roomIdInput.setText(savedRoomId, juce::NotificationType::dontSendNotification);
     if (savedRoomCode.isNotEmpty())
     {
-      roomInfoLabel.setText(savedRoomCode, juce::NotificationType::dontSendNotification);
+      roomInfoLabel.setText("Room: " + roomIdInput.getText().trim(), juce::NotificationType::dontSendNotification);
       roomPasswordLabel.setText(savedRoomPassword, juce::NotificationType::dontSendNotification);
     }
     authStatus = dob->getProperty("authStatus").toString();
     sessionStartTimeMs = static_cast<int64_t>(dob->getProperty("sessionStartTimeMs"));
     sessionDurationMs = static_cast<int64_t>(dob->getProperty("sessionDurationMs"));
-    juce::String savedInstanceID = dob->getProperty("pluginInstanceID").toString();
-    if (savedInstanceID.isNotEmpty())
-    {
-      pluginInstanceID = savedInstanceID;
-    }
-    
     if (sessionToken.isNotEmpty())
       isAuthenticated = true;
   }
@@ -2989,8 +3029,8 @@ void InspireVSTAudioProcessorEditor::pollTrackState()
   }
   
   const auto serverUrl = serverUrlInput.getText();
-  const auto trackId = "vst-main-track";
-  const int sinceVersion = trackVersions["vst-main-track"];
+  const auto trackId = syncTrackId;
+  const int sinceVersion = trackVersions[syncTrackId];
   
   runAsync([this, serverUrl, trackId, sinceVersion] {
     const auto response = client.pullTrackState(serverUrl, currentSyncRoomCode, trackId, sinceVersion);
@@ -3217,7 +3257,12 @@ void InspireVSTAudioProcessorEditor::onSyncPullResponse(const DAWSyncPullRespons
   syncStatusLabel.setText("Sync: " + timeStr, juce::dontSendNotification);
   
   // Update track version
-  trackVersions.set("vst-main-track", response.version);
+  trackVersions.set(syncTrackId, response.version);
+  appendUpdateEvent("poll",
+                    response.state.pluginInstanceId.isNotEmpty() ? response.state.pluginInstanceId : response.state.updatedBy,
+                    response.version,
+                    response.state.currentBeat,
+                    "Background sync pull: " + response.trackId);
   
   // In a full implementation, would apply state changes to track
   // For now, just log that we received sync data
@@ -3657,7 +3702,7 @@ void InspireVSTAudioProcessorEditor::pushTrack()
     // Construct DAWTrackState object, prefer host transport info when available
     DAWTrackState state;
     state.roomCode = currentSyncRoomCode;
-    state.trackId = "vst-main-track";
+    state.trackId = syncTrackId;
     state.trackIndex = 0;
     state.trackName = "Inspire VST Track";
     state.updatedAt = juce::Time::currentTimeMillis();
@@ -3692,7 +3737,7 @@ void InspireVSTAudioProcessorEditor::pushTrack()
     state.dawTrackIndex = 0;    // TODO: Extract from host if available
     state.dawTrackName = "";    // TODO: Extract from host if available
     
-    const int baseVersion = trackVersions["vst-main-track"];
+    const int baseVersion = trackVersions[syncTrackId];
     const int beatForLog = state.currentBeat;
     const auto response = client.pushTrackState(serverUrl, state, baseVersion);
     juce::MessageManager::callAsync([this, response, beatForLog] {
@@ -3703,15 +3748,11 @@ void InspireVSTAudioProcessorEditor::pushTrack()
         pushLog.insert(0, logEntry);
 
         // Also add structured update entry with instance id and beat (prefer host-derived)
-        juce::DynamicObject::Ptr entry = new juce::DynamicObject();
-        entry->setProperty("timestamp", now.toString(true, true));
-        entry->setProperty("instance", instanceId);
-        entry->setProperty("beat", juce::String(beatForLog));
-        entry->setProperty("message", "Pushed track (" + selectedMode + " mode)");
-        updatesList.insert(0, juce::var(entry.get()));
-        if (updatesList.size() > 200) updatesList.removeLast();
-        if (selectedMode == "updates")
-          refreshUpdatesDisplay();
+        appendUpdateEvent("push",
+                          pluginInstanceID,
+                          response.version,
+                          beatForLog,
+                          "Pushed track (" + selectedMode + ")");
         
         // Trim log to max 20 entries
         if (pushLog.size() > 20)
@@ -3721,9 +3762,7 @@ void InspireVSTAudioProcessorEditor::pushTrack()
         
         // Update display
         pushLogDisplay.setText(pushLog.joinIntoString("\n"), false);
-        if (selectedMode == "updates")
-          refreshUpdatesDisplay();
-        trackVersions.set("vst-main-track", response.version);
+        trackVersions.set(syncTrackId, response.version);
 
         if (wsClient && wsClient->isConnected())
         {
@@ -3765,8 +3804,8 @@ void InspireVSTAudioProcessorEditor::pullTrack()
   addErrorLog("Pulling track from room...");
   
   const auto serverUrl = serverUrlInput.getText();
-  const auto trackId = "vst-main-track";
-  const int sinceVersion = trackVersions["vst-main-track"];
+  const auto trackId = syncTrackId;
+  const int sinceVersion = trackVersions[syncTrackId];
   
   runAsync([this, serverUrl, trackId, sinceVersion] {
     const auto response = client.pullTrackState(serverUrl, currentSyncRoomCode, trackId, sinceVersion);
@@ -3779,19 +3818,12 @@ void InspireVSTAudioProcessorEditor::pullTrack()
         pushLog.insert(0, logEntry);
 
         // Add structured update for pull
-        juce::DynamicObject::Ptr entry = new juce::DynamicObject();
-        entry->setProperty("timestamp", now.toString(true, true));
         juce::String pulledBy = response.state.updatedBy.isEmpty() ? juce::String("unknown") : response.state.updatedBy;
-        entry->setProperty("instance", pulledBy);
-        double bpm = 120.0;
-        double msPerBeat = 60000.0 / bpm;
-        double nowMs = static_cast<double>(juce::Time::getMillisecondCounter());
-        double beatPos = std::fmod(nowMs / msPerBeat, 4.0);
-        int beatIndex = static_cast<int>(std::floor(beatPos)) + 1;
-        entry->setProperty("beat", beatIndex);
-        entry->setProperty("message", "Pulled track (version " + juce::String(response.version) + ")");
-        updatesList.insert(0, juce::var(entry.get()));
-        if (updatesList.size() > 200) updatesList.removeLast();
+        appendUpdateEvent("pull",
+              response.state.pluginInstanceId.isNotEmpty() ? response.state.pluginInstanceId : pulledBy,
+              response.version,
+              response.state.currentBeat,
+              "Pulled " + response.trackId + " bpm=" + juce::String(response.state.bpm, 1) + " sig=" + response.state.timeSignature);
         
         // Trim log to max 20 entries
         if (pushLog.size() > 20)
@@ -3801,7 +3833,7 @@ void InspireVSTAudioProcessorEditor::pullTrack()
         
         // Update display
         pushLogDisplay.setText(pushLog.joinIntoString("\n"), false);
-        trackVersions.set("vst-main-track", response.version);
+        trackVersions.set(syncTrackId, response.version);
         addErrorLog("✓ Track pulled successfully");
       }
       else
@@ -4210,6 +4242,11 @@ void InspireVSTAudioProcessorEditor::handleWebSocketMessage(const VSWSMessage& m
   {
     logMsg += " - " + msg.pluginInstanceId.substring(0, 8) + " (" + msg.username + ")";
     addErrorLog(logMsg);
+    appendUpdateEvent("ws",
+                      msg.pluginInstanceId,
+                      0,
+                      0,
+                      "Instance joined" + (msg.username.isNotEmpty() ? " (" + msg.username + ")" : ""));
     // Refresh instances list to show new instance
     juce::MessageManager::callAsync([this] { refreshInstancesList(); });
   }
@@ -4217,6 +4254,11 @@ void InspireVSTAudioProcessorEditor::handleWebSocketMessage(const VSWSMessage& m
   {
     logMsg += " - " + msg.pluginInstanceId.substring(0, 8) + " v" + juce::String(msg.version);
     addErrorLog(logMsg);
+    appendUpdateEvent("ws",
+                      msg.pluginInstanceId,
+                      msg.version,
+                      0,
+                      "Remote track update received");
     // Refresh instances and sync status on update
     juce::MessageManager::callAsync([this]
     {
@@ -4228,6 +4270,11 @@ void InspireVSTAudioProcessorEditor::handleWebSocketMessage(const VSWSMessage& m
   {
     logMsg += " - " + msg.pluginInstanceId.substring(0, 8);
     addErrorLog(logMsg);
+    appendUpdateEvent("ws",
+                      msg.pluginInstanceId,
+                      0,
+                      0,
+                      "Instance left room");
     // Refresh instances list after instance leaves
     juce::MessageManager::callAsync([this] { refreshInstancesList(); });
   }

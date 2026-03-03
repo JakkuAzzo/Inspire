@@ -71,8 +71,20 @@ InspireJoinResult InspireNetworkClient::joinRoom(const juce::String& serverUrl,
     if (auto* obj = parsed.getDynamicObject())
     {
       result.token = obj->getProperty("token").toString();
+      result.roomId = obj->getProperty("roomId").toString();
+      result.roomCode = obj->getProperty("roomCode").toString();
+      result.roomName = obj->getProperty("roomName").toString();
+      result.errorMessage = obj->getProperty("error").toString();
       result.expiresAtMs = parseTimestampMs(obj->getProperty("expiresAt"));
     }
+  }
+  else if (response.isNotEmpty())
+  {
+    result.errorMessage = response.substring(0, juce::jmin(240, response.length()));
+  }
+  else
+  {
+    result.errorMessage = "No response from server";
   }
   return result;
 }
@@ -257,6 +269,9 @@ DAWSyncPullResponse InspireNetworkClient::pullTrackState(const juce::String& ser
           result.state.updatedBy = stateObj->getProperty("updatedBy").toString();
           result.state.clipsJson = stateObj->getProperty("clipsJson").toString();
           result.state.notesJson = stateObj->getProperty("notesJson").toString();
+          result.state.pluginInstanceId = stateObj->getProperty("pluginInstanceId").toString();
+          result.state.dawTrackIndex = static_cast<int>(stateObj->getProperty("dawTrackIndex"));
+          result.state.dawTrackName = stateObj->getProperty("dawTrackName").toString();
         }
       }
     }

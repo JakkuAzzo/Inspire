@@ -15,6 +15,10 @@ struct InspireFileItem
 struct InspireJoinResult
 {
   juce::String token;
+  juce::String roomId;
+  juce::String roomCode;
+  juce::String roomName;
+  juce::String errorMessage;
   int64_t expiresAtMs = 0;
 };
 

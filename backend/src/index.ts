@@ -1596,7 +1596,20 @@ function buildApiRouter() {
         return res.status(400).json({ error: 'roomId and code are required' });
       }
 
-      const room = vstRooms.get(roomId);
+      const providedRoom = String(roomId).trim();
+      const providedCode = String(code).trim();
+      const providedCodeUpper = providedCode.toUpperCase();
+
+      let room = vstRooms.get(providedRoom);
+
+      if (!room) {
+        for (const candidate of vstRooms.values()) {
+          if (String(candidate.code || '').toUpperCase() === providedRoom.toUpperCase()) {
+            room = candidate;
+            break;
+          }
+        }
+      }
       
       if (!room) {
         return res.status(404).json({ error: 'Room not found' });
@@ -1611,8 +1624,11 @@ function buildApiRouter() {
         return res.status(410).json({ error: 'Room has expired' });
       }
 
-      if (room.code !== code.toUpperCase()) {
-        return res.status(401).json({ error: 'Invalid room code' });
+      const roomCodeMatches = String(room.code || '').toUpperCase() === providedCodeUpper;
+      const passwordMatches = typeof room.password === 'string' && room.password.length > 0 && room.password === providedCode;
+
+      if (!roomCodeMatches && !passwordMatches) {
+        return res.status(401).json({ error: 'Invalid room code/password' });
       }
 
       // Generate session token
@@ -1632,8 +1648,10 @@ function buildApiRouter() {
       res.json({
         token,
         expiresAt: sessionExpiresAt,
-        roomId,
-        roomName: room.name
+        roomId: room.roomId,
+        roomCode: room.code,
+        roomName: room.name,
+        joinedWith: roomCodeMatches ? 'room-code' : 'password'
       });
     } catch (err) {
       console.error('[VST] Failed to join room:', err);
