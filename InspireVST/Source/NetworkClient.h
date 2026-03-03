@@ -44,6 +44,10 @@ struct DAWTrackState
   juce::String updatedBy;
   juce::String clipsJson;  // Serialized clips array
   juce::String notesJson;  // Serialized notes array
+  // Phase 1: VST Instance Broadcasting
+  juce::String pluginInstanceId;  // VST instance unique ID
+  int dawTrackIndex = -1;         // DAW track number (1, 2, 3...)
+  juce::String dawTrackName;      // Host-provided track name
 };
 
 struct DAWSyncPushResponse

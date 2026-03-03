@@ -31,6 +31,8 @@ target_sources(InspireVST PRIVATE
   Source/PluginEditor.h
   Source/NetworkClient.cpp
   Source/NetworkClient.h
+  Source/WebSocketClient.cpp
+  Source/WebSocketClient.h
   Source/FilterControlComponent.cpp
   Source/FilterControlComponent.h
   Source/PackDetailComponent.cpp

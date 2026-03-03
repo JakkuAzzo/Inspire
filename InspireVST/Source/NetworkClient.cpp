@@ -190,6 +190,10 @@ DAWSyncPushResponse InspireNetworkClient::pushTrackState(const juce::String& ser
   stateObj->setProperty("updatedBy", state.updatedBy);
   stateObj->setProperty("clipsJson", state.clipsJson);
   stateObj->setProperty("notesJson", state.notesJson);
+  // Phase 1: VST Instance Broadcasting
+  stateObj->setProperty("pluginInstanceId", state.pluginInstanceId);
+  stateObj->setProperty("dawTrackIndex", state.dawTrackIndex);
+  stateObj->setProperty("dawTrackName", state.dawTrackName);
   
   payload->setProperty("state", juce::var(stateObj));
   payload->setProperty("updatedBy", "VST_" + state.updatedBy);

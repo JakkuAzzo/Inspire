@@ -97,6 +97,12 @@ private:
 
   // Back button and mode title
   backButton.onClick = [this] {
+    // Phase 3: Disconnect WebSocket and stop polling before leaving Updates mode
+    if (selectedMode == "updates")
+    {
+      stopWebSocketSync();
+    }
+
     // Exit mode view and restore mode cards
     // If updates UI was added, remove it now
     if (pushTrackButton.getParentComponent() != nullptr)
@@ -222,6 +228,30 @@ private:
   pushLogLabel.setColour(juce::Label::textColourId, juce::Colour(241, 245, 255).withAlpha(0.8f));
   pushLogLabel.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
   pushLogLabel.setJustificationType(juce::Justification::centredLeft);
+
+  // Phase 1: VST Instance Broadcasting - Instances list display
+  instancesListLabel.setText("Active VST Instances", juce::dontSendNotification);
+  instancesListLabel.setColour(juce::Label::textColourId, juce::Colour(241, 245, 255).withAlpha(0.8f));
+  instancesListLabel.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+  instancesListLabel.setJustificationType(juce::Justification::centredLeft);
+  
+  instancesDisplay.setMultiLine(true);
+  instancesDisplay.setReadOnly(true);
+  instancesDisplay.setScrollbarsShown(true);
+  instancesDisplay.setColour(juce::TextEditor::backgroundColourId, juce::Colour(10, 16, 37).withAlpha(0.62f));
+  instancesDisplay.setColour(juce::TextEditor::textColourId, juce::Colour(241, 245, 255).withAlpha(0.9f));
+  instancesDisplay.setColour(juce::TextEditor::outlineColourId, juce::Colour(148, 163, 184).withAlpha(0.18f));
+  instancesDisplay.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::plain)));
+  instancesDisplay.setText("Loading instances...", false);
+  
+  syncStatusIndicator.setText("Sync: Checking...", juce::dontSendNotification);
+  syncStatusIndicator.setColour(juce::Label::textColourId, juce::Colour(148, 163, 184).withAlpha(0.9f));
+  syncStatusIndicator.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+  syncStatusIndicator.setJustificationType(juce::Justification::centredRight);
+  
+  addChildComponent(instancesListLabel);
+  addChildComponent(instancesDisplay);
+  addChildComponent(syncStatusIndicator);
 
   statusLabel.setText("Ready", juce::dontSendNotification);
   statusLabel.setColour(juce::Label::textColourId, juce::Colour(241, 245, 255).withAlpha(0.7f));
@@ -891,12 +921,42 @@ void InspireVSTAudioProcessorEditor::resized()
           // Updates mode: show push log if in room, or message if not
           if (inRoom)
           {
-            pushLogDisplay.setBounds(padding, yPos, getWidth() - padding * 2, logHeight);
+            // Phase 1: Split display area between push log and instances list
+            const int halfHeight = logHeight / 2;
+            const int gap = 8;
+            
+            // Sync status indicator at top
+            syncStatusIndicator.setBounds(padding, yPos, getWidth() - padding * 2, 20);
+            syncStatusIndicator.setVisible(true);
+            yPos += 24;
+            
+            // Instances list section (top half)
+            instancesListLabel.setBounds(padding, yPos, getWidth() - padding * 2, 18);
+            instancesListLabel.setVisible(true);
+            yPos += 20;
+            
+            const int instancesHeight = (logHeight - 64) / 2;  // Account for labels and status
+            instancesDisplay.setBounds(padding, yPos, getWidth() - padding * 2, instancesHeight);
+            instancesDisplay.setVisible(true);
+            yPos += instancesHeight + gap;
+            
+            // Push log section (bottom half)
+            pushLogLabel.setBounds(padding, yPos, getWidth() - padding * 2, 18);
+            pushLogLabel.setVisible(true);
+            yPos += 20;
+            
+            const int pushLogHeight = logHeight - (yPos - (logHeight + padding));
+            pushLogDisplay.setBounds(padding, yPos, getWidth() - padding * 2, pushLogHeight);
             pushLogDisplay.setVisible(true);
           }
           else
           {
-            // Not in a room - show invitational message in push log
+            // Not in a room - hide instance list and show invitational message
+            syncStatusIndicator.setVisible(false);
+            instancesListLabel.setVisible(false);
+            instancesDisplay.setVisible(false);
+            pushLogLabel.setVisible(false);
+            
             pushLogDisplay.setText(
               "Join or create a room to collaborate with others!\n\n"
               "• Tap 'Guest', 'Sign Up', or 'Log In' at the top\n"
@@ -3516,6 +3576,19 @@ void InspireVSTAudioProcessorEditor::selectUpdates()
   pushLogLabel.setText("Updates", juce::dontSendNotification);
   pushLogDisplay.setReadOnly(true);
 
+  // Phase 1: VST Instance Broadcasting - Show instances list
+  if (instancesListLabel.getParentComponent() == nullptr)
+    addAndMakeVisible(instancesListLabel);
+  if (instancesDisplay.getParentComponent() == nullptr)
+    addAndMakeVisible(instancesDisplay);
+  if (syncStatusIndicator.getParentComponent() == nullptr)
+    addAndMakeVisible(syncStatusIndicator);
+  
+  // Phase 3: Try WebSocket first, fall back to polling
+  refreshInstancesList();
+  refreshSyncStatus();
+  startWebSocketSync();  // Phase 3: Try WebSocket connection
+
   refreshUpdatesDisplay();
   updateUIForAuthState();
 }
@@ -3612,6 +3685,13 @@ void InspireVSTAudioProcessorEditor::pushTrack()
                      juce::String(juce::Time::currentTimeMillis()) + " }";
     state.notesJson = "[]";
     
+    // Phase 1: VST Instance Broadcasting - add plugin instance info
+    state.pluginInstanceId = pluginInstanceID;
+    // Note: DAW track info extraction is host-dependent and may not be available
+    // For now, use placeholder values. Full implementation requires VST3/AU extensions
+    state.dawTrackIndex = 0;    // TODO: Extract from host if available
+    state.dawTrackName = "";    // TODO: Extract from host if available
+    
     const int baseVersion = trackVersions["vst-main-track"];
     const int beatForLog = state.currentBeat;
     const auto response = client.pushTrackState(serverUrl, state, baseVersion);
@@ -3644,6 +3724,18 @@ void InspireVSTAudioProcessorEditor::pushTrack()
         if (selectedMode == "updates")
           refreshUpdatesDisplay();
         trackVersions.set("vst-main-track", response.version);
+
+        if (wsClient && wsClient->isConnected())
+        {
+          juce::DynamicObject::Ptr pushMsg = new juce::DynamicObject();
+          pushMsg->setProperty("type", "track-pushed");
+          pushMsg->setProperty("pluginInstanceId", pluginInstanceID);
+          pushMsg->setProperty("roomCode", currentSyncRoomCode);
+          pushMsg->setProperty("version", response.version);
+          pushMsg->setProperty("timestamp", juce::Time::currentTimeMillis());
+          wsClient->sendMessage(juce::JSON::toString(juce::var(pushMsg.get())));
+        }
+
         addErrorLog("✓ Track pushed successfully");
       }
       else
@@ -3816,3 +3908,328 @@ void InspireVSTAudioProcessorEditor::createPackCardButtons()
     addAndMakeVisible(btn);
   }
 }
+
+// ============ PHASE 1: VST INSTANCE BROADCASTING ============
+
+void InspireVSTAudioProcessorEditor::refreshInstancesList()
+{
+  if (currentSyncRoomCode.isEmpty()) return;
+  
+  const auto serverUrl = serverUrlInput.getText();
+  
+  runAsync([this, serverUrl] {
+    juce::String endpoint = serverUrl + "/api/rooms/" + 
+                           juce::URL::addEscapeChars(currentSyncRoomCode, true) + "/instances";
+    
+    juce::URL url(endpoint);
+    auto stream = url.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress));
+    
+    if (stream) {
+      juce::String response = stream->readEntireStreamAsString();
+      auto parsed = juce::JSON::parse(response);
+      
+      juce::MessageManager::callAsync([this, parsed] {
+        if (parsed.isObject()) {
+          auto* obj = parsed.getDynamicObject();
+          auto instancesArray = obj->getProperty("instances");
+          
+          if (instancesArray.isArray()) {
+            activeInstances.clear();
+            
+            juce::String displayText;
+            int count = instancesArray.getArray()->size();
+            if (count == 0) {
+              displayText = "No VST instances found in this room.\nPush a track to register this instance.";
+            } else {
+              for (const auto& inst : *instancesArray.getArray()) {
+                activeInstances.add(inst);
+                
+                auto* instObj = inst.getDynamicObject();
+                juce::String id = instObj->getProperty("pluginInstanceId").toString();
+                juce::String trackName = instObj->getProperty("dawTrackName").toString();
+                int trackIndex = instObj->getProperty("dawTrackIndex");
+                int version = instObj->getProperty("version");
+                
+                // Highlight this instance with arrow
+                juce::String marker = (id == pluginInstanceID) ? "→ " : "  ";
+                
+                displayText += marker + id.substring(0, 8) + " | ";
+                if (trackIndex >= 0)
+                  displayText += "Track " + juce::String(trackIndex) + " ";
+                if (trackName.isNotEmpty())
+                  displayText += "(" + trackName + ") ";
+                displayText += "| v" + juce::String(version) + "\n";
+              }
+            }
+            
+            instancesDisplay.setText(displayText, false);
+          }
+        }
+      });
+    } else {
+      juce::MessageManager::callAsync([this] {
+        instancesDisplay.setText("Failed to fetch instances. Check connection.", false);
+      });
+    }
+  });
+}
+
+void InspireVSTAudioProcessorEditor::refreshSyncStatus()
+{
+  if (currentSyncRoomCode.isEmpty() || pluginInstanceID.isEmpty()) return;
+  
+  const auto serverUrl = serverUrlInput.getText();
+  
+  runAsync([this, serverUrl] {
+    juce::String endpoint = serverUrl + "/api/rooms/" + 
+                           juce::URL::addEscapeChars(currentSyncRoomCode, true) + 
+                           "/sync-status?pluginInstanceId=" + 
+                           juce::URL::addEscapeChars(pluginInstanceID, true);
+    
+    juce::URL url(endpoint);
+    auto stream = url.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress));
+    
+    if (stream) {
+      juce::String response = stream->readEntireStreamAsString();
+      auto parsed = juce::JSON::parse(response);
+      
+      juce::MessageManager::callAsync([this, parsed] {
+        if (parsed.isObject()) {
+          auto* obj = parsed.getDynamicObject();
+          juce::String status = obj->getProperty("status").toString();
+          myVersionNumber = obj->getProperty("myVersion");
+          latestVersionNumber = obj->getProperty("latestVersion");
+          int behindBy = obj->getProperty("behindBy");
+          
+          juce::String statusText;
+          juce::Colour statusColor;
+          
+          if (status == "up-to-date") {
+            statusText = "✓ Up to date (v" + juce::String(myVersionNumber) + ")";
+            statusColor = juce::Colours::green;
+          } else if (status == "behind") {
+            statusText = "↓ Behind by " + juce::String(behindBy) + " (v" + juce::String(myVersionNumber) + " of v" + juce::String(latestVersionNumber) + ")";
+            statusColor = juce::Colours::orange;
+          } else if (status == "ahead") {
+            statusText = "↑ Ahead (v" + juce::String(myVersionNumber) + ") - Push to share";
+            statusColor = juce::Colours::cyan;
+          } else {
+            statusText = "Sync: Unknown";
+            statusColor = juce::Colour(148, 163, 184);
+          }
+          
+          syncStatusIndicator.setText(statusText, juce::dontSendNotification);
+          syncStatusIndicator.setColour(juce::Label::textColourId, statusColor);
+        }
+      });
+    }
+  });
+}
+
+void InspireVSTAudioProcessorEditor::startInstancePolling()
+{
+  // Poll every 5 seconds for updates
+  lastPollTime = juce::Time::getCurrentTime().toMilliseconds();
+  startTimer(5000);
+}
+
+void InspireVSTAudioProcessorEditor::stopInstancePolling()
+{
+  stopTimer();
+}
+
+void InspireVSTAudioProcessorEditor::checkForRecentPushes()
+{
+  // Phase 2: Check for recent pushes without full instances refresh
+  if (currentSyncRoomCode.isEmpty()) return;
+  
+  const auto serverUrl = serverUrlInput.getText();
+  const auto sinceTime = lastPollTime;
+  
+  runAsync([this, serverUrl, sinceTime] {
+    juce::String endpoint = serverUrl + "/api/rooms/" +
+                           juce::URL::addEscapeChars(currentSyncRoomCode, true) +
+                           "/recent-pushes?since=" +
+                           juce::String(sinceTime);
+    
+    juce::URL url(endpoint);
+    auto stream = url.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress));
+    
+    if (stream) {
+      juce::String response = stream->readEntireStreamAsString();
+      auto parsed = juce::JSON::parse(response);
+      
+      if (parsed.isObject()) {
+        auto* obj = parsed.getDynamicObject();
+        auto* pushesArray = obj->getProperty("pushes").getArray();
+        
+        if (pushesArray && pushesArray->size() > 0) {
+          // Recent pushes detected - refresh full instances and status
+          juce::MessageManager::callAsync([this] {
+            refreshInstancesList();
+            refreshSyncStatus();
+          });
+        }
+      }
+    }
+    
+    // Update poll time
+    lastPollTime = juce::Time::getCurrentTime().toMilliseconds();
+  });
+}
+
+void InspireVSTAudioProcessorEditor::timerCallback()
+{
+  // Called every 5 seconds when in Updates mode
+  if (selectedMode == "updates" && !currentSyncRoomCode.isEmpty()) {
+    // Phase 3: Process WebSocket queued messages if connected
+    if (wsClient)
+      wsClient->processMessages();
+    
+    // Phase 2: Use smart polling as fallback (if WebSocket not connected)
+    if (!wsClient || !wsClient->isConnected())
+    {
+      checkForRecentPushes();
+    }
+  } else {
+    // Stop polling and WebSocket if we left Updates mode
+    if (selectedMode != "updates")
+      stopTimer();
+  }
+}
+
+// ============ PHASE 3: WEBSOCKET REAL-TIME SYNC ============
+
+void InspireVSTAudioProcessorEditor::startWebSocketSync()
+{
+  // Phase 3: Establish WebSocket connection for real-time updates
+  if (currentSyncRoomCode.isEmpty())
+  {
+    // Fallback to polling if not in a room
+    startInstancePolling();
+    return;
+  }
+
+  // Initialize WebSocket client if not already created
+  if (!wsClient)
+  {
+    wsClient = std::make_unique<WebSocketClient>();
+    
+    // Set callbacks for WebSocket events
+    wsClient->setOnConnectCallback([this]
+    {
+      juce::String msg = "[WebSocket] Connected to sync server";
+      addErrorLog(msg);
+
+      juce::DynamicObject::Ptr joinMsg = new juce::DynamicObject();
+      joinMsg->setProperty("type", "join");
+      joinMsg->setProperty("pluginInstanceId", pluginInstanceID);
+      joinMsg->setProperty("roomCode", currentSyncRoomCode);
+      joinMsg->setProperty("username", authUsername.isNotEmpty() ? authUsername : "Guest");
+      joinMsg->setProperty("timestamp", juce::Time::currentTimeMillis());
+      wsClient->sendMessage(juce::JSON::toString(juce::var(joinMsg.get())));
+
+      juce::DynamicObject::Ptr syncReq = new juce::DynamicObject();
+      syncReq->setProperty("type", "sync-request");
+      syncReq->setProperty("pluginInstanceId", pluginInstanceID);
+      syncReq->setProperty("roomCode", currentSyncRoomCode);
+      syncReq->setProperty("timestamp", juce::Time::currentTimeMillis());
+      wsClient->sendMessage(juce::JSON::toString(juce::var(syncReq.get())));
+    });
+    
+    wsClient->setOnDisconnectCallback([this]
+    {
+      juce::String msg = "[WebSocket] Disconnected, falling back to polling";
+      addErrorLog(msg);
+      // Fallback to polling if WebSocket disconnects
+      startInstancePolling();
+    });
+    
+    wsClient->setOnErrorCallback([this](const juce::String& error)
+    {
+      juce::String msg = "[WebSocket] Error: " + error + " - using polling";
+      addErrorLog(msg);
+      // Fallback to polling on error
+      startInstancePolling();
+    });
+    
+    wsClient->setOnMessageCallback([this](const VSWSMessage& msg)
+    {
+      handleWebSocketMessage(msg);
+    });
+  }
+
+  // Connect to WebSocket server
+  connectWebSocket();
+  
+  // Also start polling as fallback while WebSocket connects
+  startInstancePolling();
+}
+
+void InspireVSTAudioProcessorEditor::stopWebSocketSync()
+{
+  // Phase 3: Disconnect WebSocket and stop polling
+  disconnectWebSocket();
+  stopInstancePolling();
+}
+
+void InspireVSTAudioProcessorEditor::connectWebSocket()
+{
+  // Phase 3: Establish WebSocket connection
+  if (!wsClient || currentSyncRoomCode.isEmpty())
+    return;
+
+  const auto serverUrl = serverUrlInput.getText();
+  
+  // Convert http/https to ws/wss
+  juce::String wsUrl = serverUrl;
+  wsUrl = wsUrl.replace("https://", "wss://");
+  wsUrl = wsUrl.replace("http://", "ws://");
+  wsUrl = wsUrl.trimCharactersAtEnd("/");
+  wsUrl += "/ws/sync";
+
+  addErrorLog("Connecting WebSocket to: " + wsUrl);
+  
+  // This runs on a background thread
+  wsClient->connect(wsUrl);
+}
+
+void InspireVSTAudioProcessorEditor::disconnectWebSocket()
+{
+  // Phase 3: Close WebSocket connection
+  if (wsClient)
+    wsClient->disconnect();
+}
+
+void InspireVSTAudioProcessorEditor::handleWebSocketMessage(const VSWSMessage& msg)
+{
+  // Phase 3: Process real-time WebSocket message
+  juce::String logMsg = "[WS] " + msg.type;
+  
+  if (msg.type == "instance-joined")
+  {
+    logMsg += " - " + msg.pluginInstanceId.substring(0, 8) + " (" + msg.username + ")";
+    addErrorLog(logMsg);
+    // Refresh instances list to show new instance
+    juce::MessageManager::callAsync([this] { refreshInstancesList(); });
+  }
+  else if (msg.type == "track-update")
+  {
+    logMsg += " - " + msg.pluginInstanceId.substring(0, 8) + " v" + juce::String(msg.version);
+    addErrorLog(logMsg);
+    // Refresh instances and sync status on update
+    juce::MessageManager::callAsync([this]
+    {
+      refreshInstancesList();
+      refreshSyncStatus();
+    });
+  }
+  else if (msg.type == "instance-left")
+  {
+    logMsg += " - " + msg.pluginInstanceId.substring(0, 8);
+    addErrorLog(logMsg);
+    // Refresh instances list after instance leaves
+    juce::MessageManager::callAsync([this] { refreshInstancesList(); });
+  }
+}
+

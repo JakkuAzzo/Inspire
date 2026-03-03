@@ -4,13 +4,15 @@
 #include <fontaudio/fontaudio.h>
 #include "PluginProcessor.h"
 #include "NetworkClient.h"
+#include "WebSocketClient.h"
 #include "PackDetailComponent.h"
 #include "LyricEditorComponent.h"
 #include "FilterControlComponent.h"
 #include "InspirationQueueDialog.h"
 #include "FilterDialogComponent.h"
 
-class InspireVSTAudioProcessorEditor final : public juce::AudioProcessorEditor
+class InspireVSTAudioProcessorEditor final : public juce::AudioProcessorEditor,
+                                                     public juce::Timer
 {
 public:
   explicit InspireVSTAudioProcessorEditor(InspireVSTAudioProcessor& processor);
@@ -20,6 +22,7 @@ public:
   void resized() override;
   void mouseDown(const juce::MouseEvent& event) override;
   void mouseMove(const juce::MouseEvent& event) override;
+  void timerCallback() override;  // Phase 1: For polling instances/sync status
   
   enum class UIState
   {
@@ -112,6 +115,30 @@ private:
   juce::TextButton pullTrackButton{"Pull This Track"};
   juce::TextEditor pushLogDisplay;
   juce::Label pushLogLabel;
+
+  // Phase 1: VST Instance Broadcasting - Instances list display
+  juce::Label instancesListLabel;
+  juce::TextEditor instancesDisplay;
+  juce::Label syncStatusIndicator;
+  juce::Array<juce::var> activeInstances;
+  int myVersionNumber = 0;
+  int latestVersionNumber = 0;
+  void refreshInstancesList();
+  void refreshSyncStatus();
+  void startInstancePolling();
+  void stopInstancePolling();
+  
+  // Phase 2: Smart polling - track recent pushes without full refresh
+  int64 lastPollTime = 0;
+  void checkForRecentPushes();
+
+  // Phase 3: Real-time WebSocket sync for instant updates
+  std::unique_ptr<WebSocketClient> wsClient;
+  void connectWebSocket();
+  void disconnectWebSocket();
+  void handleWebSocketMessage(const VSWSMessage& msg);
+  void startWebSocketSync();
+  void stopWebSocketSync();
 
   // Room info displayed at top when in a room
   juce::Label roomInfoLabel;

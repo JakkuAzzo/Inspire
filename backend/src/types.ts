@@ -379,6 +379,10 @@ export interface DAWTrackState {
   files?: DAWFileAsset[];
   updatedAt: number;
   updatedBy?: string;
+  // Phase 1: VST Instance Broadcasting
+  pluginInstanceId?: string;    // VST instance unique ID
+  dawTrackIndex?: number;        // DAW track number (1, 2, 3...)
+  dawTrackName?: string;         // Host-provided track name
 }
 
 export interface DAWTrackChange {
@@ -426,6 +430,32 @@ export interface AudioSyncState {
   isPlaying: boolean;
   tempo: number;
   clientLatency: number; // estimated network latency in ms
+}
+
+// Phase 2: WebSocket-based real-time sync message types
+export interface VSTSyncMessage {
+  type: 'join' | 'track-pushed' | 'instance-left' | 'sync-request' | 'sync-response' | 'instance-joined';
+  pluginInstanceId: string;
+  roomCode: string;
+  username?: string;
+  version?: number;
+  timestamp?: number;
+  [key: string]: any;
+}
+
+export interface VSTInstancePush {
+  pluginInstanceId: string;
+  version: number;
+  timestamp: number;
+  trackIndex?: number;
+  trackName?: string;
+}
+
+export interface RecentPushesResponse {
+  roomCode: string;
+  pushes: VSTInstancePush[];
+  count: number;
+  timestamp: number;
 }
 
 export interface CommentThread {

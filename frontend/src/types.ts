@@ -408,6 +408,10 @@ export interface DAWTrackState {
   files?: DAWFileAsset[];
   updatedAt: number;
   updatedBy?: string;
+  // Phase 1: VST Instance Broadcasting
+  pluginInstanceId?: string;    // VST instance unique ID
+  dawTrackIndex?: number;        // DAW track number (1, 2, 3...)
+  dawTrackName?: string;         // Host-provided track name
 }
 
 export interface DAWTrackChange {

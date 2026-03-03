@@ -64,12 +64,17 @@ import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 import { startCleanupJob } from './auth/cleanup';
 import { generateStoryArcScaffold } from './services/storyArcService';
 import { initFirebaseAdmin } from './firebase/admin';
+import { setupWebSocketServer, VSTSyncManager } from './websocket';
 
 const app = express();
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] }
 });
+
+// Phase 2: WebSocket server for real-time VST instance sync
+const vstSyncManager = setupWebSocketServer(server);
+
 const PORT = process.env.PORT || 3001;
 const LISTEN_PORT = Number(PORT) || 3001;
 
@@ -1335,6 +1340,15 @@ function buildApiRouter() {
         state: incomingState
       });
 
+      // Phase 2: Record push in WebSocket sync manager for real-time broadcast
+      if (result.next && result.next.state.pluginInstanceId) {
+        vstSyncManager.recordPush(
+          body.roomCode,
+          result.next.state.pluginInstanceId,
+          result.next.version
+        );
+      }
+
       if (result.status === 'conflict' && result.current) {
         return res.status(409).json({
           ok: false,
@@ -1394,6 +1408,130 @@ function buildApiRouter() {
     } catch (err) {
       console.error('[daw-sync] room list failed', err);
       res.status(500).json({ error: 'Failed to list room tracks' });
+    }
+  });
+
+  // ============ PHASE 1: VST INSTANCE BROADCASTING ============
+
+  // List all VST instances in a room
+  router.get('/rooms/:roomCode/instances', (req: Request, res: Response) => {
+    try {
+      const { roomCode } = req.params;
+      const tracks = dawSyncStore.listTrackStates(roomCode);
+      
+      // Collect unique plugin instances from track states
+      const instancesMap = new Map<string, {
+        pluginInstanceId: string;
+        dawTrackIndex?: number;
+        dawTrackName?: string;
+        lastPushAt: number;
+        lastPushBy?: string;
+        version: number;
+        trackId: string;
+      }>();
+
+      for (const track of tracks) {
+        const instanceId = track.state.pluginInstanceId;
+        if (instanceId) {
+          // Keep the most recent update for each instance
+          const existing = instancesMap.get(instanceId);
+          if (!existing || track.updatedAt > existing.lastPushAt) {
+            instancesMap.set(instanceId, {
+              pluginInstanceId: instanceId,
+              dawTrackIndex: track.state.dawTrackIndex,
+              dawTrackName: track.state.dawTrackName,
+              lastPushAt: track.updatedAt,
+              lastPushBy: track.updatedBy,
+              version: track.version,
+              trackId: track.trackId
+            });
+          }
+        }
+      }
+
+      const instances = Array.from(instancesMap.values());
+      res.json({
+        roomCode,
+        instances,
+        count: instances.length
+      });
+    } catch (err) {
+      console.error('[instances] list failed', err);
+      res.status(500).json({ error: 'Failed to list instances' });
+    }
+  });
+
+  // Check sync status for a specific VST instance
+  router.get('/rooms/:roomCode/sync-status', (req: Request, res: Response) => {
+    try {
+      const { roomCode } = req.params;
+      const pluginInstanceId = String(req.query.pluginInstanceId || '');
+
+      if (!pluginInstanceId) {
+        return res.status(400).json({ error: 'pluginInstanceId is required' });
+      }
+
+      const tracks = dawSyncStore.listTrackStates(roomCode);
+      
+      // Find this instance's track
+      const myTrack = tracks.find(t => t.state.pluginInstanceId === pluginInstanceId);
+      
+      // Find latest version across all tracks
+      const allVersions = tracks
+        .map(t => ({
+          version: t.version,
+          instanceId: t.state.pluginInstanceId || 'unknown',
+          updatedAt: t.updatedAt
+        }))
+        .sort((a, b) => b.version - a.version);
+
+      const latestVersion = allVersions[0]?.version || 0;
+      const myVersion = myTrack?.version || 0;
+
+      let status: 'up-to-date' | 'behind' | 'ahead';
+      if (myVersion < latestVersion) {
+        status = 'behind';
+      } else if (myVersion > latestVersion) {
+        status = 'ahead';
+      } else {
+        status = 'up-to-date';
+      }
+
+      res.json({
+        pluginInstanceId,
+        myVersion,
+        latestVersion,
+        status,
+        behindBy: Math.max(0, latestVersion - myVersion),
+        recentPushes: allVersions.slice(0, 10)
+      });
+    } catch (err) {
+      console.error('[sync-status] check failed', err);
+      res.status(500).json({ error: 'Failed to check sync status' });
+    }
+  });
+
+  // ============ PHASE 2: RECENT PUSHES FOR SMART POLLING ============
+
+  // Get recent pushes in a room (for smart polling without fetching all instances)
+  router.get('/rooms/:roomCode/recent-pushes', (req: Request, res: Response) => {
+    try {
+      const { roomCode } = req.params;
+      const sinceRaw = req.query.since;
+      const since = typeof sinceRaw === 'string' ? Number(sinceRaw) : undefined;
+
+      // Get recent pushes from WebSocket sync manager
+      const pushes = vstSyncManager.getRecentPushes(roomCode, since);
+
+      res.json({
+        roomCode,
+        pushes,
+        count: pushes.length,
+        timestamp: Date.now()
+      });
+    } catch (err) {
+      console.error('[recent-pushes] fetch failed', err);
+      res.status(500).json({ error: 'Failed to get recent pushes' });
     }
   });
 
