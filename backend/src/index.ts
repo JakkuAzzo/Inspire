@@ -1418,10 +1418,12 @@ function buildApiRouter() {
     try {
       const { roomCode } = req.params;
       const tracks = dawSyncStore.listTrackStates(roomCode);
+      const connectedInstances = vstSyncManager.getConnectedInstances(roomCode);
       
       // Collect unique plugin instances from track states
       const instancesMap = new Map<string, {
         pluginInstanceId: string;
+        username?: string;
         dawTrackIndex?: number;
         dawTrackName?: string;
         lastPushAt: number;
@@ -1446,6 +1448,19 @@ function buildApiRouter() {
               trackId: track.trackId
             });
           }
+        }
+      }
+
+      for (const connected of connectedInstances) {
+        if (!instancesMap.has(connected.pluginInstanceId)) {
+          instancesMap.set(connected.pluginInstanceId, {
+            pluginInstanceId: connected.pluginInstanceId,
+            username: connected.username,
+            lastPushAt: connected.connectedAt,
+            lastPushBy: connected.username,
+            version: 0,
+            trackId: ''
+          });
         }
       }
 

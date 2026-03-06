@@ -27,6 +27,22 @@ private:
   std::function<void()> task;
 };
 
+static juce::String makePluginInstanceId(const void* instancePtr)
+{
+  const auto nowMs = static_cast<uint64_t>(juce::Time::currentTimeMillis());
+  const auto ptrBits = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(instancePtr));
+  const auto randomBits = static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64());
+
+  juce::String id = juce::String::toHexString(static_cast<int64_t>(nowMs)).toUpperCase()
+    + juce::String::toHexString(static_cast<int64_t>(randomBits ^ (ptrBits << 7))).toUpperCase();
+
+  id = id.retainCharacters("0123456789ABCDEF");
+  if (id.length() < 12)
+    id = id.paddedLeft('0', 12);
+
+  return id.substring(0, 12);
+}
+
 // Style text inputs - matching web app glassmorphism
   auto styleTextInput = [](juce::TextEditor& input) {
     input.setColour(juce::TextEditor::backgroundColourId, juce::Colour(10, 16, 37).withAlpha(0.62f));
@@ -45,7 +61,7 @@ private:
     loadRoomCode();
     
     // Generate unique plugin instance ID
-    pluginInstanceID = juce::Uuid().toString().substring(0, 12).toUpperCase();
+    pluginInstanceID = makePluginInstanceId(this);
     syncTrackId = "vst-" + pluginInstanceID;
     sessionStartTimeMs = juce::Time::currentTimeMillis();
 

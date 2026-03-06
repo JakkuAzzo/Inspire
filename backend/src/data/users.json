@@ -406,5 +406,37 @@
     "displayName": "Testy",
     "createdAt": 1772538778675,
     "verifiedAt": 1772538778675
+  },
+  {
+    "id": "6139da31-e0ac-46e8-ad30-c293c9d05397",
+    "email": "user1772814730809@example.com",
+    "passwordHash": "$2b$10$pObJF/Lwn8uqg6a6NnXb0epYF6sSmbRH2r9o5c/rjTSgf73kA8eJy",
+    "displayName": "Tester",
+    "avatarUrl": null,
+    "createdAt": 1772814730872
+  },
+  {
+    "id": "707b261f-a7b7-40ec-8f6e-bfca8e927e4f",
+    "email": "otp1772814730934@example.com",
+    "passwordHash": "$2b$10$rZ5qzhny8LelbgIC1qKq0eG5rPt1C6SILwqCfaqTaJyPrcOs6DEJ.",
+    "displayName": "OtpTester",
+    "createdAt": 1772814732289,
+    "verifiedAt": 1772814732289
+  },
+  {
+    "id": "43291076-ada5-4f50-b1e8-ae1fabe29d3b",
+    "email": "tester-1772814734070@example.com",
+    "passwordHash": "$2b$10$D0witlBAxlPNS/f62UVSKuSA4niz9a1a9SxLJUw8zZ7KVgMQwztei",
+    "displayName": "tester",
+    "avatarUrl": null,
+    "createdAt": 1772814734132
+  },
+  {
+    "id": "9f7f5d8c-de36-4c7a-8ef6-ad1accadd710",
+    "email": "test+1772814737219@example.com",
+    "passwordHash": "$2b$10$q/y6LCLFOLiTpCyDMIERzOQghTPtdpF79ED8k7/aIepYqNIc3Tn2u",
+    "displayName": "Testy",
+    "createdAt": 1772814738156,
+    "verifiedAt": 1772814738156
   }
 ]

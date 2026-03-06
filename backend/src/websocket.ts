@@ -29,6 +29,13 @@ export interface WSMessage {
   [key: string]: any;
 }
 
+export interface ConnectedVSTInstance {
+  pluginInstanceId: string;
+  roomCode: string;
+  username: string;
+  connectedAt: number;
+}
+
 export class VSTSyncManager extends EventEmitter {
   private wss: WebSocketServer;
   private clients = new Map<string, WSClient>();
@@ -252,6 +259,20 @@ export class VSTSyncManager extends EventEmitter {
       return Array.from(this.clients.values()).filter(c => c.roomCode === roomCode).length;
     }
     return this.clients.size;
+  }
+
+  /**
+   * Get connected VST instances, optionally filtered by room.
+   */
+  public getConnectedInstances(roomCode?: string): ConnectedVSTInstance[] {
+    return Array.from(this.clients.values())
+      .filter(c => !roomCode || c.roomCode === roomCode)
+      .map(c => ({
+        pluginInstanceId: c.pluginInstanceId,
+        roomCode: c.roomCode,
+        username: c.username,
+        connectedAt: c.connectedAt
+      }));
   }
 
   /**
