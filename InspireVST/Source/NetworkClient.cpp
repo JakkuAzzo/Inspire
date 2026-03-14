@@ -8,6 +8,17 @@ const char* kListFiles = "https://listfiles-kfjkqn5ysq-uc.a.run.app";
 const char* kGetDownloadUrl = "https://getdownloadurl-kfjkqn5ysq-uc.a.run.app";
 }
 
+namespace
+{
+juce::String jsonEscape(const juce::String& input)
+{
+  auto escaped = input;
+  escaped = escaped.replace("\\", "\\\\");
+  escaped = escaped.replace("\"", "\\\"");
+  return escaped;
+}
+}
+
 InspireNetworkClient::InspireNetworkClient()
 {
   createRoomUrl = kCreateRoom;
@@ -26,8 +37,10 @@ void InspireNetworkClient::setEndpoints(const juce::String& joinUrl,
 }
 
 InspireCreateRoomResult InspireNetworkClient::createRoom(const juce::String& serverUrl,
-                                                             const juce::String& password,
-                                                             bool isGuest)
+                                                         const juce::String& password,
+                                                         bool isGuest,
+                                                         const juce::String& pluginRole,
+                                                         const juce::String& pluginInstanceId)
 {
   InspireCreateRoomResult result;
   juce::DynamicObject::Ptr payload = new juce::DynamicObject();
@@ -37,6 +50,9 @@ InspireCreateRoomResult InspireNetworkClient::createRoom(const juce::String& ser
     payload->setProperty("password", password);
   }
   payload->setProperty("isGuest", isGuest);
+  payload->setProperty("pluginRole", pluginRole);
+  if (pluginInstanceId.isNotEmpty())
+    payload->setProperty("pluginInstanceId", pluginInstanceId);
 
   const auto json = juce::JSON::toString(juce::var(payload));
   const auto response = postJson(serverUrl + "/api/vst/create-room", json);
@@ -56,12 +72,20 @@ InspireCreateRoomResult InspireNetworkClient::createRoom(const juce::String& ser
 
 InspireJoinResult InspireNetworkClient::joinRoom(const juce::String& serverUrl,
                                                  const juce::String& roomId,
-                                                 const juce::String& code)
+                                                 const juce::String& code,
+                                                 const juce::String& pluginRole,
+                                                 const juce::String& pluginInstanceId,
+                                                 const juce::String& masterInstanceId)
 {
   InspireJoinResult result;
   juce::DynamicObject::Ptr payload = new juce::DynamicObject();
   payload->setProperty("roomId", roomId);
   payload->setProperty("code", code);
+  payload->setProperty("pluginRole", pluginRole);
+  if (pluginInstanceId.isNotEmpty())
+    payload->setProperty("pluginInstanceId", pluginInstanceId);
+  if (masterInstanceId.isNotEmpty())
+    payload->setProperty("masterInstanceId", masterInstanceId);
 
   const auto json = juce::JSON::toString(juce::var(payload));
   const auto response = postJson(serverUrl + "/api/vst/join-room", json);
@@ -89,10 +113,12 @@ InspireJoinResult InspireNetworkClient::joinRoom(const juce::String& serverUrl,
   return result;
 }
 
-InspireJoinResult InspireNetworkClient::continueAsGuest(const juce::String& serverUrl)
+InspireJoinResult InspireNetworkClient::continueAsGuest(const juce::String& serverUrl,
+                                                        const juce::String& pluginRole)
 {
   InspireJoinResult result;
   juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+  payload->setProperty("pluginRole", pluginRole);
   
   const auto json = juce::JSON::toString(juce::var(payload));
   const auto response = postJson(serverUrl + "/api/vst/guest-continue", json);
@@ -106,6 +132,130 @@ InspireJoinResult InspireNetworkClient::continueAsGuest(const juce::String& serv
       result.expiresAtMs = parseTimestampMs(obj->getProperty("expiresAt"));
     }
   }
+  return result;
+}
+
+PluginAttachResult InspireNetworkClient::attachPluginToMaster(const juce::String& serverUrl,
+                                                              const juce::String& bearerToken,
+                                                              const juce::String& pluginRole,
+                                                              const juce::String& roomCode,
+                                                              const juce::String& pluginInstanceId)
+{
+  PluginAttachResult result;
+  juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+  payload->setProperty("roomCode", roomCode);
+  payload->setProperty("pluginInstanceId", pluginInstanceId);
+
+  const auto route = pluginRole.toLowerCase() == "create" ? "/api/vst/create/attach" : "/api/vst/relay/attach";
+  const auto json = juce::JSON::toString(juce::var(payload));
+  const auto response = postJson(serverUrl + route, json, bearerToken);
+  const auto parsed = juce::JSON::parse(response);
+  if (parsed.isObject())
+  {
+    if (auto* obj = parsed.getDynamicObject())
+    {
+      result.ok = (bool) obj->getProperty("ok");
+      result.roomCode = obj->getProperty("roomCode").toString();
+      result.pluginRole = obj->getProperty("pluginRole").toString();
+      result.masterInstanceId = obj->getProperty("masterInstanceId").toString();
+      result.errorMessage = obj->getProperty("message").toString();
+      if (result.errorMessage.isEmpty())
+        result.errorMessage = obj->getProperty("error").toString();
+    }
+  }
+  if (!result.ok && result.errorMessage.isEmpty())
+    result.errorMessage = response.substring(0, juce::jmin(240, response.length()));
+  return result;
+}
+
+bool InspireNetworkClient::sendMasterHeartbeat(const juce::String& serverUrl,
+                                               const juce::String& bearerToken,
+                                               const juce::String& roomCode,
+                                               const juce::String& pluginInstanceId,
+                                               juce::String* errorOut)
+{
+  juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+  payload->setProperty("roomCode", roomCode);
+  payload->setProperty("pluginInstanceId", pluginInstanceId);
+  const auto json = juce::JSON::toString(juce::var(payload));
+  const auto response = postJson(serverUrl + "/api/vst/master/heartbeat", json, bearerToken);
+  const auto parsed = juce::JSON::parse(response);
+  if (parsed.isObject())
+  {
+    if (auto* obj = parsed.getDynamicObject())
+    {
+      const bool ok = (bool) obj->getProperty("ok");
+      if (!ok && errorOut != nullptr)
+      {
+        *errorOut = obj->getProperty("error").toString();
+        if (errorOut->isEmpty())
+          *errorOut = obj->getProperty("message").toString();
+      }
+      return ok;
+    }
+  }
+  if (errorOut != nullptr)
+    *errorOut = response.substring(0, juce::jmin(240, response.length()));
+  return false;
+}
+
+MasterRoomStateResult InspireNetworkClient::getMasterRoomState(const juce::String& serverUrl,
+                                                               const juce::String& roomCode,
+                                                               const juce::String& bearerToken)
+{
+  MasterRoomStateResult result;
+  const auto response = getJson(serverUrl + "/api/master/room/" + juce::URL::addEscapeChars(roomCode, true) + "/state", bearerToken);
+  const auto parsed = juce::JSON::parse(response);
+  if (parsed.isObject())
+  {
+    if (auto* obj = parsed.getDynamicObject())
+    {
+      result.ok = true;
+      result.roomCode = obj->getProperty("roomCode").toString();
+      result.active = (bool) obj->getProperty("active");
+      result.masterInstanceId = obj->getProperty("masterInstanceId").toString();
+      result.relayCount = static_cast<int>(obj->getProperty("relayCount"));
+      result.createCount = static_cast<int>(obj->getProperty("createCount"));
+      result.errorMessage = obj->getProperty("error").toString();
+    }
+  }
+  if (!result.ok)
+    result.errorMessage = response.substring(0, juce::jmin(240, response.length()));
+  return result;
+}
+
+VstAuthBridgeConsumeResult InspireNetworkClient::consumeVstAuthBridge(const juce::String& serverUrl,
+                                                                      const juce::String& bridgeId)
+{
+  VstAuthBridgeConsumeResult result;
+
+  if (bridgeId.isEmpty())
+  {
+    result.errorMessage = "Missing bridgeId";
+    return result;
+  }
+
+  const auto endpoint = serverUrl + "/api/vst/auth-bridge/consume?bridgeId=" +
+                        juce::URL::addEscapeChars(bridgeId, true);
+  const auto response = getJson(endpoint);
+  const auto parsed = juce::JSON::parse(response);
+
+  if (parsed.isObject())
+  {
+    if (auto* obj = parsed.getDynamicObject())
+    {
+      const auto status = obj->getProperty("status").toString();
+      if (status == "complete")
+      {
+        result.completed = true;
+        result.accessToken = obj->getProperty("accessToken").toString();
+        result.displayName = obj->getProperty("displayName").toString();
+        result.isGuest = static_cast<bool>(obj->getProperty("isGuest"));
+      }
+      result.errorMessage = obj->getProperty("error").toString();
+    }
+  }
+
   return result;
 }
 
@@ -184,7 +334,10 @@ bool InspireNetworkClient::downloadFile(const juce::String& url,
 
 DAWSyncPushResponse InspireNetworkClient::pushTrackState(const juce::String& serverUrl,
                                                         const DAWTrackState& state,
-                                                        int baseVersion)
+                                                        int baseVersion,
+                                                        const juce::String& bearerToken,
+                                                        const juce::String& pluginRole,
+                                                        const juce::String& masterInstanceId)
 {
   DAWSyncPushResponse result;
   
@@ -206,12 +359,18 @@ DAWSyncPushResponse InspireNetworkClient::pushTrackState(const juce::String& ser
   stateObj->setProperty("pluginInstanceId", state.pluginInstanceId);
   stateObj->setProperty("dawTrackIndex", state.dawTrackIndex);
   stateObj->setProperty("dawTrackName", state.dawTrackName);
+  stateObj->setProperty("pluginRole", pluginRole);
+  if (masterInstanceId.isNotEmpty())
+    stateObj->setProperty("masterInstanceId", masterInstanceId);
   
   payload->setProperty("state", juce::var(stateObj));
   payload->setProperty("updatedBy", "VST_" + state.updatedBy);
+  payload->setProperty("pluginRole", pluginRole);
+  if (masterInstanceId.isNotEmpty())
+    payload->setProperty("masterInstanceId", masterInstanceId);
   
   const auto json = juce::JSON::toString(juce::var(payload));
-  const auto response = postJson(serverUrl + "/api/daw-sync/push", json);
+  const auto response = postJson(serverUrl + "/api/daw-sync/push", json, bearerToken);
   const auto parsed = juce::JSON::parse(response);
   
   if (parsed.isObject())
@@ -220,8 +379,14 @@ DAWSyncPushResponse InspireNetworkClient::pushTrackState(const juce::String& ser
     {
       result.ok = obj->getProperty("ok");
       result.version = static_cast<int>(obj->getProperty("version"));
+      result.eventId = obj->getProperty("eventId").toString();
       result.conflict = obj->getProperty("conflict");
       result.conflictReason = obj->getProperty("conflictReason").toString();
+      if (result.conflictReason.isEmpty())
+        result.conflictReason = obj->getProperty("message").toString();
+      if (result.conflictReason.isEmpty())
+        result.conflictReason = obj->getProperty("error").toString();
+      result.masterRequired = result.conflictReason.containsIgnoreCase("master_required");
     }
   }
   return result;
@@ -230,7 +395,10 @@ DAWSyncPushResponse InspireNetworkClient::pushTrackState(const juce::String& ser
 DAWSyncPullResponse InspireNetworkClient::pullTrackState(const juce::String& serverUrl,
                                                         const juce::String& roomCode,
                                                         const juce::String& trackId,
-                                                        int sinceVersion)
+                                                        int sinceVersion,
+                                                        const juce::String& bearerToken,
+                                                        const juce::String& pluginRole,
+                                                        const juce::String& masterInstanceId)
 {
   DAWSyncPullResponse result;
   
@@ -240,8 +408,11 @@ DAWSyncPullResponse InspireNetworkClient::pullTrackState(const juce::String& ser
   {
     url += "&sinceVersion=" + juce::String(sinceVersion);
   }
+  url += "&pluginRole=" + juce::URL::addEscapeChars(pluginRole, true);
+  if (masterInstanceId.isNotEmpty())
+    url += "&masterInstanceId=" + juce::URL::addEscapeChars(masterInstanceId, true);
   
-  const auto response = getJson(url, "");
+  const auto response = getJson(url, bearerToken);
   const auto parsed = juce::JSON::parse(response);
   
   if (parsed.isObject())
@@ -272,10 +443,135 @@ DAWSyncPullResponse InspireNetworkClient::pullTrackState(const juce::String& ser
           result.state.pluginInstanceId = stateObj->getProperty("pluginInstanceId").toString();
           result.state.dawTrackIndex = static_cast<int>(stateObj->getProperty("dawTrackIndex"));
           result.state.dawTrackName = stateObj->getProperty("dawTrackName").toString();
+          result.state.pluginRole = stateObj->getProperty("pluginRole").toString();
+          result.state.masterInstanceId = stateObj->getProperty("masterInstanceId").toString();
         }
       }
+      result.errorMessage = obj->getProperty("message").toString();
+      if (result.errorMessage.isEmpty())
+        result.errorMessage = obj->getProperty("error").toString();
+      result.masterRequired = result.errorMessage.containsIgnoreCase("master_required");
     }
   }
+  return result;
+}
+
+juce::String InspireNetworkClient::getCollabVisualization(const juce::String& serverUrl,
+                                                          const juce::String& roomCode,
+                                                          const juce::String& bearerToken,
+                                                          int limit,
+                                                          juce::int64 since)
+{
+  juce::String endpoint = serverUrl + "/api/collab/" + juce::URL::addEscapeChars(roomCode, true) +
+                          "/visualization?limit=" + juce::String(limit > 0 ? limit : 200);
+  if (since > 0)
+  {
+    endpoint += "&since=" + juce::String(since);
+  }
+  return getJson(endpoint, bearerToken);
+}
+
+CollabAssetUploadResult InspireNetworkClient::uploadCollabAssetChunked(const juce::String& serverUrl,
+                                                                        const juce::String& roomCode,
+                                                                        const juce::String& bearerToken,
+                                                                        const juce::String& eventId,
+                                                                        const juce::String& trackId,
+                                                                        const juce::File& file,
+                                                                        const juce::String& mimeType,
+                                                                        double durationSeconds,
+                                                                        int chunkSizeBytes)
+{
+  CollabAssetUploadResult result;
+
+  if (!file.existsAsFile())
+  {
+    result.errorMessage = "Asset file not found";
+    return result;
+  }
+
+  auto input = file.createInputStream();
+  if (input == nullptr)
+  {
+    result.errorMessage = "Unable to open asset file";
+    return result;
+  }
+
+  const juce::int64 totalBytes = file.getSize();
+  const int totalChunks = (int) juce::jmax<juce::int64>(1, (totalBytes + chunkSizeBytes - 1) / chunkSizeBytes);
+  const juce::String uploadId = juce::Uuid().toString().retainCharacters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").substring(0, 24);
+  result.uploadId = uploadId;
+
+  for (int chunkIndex = 0; chunkIndex < totalChunks; ++chunkIndex)
+  {
+    const juce::int64 remaining = totalBytes - (juce::int64) chunkIndex * chunkSizeBytes;
+    const int thisChunkSize = (int) juce::jlimit<juce::int64>(1, chunkSizeBytes, remaining);
+    juce::MemoryBlock chunk;
+    chunk.setSize((size_t) thisChunkSize);
+    const int bytesRead = input->read(chunk.getData(), thisChunkSize);
+    if (bytesRead <= 0)
+    {
+      result.errorMessage = "Failed while reading file chunk";
+      return result;
+    }
+    chunk.setSize((size_t) bytesRead);
+
+    juce::String endpoint = serverUrl + "/api/collab/" + juce::URL::addEscapeChars(roomCode, true) + "/assets/upload-chunk";
+    juce::String headers;
+    if (bearerToken.isNotEmpty())
+      headers << "Authorization: Bearer " << bearerToken << "\r\n";
+    headers << "Content-Type: application/octet-stream\r\n";
+    headers << "x-upload-id: " << uploadId << "\r\n";
+    headers << "x-file-name: " << file.getFileName() << "\r\n";
+    headers << "x-file-type: " << (mimeType.isNotEmpty() ? mimeType : "application/octet-stream") << "\r\n";
+    headers << "x-track-id: " << trackId << "\r\n";
+    headers << "x-event-id: " << eventId << "\r\n";
+    headers << "x-total-chunks: " << juce::String(totalChunks) << "\r\n";
+    headers << "x-chunk-index: " << juce::String(chunkIndex) << "\r\n";
+    if (durationSeconds > 0.0)
+      headers << "x-duration-seconds: " << juce::String(durationSeconds, 3) << "\r\n";
+
+    int statusCode = 0;
+    const auto chunkResponse = postBinary(endpoint, chunk, headers, statusCode);
+    if (statusCode < 200 || statusCode >= 300)
+    {
+      result.errorMessage = "Chunk upload failed (HTTP " + juce::String(statusCode) + ") " + chunkResponse.substring(0, 120);
+      return result;
+    }
+  }
+
+  const juce::String finalizeUrl = serverUrl + "/api/collab/" + juce::URL::addEscapeChars(roomCode, true) + "/assets/complete-upload";
+  juce::String finalizePayload = "{";
+  finalizePayload << "\"uploadId\":\"" << jsonEscape(uploadId) << "\",";
+  finalizePayload << "\"eventId\":\"" << jsonEscape(eventId) << "\",";
+  finalizePayload << "\"trackId\":\"" << jsonEscape(trackId) << "\",";
+  finalizePayload << "\"fileName\":\"" << jsonEscape(file.getFileName()) << "\",";
+  finalizePayload << "\"fileType\":\"" << jsonEscape(mimeType.isNotEmpty() ? mimeType : "application/octet-stream") << "\",";
+  finalizePayload << "\"totalChunks\":" << juce::String(totalChunks);
+  if (durationSeconds > 0.0)
+    finalizePayload << ",\"durationSeconds\":" << juce::String(durationSeconds, 3);
+  finalizePayload << "}";
+
+  const auto finalizeResponse = postJson(finalizeUrl, finalizePayload, bearerToken);
+  auto parsed = juce::JSON::parse(finalizeResponse);
+  if (parsed.isObject())
+  {
+    if (auto* obj = parsed.getDynamicObject())
+    {
+      result.ok = (bool) obj->getProperty("ok");
+      auto assetVar = obj->getProperty("asset");
+      if (assetVar.isObject())
+      {
+        if (auto* assetObj = assetVar.getDynamicObject())
+          result.assetId = assetObj->getProperty("id").toString();
+      }
+      if (!result.ok)
+        result.errorMessage = obj->getProperty("error").toString();
+    }
+  }
+
+  if (!result.ok && result.errorMessage.isEmpty())
+    result.errorMessage = "Finalize upload failed";
+
   return result;
 }
 
@@ -325,6 +621,32 @@ juce::String InspireNetworkClient::postJson(const juce::String& url,
   return response;
 }
 
+juce::String InspireNetworkClient::postBinary(const juce::String& url,
+                                              const juce::MemoryBlock& body,
+                                              const juce::String& headers,
+                                              int& statusCode)
+{
+  juce::URL target(url);
+  juce::URL postUrl = target.withPOSTData(body);
+
+  juce::StringPairArray responseHeaders;
+  auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
+    .withExtraHeaders(headers)
+    .withHttpRequestCmd("POST")
+    .withStatusCode(&statusCode)
+    .withResponseHeaders(&responseHeaders)
+    .withConnectionTimeoutMs(30000);
+
+  auto stream = postUrl.createInputStream(options);
+  if (stream == nullptr)
+  {
+    statusCode = 0;
+    return {};
+  }
+
+  return stream->readEntireStreamAsString();
+}
+
 juce::String InspireNetworkClient::getJson(const juce::String& url,
                                            const juce::String& bearerToken)
 {
@@ -332,7 +654,8 @@ juce::String InspireNetworkClient::getJson(const juce::String& url,
   
   juce::String headers = bearerToken.isNotEmpty() ? "Authorization: Bearer " + bearerToken : "";
   
-  auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
+  auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+    .withHttpRequestCmd("GET")
     .withExtraHeaders(headers)
     .withConnectionTimeoutMs(30000);  // Increased timeout
   

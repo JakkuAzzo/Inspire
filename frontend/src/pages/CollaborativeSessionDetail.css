@@ -338,6 +338,201 @@
   box-shadow: 0 8px 24px rgba(168, 85, 247, 0.25);
 }
 
+.collab-viz-block {
+  margin-top: 1rem;
+  border: 1px solid rgba(94, 234, 212, 0.25);
+  border-radius: 0.9rem;
+  padding: 0.9rem;
+  background: rgba(5, 15, 25, 0.55);
+}
+
+.collab-viz-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.collab-viz-header h3 {
+  margin: 0;
+  color: #67e8f9;
+  font-size: 1rem;
+}
+
+.collab-viz-summary {
+  margin-bottom: 1rem;
+}
+
+.collab-tree {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.tree-track-node {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.75rem;
+  padding: 0.7rem;
+  background: rgba(2, 6, 23, 0.65);
+}
+
+.tree-track-node h4 {
+  margin: 0 0 0.45rem;
+  color: #f8fafc;
+  font-size: 0.95rem;
+}
+
+.tree-instance-node {
+  margin: 0.4rem 0;
+  padding: 0.5rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.tree-instance-label {
+  margin: 0 0 0.4rem;
+  color: #93c5fd;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.room-presence-panel {
+  margin-bottom: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.65rem;
+  padding: 0.65rem;
+  background: rgba(2, 6, 23, 0.45);
+}
+
+.room-presence-panel h4 {
+  margin: 0 0 0.5rem;
+  color: #bfdbfe;
+  font-size: 0.9rem;
+}
+
+.room-presence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.room-presence-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.presence-name {
+  color: #e2e8f0;
+  font-size: 0.82rem;
+}
+
+.presence-id {
+  color: #93c5fd;
+  font-size: 0.75rem;
+}
+
+.presence-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.12rem 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  color: #e2e8f0;
+  background: rgba(30, 41, 59, 0.75);
+}
+
+.presence-chip.role-master {
+  border-color: rgba(16, 185, 129, 0.7);
+  color: #6ee7b7;
+  background: rgba(6, 78, 59, 0.45);
+}
+
+.presence-chip.role-relay {
+  border-color: rgba(34, 211, 238, 0.7);
+  color: #67e8f9;
+  background: rgba(8, 47, 73, 0.45);
+}
+
+.presence-chip.role-create {
+  border-color: rgba(244, 114, 182, 0.7);
+  color: #f9a8d4;
+  background: rgba(80, 7, 36, 0.45);
+}
+
+.tree-push-list,
+.tree-asset-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.tree-push-item {
+  font-size: 0.82rem;
+  color: #e2e8f0;
+}
+
+.tree-push-head,
+.tree-push-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.tree-push-head span,
+.tree-push-meta span {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+}
+
+.collab-timeline-table-wrap {
+  margin-top: 0.9rem;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.6rem;
+}
+
+.collab-timeline-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.collab-timeline-table th,
+.collab-timeline-table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  text-align: left;
+}
+
+.collab-timeline-table th {
+  background: rgba(30, 41, 59, 0.75);
+  color: #bae6fd;
+  font-weight: 700;
+}
+
+.collab-timeline-table tr:nth-child(2n) {
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.error-text {
+  color: #fca5a5;
+}
+
 .live-destinations {
   display: inline-flex;
   align-items: center;

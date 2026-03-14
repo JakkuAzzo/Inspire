@@ -8,9 +8,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type {
   CollaborativeSession,
+  CollabVisualizationResponse,
   CommentThread,
   DAWNote,
   DAWSession,
+  RoomPresenceResponse,
   DAWTrack,
   DAWTrackState
 } from '../types';
@@ -19,6 +21,8 @@ import { CollaborativeDAW } from '../components/workspace/CollaborativeDAW';
 import { useAuth } from '../context/AuthContext';
 import { liveExportService } from '../services/liveExportService';
 import { pullTrackState, pushTrackState } from '../services/dawSyncService';
+import { fetchCollabVisualization } from '../services/collabVisualizationService';
+import { fetchRoomPresence } from '../services/roomPresenceService';
 import './CollaborativeSessionDetail.css';
 
 interface SessionTimer {
@@ -64,6 +68,11 @@ export function CollaborativeSessionDetail({
     local: DAWTrackState;
   } | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [collabVisualization, setCollabVisualization] = useState<CollabVisualizationResponse | null>(null);
+  const [collabVisualizationLoading, setCollabVisualizationLoading] = useState(false);
+  const [collabVisualizationError, setCollabVisualizationError] = useState<string | null>(null);
+  const [roomPresence, setRoomPresence] = useState<RoomPresenceResponse | null>(null);
+  const [roomPresenceError, setRoomPresenceError] = useState<string | null>(null);
   const [showExpiredModal, setShowExpiredModal] = useState(false);
   const isHost = userRole === 'host';
   const canCollaborate = isHost || userRole === 'collaborator';
@@ -127,6 +136,53 @@ export function CollaborativeSessionDetail({
       void fetchRecentPacks();
     }
   }, [activeHubTab]);
+
+  useEffect(() => {
+    if (activeHubTab !== 'analytics') return;
+
+    let cancelled = false;
+    setCollabVisualizationLoading(true);
+    setCollabVisualizationError(null);
+
+    fetchCollabVisualization(session.id)
+      .then((payload) => {
+        if (cancelled) return;
+        setCollabVisualization(payload);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setCollabVisualizationError(err instanceof Error ? err.message : 'Unable to load collaboration visualization');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setCollabVisualizationLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeHubTab, session.id]);
+
+  useEffect(() => {
+    if (activeHubTab !== 'analytics') return;
+
+    let cancelled = false;
+    setRoomPresenceError(null);
+
+    fetchRoomPresence(session.id)
+      .then((payload) => {
+        if (cancelled) return;
+        setRoomPresence(payload);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setRoomPresenceError(err instanceof Error ? err.message : 'Unable to load room presence');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeHubTab, session.id]);
 
   // Keyboard shortcuts for tab navigation
   useEffect(() => {
@@ -566,6 +622,9 @@ export function CollaborativeSessionDetail({
     };
   }, [applyServerTrackState, isAuthorized, session.daw.tracks, session.id, syncConflict]);
 
+  const presenceByInstance = new Map((roomPresence?.instances ?? []).map((instance) => [instance.pluginInstanceId, instance]));
+  const roleText = (role?: string) => `[${String(role || 'legacy').toUpperCase()}]`;
+
   return (
     <div className="collaborative-session-detail">
       {/* Expired Session Modal */}
@@ -672,6 +731,13 @@ export function CollaborativeSessionDetail({
                 </>
               )}
             </p>
+            {(session.roomCode || session.roomPassword) && (
+              <p className="session-meta">
+                <strong>Room:</strong> {session.roomCode || session.id}
+                {' '}•{' '}
+                <strong>Password:</strong> {session.roomPassword || 'hidden'}
+              </p>
+            )}
             {session.description && <p className="session-description">{session.description}</p>}
           </div>
           <div className="header-actions">
@@ -907,6 +973,162 @@ export function CollaborativeSessionDetail({
                           <span className="label">Recording Status</span>
                           <strong className={session.daw.isRecording ? 'recording' : ''}>{session.daw.isRecording ? '⚫ Recording' : 'Idle'}</strong>
                         </div>
+                      </div>
+                      <div className="collab-viz-block">
+                        <div className="collab-viz-header">
+                          <h3>Collab Push Tree</h3>
+                          <button
+                            type="button"
+                            className="btn micro"
+                            onClick={() => {
+                              setCollabVisualizationLoading(true);
+                              setCollabVisualizationError(null);
+                              setRoomPresenceError(null);
+                              fetchCollabVisualization(session.id)
+                                .then((payload) => setCollabVisualization(payload))
+                                .catch((err) => setCollabVisualizationError(err instanceof Error ? err.message : 'Unable to refresh visualization'))
+                                .finally(() => setCollabVisualizationLoading(false));
+                              fetchRoomPresence(session.id)
+                                .then((payload) => setRoomPresence(payload))
+                                .catch((err) => setRoomPresenceError(err instanceof Error ? err.message : 'Unable to refresh room presence'));
+                            }}
+                          >
+                            Refresh
+                          </button>
+                        </div>
+                        {collabVisualizationLoading && <p className="hint">Loading room timeline...</p>}
+                        {collabVisualizationError && <p className="hint error-text">{collabVisualizationError}</p>}
+                        {roomPresenceError && <p className="hint error-text">{roomPresenceError}</p>}
+                        {collabVisualization && !collabVisualizationLoading && (
+                          <>
+                            <div className="analytics-grid collab-viz-summary">
+                              <div className="stat-card">
+                                <span className="label">Total Pushes</span>
+                                <strong>{collabVisualization.summary.totalPushes}</strong>
+                              </div>
+                              <div className="stat-card">
+                                <span className="label">Total Assets</span>
+                                <strong>{collabVisualization.summary.totalAssets}</strong>
+                              </div>
+                              <div className="stat-card">
+                                <span className="label">Tracks Touched</span>
+                                <strong>{collabVisualization.summary.tracksTouched}</strong>
+                              </div>
+                              <div className="stat-card">
+                                <span className="label">Active VST Instances</span>
+                                <strong>{collabVisualization.summary.activeInstances}</strong>
+                              </div>
+                            </div>
+
+                            <div className="room-presence-panel">
+                              <h4>Room Presence</h4>
+                              {(roomPresence?.instances ?? []).length === 0 ? (
+                                <p className="hint">No active VST instances reported.</p>
+                              ) : (
+                                <ul className="room-presence-list">
+                                  {(roomPresence?.instances ?? []).map((instance) => (
+                                    <li key={instance.pluginInstanceId} className="room-presence-item">
+                                      <span className={`presence-chip role-${String(instance.pluginRole || 'legacy').toLowerCase()}`}>
+                                        {roleText(instance.pluginRole)}
+                                      </span>
+                                      <span className="presence-name">{instance.presenceLabel || instance.username || 'Unknown'}</span>
+                                      <span className="presence-id">{instance.pluginInstanceId}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+
+                            <div className="collab-tree">
+                              {collabVisualization.tree.length === 0 ? (
+                                <p className="hint">No push history yet for this room.</p>
+                              ) : (
+                                collabVisualization.tree.map((trackNode) => (
+                                  <div key={trackNode.trackId} className="tree-track-node">
+                                    <h4>
+                                      Track {trackNode.trackIndex || '?'}: {trackNode.trackName}
+                                    </h4>
+                                    {trackNode.instances.map((instanceNode) => (
+                                      <div key={`${trackNode.trackId}-${instanceNode.pluginInstanceId}`} className="tree-instance-node">
+                                        <p className="tree-instance-label">
+                                          <span className={`presence-chip role-${String(presenceByInstance.get(instanceNode.pluginInstanceId)?.pluginRole || 'legacy').toLowerCase()}`}>
+                                            {roleText(presenceByInstance.get(instanceNode.pluginInstanceId)?.pluginRole)}
+                                          </span>
+                                          <span>
+                                            {presenceByInstance.get(instanceNode.pluginInstanceId)?.presenceLabel || `VST ${instanceNode.pluginInstanceId}`}
+                                          </span>
+                                        </p>
+                                        <ul className="tree-push-list">
+                                          {instanceNode.pushes.map((push) => (
+                                            <li key={push.id} className="tree-push-item">
+                                              <div className="tree-push-head">
+                                                <span>v{push.version}</span>
+                                                <span>{new Date(push.eventTime).toLocaleString()}</span>
+                                                <span>{push.editType}</span>
+                                                {typeof push.trackBeat === 'number' && <span>Beat {push.trackBeat.toFixed(2)}</span>}
+                                                {typeof push.durationSeconds === 'number' && <span>{push.durationSeconds.toFixed(2)}s</span>}
+                                              </div>
+                                              <div className="tree-push-meta">
+                                                <span>By {push.pushedByUsername || push.updatedBy || 'unknown'}</span>
+                                                {push.fileTypes.length > 0 && <span>Files: {push.fileTypes.join(', ')}</span>}
+                                              </div>
+                                              {push.assets.length > 0 && (
+                                                <ul className="tree-asset-list">
+                                                  {push.assets.map((asset) => (
+                                                    <li key={asset.id}>
+                                                      {asset.downloadUrl ? (
+                                                        <a href={asset.downloadUrl} target="_blank" rel="noreferrer">
+                                                          {asset.fileName} ({asset.fileType})
+                                                        </a>
+                                                      ) : (
+                                                        <span>{asset.fileName} ({asset.fileType})</span>
+                                                      )}
+                                                    </li>
+                                                  ))}
+                                                </ul>
+                                              )}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+
+                            <div className="collab-timeline-table-wrap">
+                              <table className="collab-timeline-table">
+                                <thead>
+                                  <tr>
+                                    <th>Time</th>
+                                    <th>Track</th>
+                                    <th>VST</th>
+                                    <th>User</th>
+                                    <th>Edit</th>
+                                    <th>Beat</th>
+                                    <th>Duration</th>
+                                    <th>Assets</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {collabVisualization.timeline.slice(0, 100).map((event) => (
+                                    <tr key={event.id}>
+                                      <td>{new Date(event.eventTime).toLocaleTimeString()}</td>
+                                      <td>{event.dawTrackName || event.trackId}</td>
+                                      <td>{event.pluginInstanceId || 'unknown'}</td>
+                                      <td>{event.pushedByUsername || event.updatedBy || 'unknown'}</td>
+                                      <td>{event.editType}</td>
+                                      <td>{typeof event.trackBeat === 'number' ? event.trackBeat.toFixed(2) : '-'}</td>
+                                      <td>{typeof event.durationSeconds === 'number' ? `${event.durationSeconds.toFixed(2)}s` : '-'}</td>
+                                      <td>{event.assets.length}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </>
+                        )}
                       </div>
                       <p className="hint">Real-time stats. Reload to see latest metrics. Live exports stay frame-locked to the playhead.</p>
                     </section>

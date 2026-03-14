@@ -1537,6 +1537,31 @@
   color: rgba(241, 245, 255, 0.6);
 }
 
+.session-join-credentials {
+  margin-top: 0.7rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}
+
+.session-join-credentials input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.6);
+  color: rgba(241, 245, 255, 0.92);
+  padding: 0.5rem 0.65rem;
+  font-size: 0.86rem;
+}
+
+.session-join-credentials input::placeholder {
+  color: rgba(241, 245, 255, 0.55);
+}
+
+.session-join-credentials .btn {
+  white-space: nowrap;
+}
+
 .session-empty {
   padding: 0.9rem 1rem;
   border-radius: 14px;
@@ -1651,6 +1676,73 @@
   display: grid;
   gap: 1.5rem;
   padding: 1.8rem 2rem;
+}
+
+.dashboard-page {
+  min-height: 100vh;
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.dashboard-header h1 {
+  margin: 0;
+}
+
+.dashboard-header p {
+  margin: 0.3rem 0 0;
+  color: rgba(241, 245, 255, 0.75);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.dashboard-column {
+  padding: 1rem;
+}
+
+.dashboard-column h2 {
+  margin-top: 0;
+}
+
+.dashboard-room-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dashboard-room-card {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.dashboard-room-card.inactive {
+  border-color: rgba(244, 114, 182, 0.28);
+  background: rgba(63, 21, 44, 0.3);
+}
+
+.dashboard-room-card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.dashboard-room-card p {
+  margin: 0.2rem 0;
+  font-size: 0.9rem;
 }
 
 .feed-header h3 {

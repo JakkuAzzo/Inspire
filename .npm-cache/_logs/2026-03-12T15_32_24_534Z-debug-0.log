@@ -5,8 +5,14 @@
 4 silly config load:file:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/frontend/.npmrc
 5 silly config load:file:/Users/nathanbrown-bennett/.npmrc
 6 silly config load:file:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/frontend/etc/npmrc
-7 verbose title npm run dev --host 10.154.75.55 --port 3000 --strictPort
-8 verbose argv "run" "dev" "--prefix" "frontend" "--" "--host" "10.154.75.55" "--port" "3000" "--strictPort"
-9 verbose logfile logs-max:10 dir:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-03-03T12_56_43_458Z-
-10 verbose logfile /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-03-03T12_56_43_458Z-debug-0.log
+7 verbose title npm run build
+8 verbose argv "run" "build" "--prefix" "frontend"
+9 verbose logfile logs-max:10 dir:/Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-03-12T15_32_24_534Z-
+10 verbose logfile /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire/.npm-cache/_logs/2026-03-12T15_32_24_534Z-debug-0.log
 11 silly logfile done cleaning log files
+12 verbose cwd /Users/nathanbrown-bennett/TildeSec/Inspire/Inspire
+13 verbose os Darwin 25.4.0
+14 verbose node v20.19.2
+15 verbose npm  v10.8.2
+16 verbose exit 0
+17 info ok

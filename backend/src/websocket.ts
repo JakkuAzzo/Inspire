@@ -10,12 +10,25 @@
 
 import { WebSocket, WebSocketServer } from 'ws';
 import { EventEmitter } from 'events';
+import type { InspirePluginRole } from './types';
+
+const normalizePluginRole = (value: unknown): InspirePluginRole => {
+  const role = String(value ?? '').toLowerCase();
+  if (role === 'master' || role === 'relay' || role === 'create') return role;
+  return 'legacy';
+};
+
+const buildPresenceLabel = (role: InspirePluginRole, username: string): string =>
+  `[${role.toUpperCase()}] ${username || 'Unknown'}`;
 
 export interface WSClient {
   ws: WebSocket;
   roomCode: string;
   pluginInstanceId: string;
   username: string;
+  pluginRole: InspirePluginRole;
+  masterInstanceId?: string;
+  presenceLabel: string;
   connectedAt: number;
 }
 
@@ -24,6 +37,8 @@ export interface WSMessage {
   pluginInstanceId: string;
   roomCode: string;
   username?: string;
+  pluginRole?: InspirePluginRole;
+  masterInstanceId?: string;
   version?: number;
   timestamp?: number;
   [key: string]: any;
@@ -33,6 +48,9 @@ export interface ConnectedVSTInstance {
   pluginInstanceId: string;
   roomCode: string;
   username: string;
+  pluginRole: InspirePluginRole;
+  masterInstanceId?: string;
+  presenceLabel: string;
   connectedAt: number;
 }
 
@@ -99,23 +117,33 @@ export class VSTSyncManager extends EventEmitter {
   }
 
   private handleJoin(clientId: string, msg: WSMessage, ws: WebSocket) {
-    const { roomCode, username } = msg;
+    const { roomCode } = msg;
+    const pluginRole = normalizePluginRole(msg.pluginRole);
+    const username = String(msg.username || 'Unknown').trim() || 'Unknown';
+    const presenceLabel = buildPresenceLabel(pluginRole, username);
 
     this.clients.set(clientId, {
       ws,
       roomCode,
       pluginInstanceId: clientId,
-      username: username || 'Unknown',
+      username,
+      pluginRole,
+      masterInstanceId: msg.masterInstanceId,
+      presenceLabel,
       connectedAt: Date.now()
     });
 
-    console.log(`[WSS] Instance ${clientId.slice(0, 8)} joined room ${roomCode}`);
+    console.log(`[WSS] Instance ${clientId.slice(0, 8)} joined room ${roomCode} as ${pluginRole}`);
 
     // Broadcast instance joined to room
     this.broadcastToRoom(roomCode, {
       type: 'instance-joined',
       pluginInstanceId: clientId,
-      username: username || 'Unknown',
+      username: presenceLabel,
+      displayName: username,
+      pluginRole,
+      masterInstanceId: msg.masterInstanceId,
+      presenceLabel,
       timestamp: Date.now()
     });
 
@@ -151,6 +179,10 @@ export class VSTSyncManager extends EventEmitter {
     this.broadcastToRoom(roomCode, {
       type: 'track-update',
       pluginInstanceId: clientId,
+      username: client.presenceLabel,
+      displayName: client.username,
+      pluginRole: client.pluginRole,
+      masterInstanceId: client.masterInstanceId,
       version: version || 0,
       timestamp: timestamp || Date.now()
     });
@@ -168,12 +200,18 @@ export class VSTSyncManager extends EventEmitter {
   }
 
   private handleDisconnect(clientId: string, roomCode: string) {
+    const disconnectedClient = this.clients.get(clientId);
     this.clients.delete(clientId);
     console.log(`[WSS] Instance ${clientId.slice(0, 8)} left room ${roomCode}`);
 
     this.broadcastToRoom(roomCode, {
       type: 'instance-left',
       pluginInstanceId: clientId,
+      username: disconnectedClient?.presenceLabel,
+      displayName: disconnectedClient?.username,
+      pluginRole: disconnectedClient?.pluginRole,
+      masterInstanceId: disconnectedClient?.masterInstanceId,
+      presenceLabel: disconnectedClient?.presenceLabel,
       timestamp: Date.now()
     });
   }
@@ -196,7 +234,11 @@ export class VSTSyncManager extends EventEmitter {
       .filter(c => c.roomCode === roomCode)
       .map(c => ({
         instanceId: c.pluginInstanceId,
-        username: c.username,
+        username: c.presenceLabel,
+        displayName: c.username,
+        pluginRole: c.pluginRole,
+        masterInstanceId: c.masterInstanceId,
+        presenceLabel: c.presenceLabel,
         connectedAt: c.connectedAt
       }));
 
@@ -270,7 +312,10 @@ export class VSTSyncManager extends EventEmitter {
       .map(c => ({
         pluginInstanceId: c.pluginInstanceId,
         roomCode: c.roomCode,
-        username: c.username,
+        username: c.presenceLabel,
+        pluginRole: c.pluginRole,
+        masterInstanceId: c.masterInstanceId,
+        presenceLabel: c.presenceLabel,
         connectedAt: c.connectedAt
       }));
   }

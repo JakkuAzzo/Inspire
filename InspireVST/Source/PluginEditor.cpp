@@ -32,7 +32,6 @@ static juce::String makePluginInstanceId(const void* instancePtr)
   const auto nowMs = static_cast<uint64_t>(juce::Time::currentTimeMillis());
   const auto ptrBits = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(instancePtr));
   const auto randomBits = static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64());
-
   juce::String id = juce::String::toHexString(static_cast<int64_t>(nowMs)).toUpperCase()
     + juce::String::toHexString(static_cast<int64_t>(randomBits ^ (ptrBits << 7))).toUpperCase();
 
@@ -41,6 +40,17 @@ static juce::String makePluginInstanceId(const void* instancePtr)
     id = id.paddedLeft('0', 12);
 
   return id.substring(0, 12);
+}
+
+static juce::String guessMimeTypeForFile(const juce::File& file)
+{
+  auto ext = file.getFileExtension().toLowerCase();
+  if (ext == ".wav") return "audio/wav";
+  if (ext == ".mp3") return "audio/mpeg";
+  if (ext == ".midi" || ext == ".mid") return "audio/midi";
+  if (ext == ".aif" || ext == ".aiff") return "audio/aiff";
+  if (ext == ".flac") return "audio/flac";
+  return "application/octet-stream";
 }
 
 // Style text inputs - matching web app glassmorphism
@@ -107,10 +117,22 @@ static juce::String makePluginInstanceId(const void* instancePtr)
   loginButton.onClick = [this] { startLogin(); };
   joinButton.onClick = [this] { startJoin(); };
   createRoomButton.onClick = [this] { startCreateRoom(); };
-  refreshButton.onClick = [this] { refreshFiles(); };
+  refreshButton.onClick = [this] {
+    if (selectedMode == "updates")
+    {
+      if (isRelayOrCreateRole())
+        attemptRoleAttachIfNeeded();
+      refreshInstancesList();
+      refreshSyncStatus();
+      fetchCollabVisualizationForUpdates(true);
+      setStatus("Project state refreshed.");
+      return;
+    }
+    refreshFiles();
+  };
   downloadButton.onClick = [this] { downloadSelected(); };
 
-  updatesCard.onClick = [this] { selectedMode = "updates"; addErrorLog("Selected mode: Updates"); updateUIForAuthState(); };
+  updatesCard.onClick = [this] { selectedMode = "updates"; addErrorLog("Selected mode: Project"); updateUIForAuthState(); };
 
   // Back button and mode title
   backButton.onClick = [this] {
@@ -131,6 +153,11 @@ static juce::String makePluginInstanceId(const void* instancePtr)
     {
       removeChildComponent(&pullTrackButton);
       pullTrackButton.setVisible(false);
+    }
+    if (attachArtifactButton.getParentComponent() != nullptr)
+    {
+      removeChildComponent(&attachArtifactButton);
+      attachArtifactButton.setVisible(false);
     }
     if (pushLogDisplay.getParentComponent() != nullptr)
     {
@@ -222,6 +249,7 @@ static juce::String makePluginInstanceId(const void* instancePtr)
   styleButton(backButton, juce::Colour(94, 92, 230));
   styleButton(pushTrackButton, producerAccent);
   styleButton(pullTrackButton, producerAccent);
+  styleButton(attachArtifactButton, juce::Colour(120, 204, 120));
   
   writerLabCard.onClick = [this] { selectWriterLab(); };
   producerLabCard.onClick = [this] { selectProducerLab(); };
@@ -230,6 +258,35 @@ static juce::String makePluginInstanceId(const void* instancePtr)
   searchCard.onClick = [this] { selectSearch(); };
   pushTrackButton.onClick = [this] { pushTrack(); };
   pullTrackButton.onClick = [this] { pullTrack(); };
+  attachArtifactButton.onClick = [this] {
+    if (!inRoom || currentSyncRoomCode.isEmpty())
+    {
+      setStatus("Join a room before attaching artifacts");
+      return;
+    }
+
+    artifactFileChooser = std::make_unique<juce::FileChooser>(
+      "Select artifact to attach",
+      juce::File(),
+      "*.wav;*.mp3;*.mid;*.midi"
+    );
+
+    artifactFileChooser->launchAsync(
+      juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+      [this](const juce::FileChooser& chooser)
+      {
+        const auto chosen = chooser.getResult();
+        artifactFileChooser.reset();
+        if (!chosen.existsAsFile())
+          return;
+
+        pendingArtifactFile = chosen;
+        pendingArtifactMimeType = guessMimeTypeForFile(pendingArtifactFile);
+        setStatus("Selected artifact: " + pendingArtifactFile.getFileName() + " (will upload on next push)");
+        addErrorLog("Artifact queued for push: " + pendingArtifactFile.getFileName());
+      }
+    );
+  };
   
   // Push log display - read-only text editor styled like glassmorphism card
   pushLogDisplay.setMultiLine(true);
@@ -287,7 +344,17 @@ static juce::String makePluginInstanceId(const void* instancePtr)
   authStatusLabel.setText("Not Authenticated", juce::dontSendNotification);
   authStatusLabel.setColour(juce::Label::textColourId, juce::Colour(248, 113, 113).withAlpha(0.9f));
   authStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-  authStatusLabel.setJustificationType(juce::Justification::centred);
+  authStatusLabel.setJustificationType(juce::Justification::centredLeft);
+
+  roleStatusLabel.setText("Role: MASTER", juce::dontSendNotification);
+  roleStatusLabel.setColour(juce::Label::textColourId, juce::Colour(16, 185, 129).withAlpha(0.95f));
+  roleStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+  roleStatusLabel.setJustificationType(juce::Justification::centredRight);
+
+  roleBadgeLabel.setText("MASTER", juce::dontSendNotification);
+  roleBadgeLabel.setColour(juce::Label::textColourId, juce::Colour(16, 185, 129).withAlpha(0.95f));
+  roleBadgeLabel.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+  roleBadgeLabel.setJustificationType(juce::Justification::centred);
 
   fileList.setModel(&listModel);
 
@@ -456,6 +523,8 @@ static juce::String makePluginInstanceId(const void* instancePtr)
   addAndMakeVisible(tokenLabel);
   addAndMakeVisible(syncStatusLabel);
   addAndMakeVisible(authStatusLabel);
+  addAndMakeVisible(roleStatusLabel);
+  addAndMakeVisible(roleBadgeLabel);
   addAndMakeVisible(fileList);
   addAndMakeVisible(packList);
   addAndMakeVisible(generatePackButton);
@@ -601,6 +670,25 @@ void InspireVSTAudioProcessorEditor::paint(juce::Graphics& g)
     fontAudio->drawAt(g, fontaudio::CaretDown, 12.0f, juce::Colour(34, 211, 238).withAlpha(0.9f), logoX + logoW - 18, 16);
   }
 
+  if (!roleStatusBarBounds.isEmpty())
+  {
+    const auto accent = roleAccentColour();
+    g.setColour(accent.withAlpha(0.18f));
+    g.fillRoundedRectangle(roleStatusBarBounds.toFloat(), 8.0f);
+    g.setColour(accent.withAlpha(0.45f));
+    g.drawRoundedRectangle(roleStatusBarBounds.toFloat(), 8.0f, 1.0f);
+  }
+
+  if (roleBadgeLabel.isVisible())
+  {
+    const auto badgeBounds = roleBadgeLabel.getBounds().toFloat();
+    const auto accent = roleAccentColour();
+    g.setColour(accent.withAlpha(0.20f));
+    g.fillRoundedRectangle(badgeBounds, 10.0f);
+    g.setColour(accent.withAlpha(0.55f));
+    g.drawRoundedRectangle(badgeBounds, 10.0f, 1.0f);
+  }
+
   // Draw FontAudio icons for action buttons to avoid missing/unsupported symbols
   const auto iconColour = juce::Colour(241, 245, 255).withAlpha(0.95f);
   if (generatePackButton.isVisible())
@@ -651,6 +739,8 @@ void InspireVSTAudioProcessorEditor::resized()
   generatePackButton.setBounds(iconX, 8 + (36 - iconSize) / 2, iconSize, iconSize);
   savePackButton.setBounds(iconX + iconSize + gap, 8 + (36 - iconSize) / 2, iconSize, iconSize);
   openNotepadButton.setBounds(iconX + (iconSize + gap) * 2, 8 + (36 - iconSize) / 2, iconSize, iconSize);
+
+  roleBadgeLabel.setBounds(getWidth() - padding - 110, 14, 110, 22);
   
   // Make these top-right buttons visible in creative modes
   generatePackButton.setVisible(false);
@@ -667,8 +757,12 @@ void InspireVSTAudioProcessorEditor::resized()
     serverUrlInput.setBounds(padding, yPos, getWidth() - padding * 2, lineHeight);
     yPos += lineHeight + gap;
 
-    // Auth status banner
-    authStatusLabel.setBounds(padding, yPos, getWidth() - padding * 2, 22);
+    // Auth + role status bar
+    const int statusBarW = getWidth() - padding * 2;
+    roleStatusBarBounds = juce::Rectangle<int>(padding, yPos, statusBarW, 22);
+    const int halfW = (statusBarW - gap) / 2;
+    authStatusLabel.setBounds(padding + 10, yPos, halfW - 10, 22);
+    roleStatusLabel.setBounds(padding + halfW + gap, yPos, halfW - 10, 22);
     yPos += 24;
 
     // Auth buttons (3 buttons side by side)
@@ -685,7 +779,11 @@ void InspireVSTAudioProcessorEditor::resized()
   else
   {
     // Authenticated: show mode cards and creative UI (room is optional)
-    authStatusLabel.setBounds(padding, yPos, getWidth() - padding * 2, 22);
+    const int statusBarW = getWidth() - padding * 2;
+    roleStatusBarBounds = juce::Rectangle<int>(padding, yPos, statusBarW, 22);
+    const int halfW = (statusBarW - gap) / 2;
+    authStatusLabel.setBounds(padding + 10, yPos, halfW - 10, 22);
+    roleStatusLabel.setBounds(padding + halfW + gap, yPos, halfW - 10, 22);
     yPos += 24;
 
     if (!inRoom && selectedMode.isEmpty())
@@ -745,17 +843,20 @@ void InspireVSTAudioProcessorEditor::resized()
     // Push/Pull buttons: only lay out when in Updates mode AND in a room
     if (inRoom && selectedMode == "updates")
     {
-      int pushPullBtnWidth = (getWidth() - padding * 2 - gap) / 2;
+      int pushPullBtnWidth = (getWidth() - padding * 2 - gap * 2) / 3;
       pushTrackButton.setVisible(true);
       pullTrackButton.setVisible(true);
+      attachArtifactButton.setVisible(true);
       pushTrackButton.setBounds(padding, yPos, pushPullBtnWidth, lineHeight);
       pullTrackButton.setBounds(padding + pushPullBtnWidth + gap, yPos, pushPullBtnWidth, lineHeight);
+      attachArtifactButton.setBounds(padding + (pushPullBtnWidth + gap) * 2, yPos, pushPullBtnWidth, lineHeight);
       yPos += lineHeight + gap + 8;
     }
     else
     {
       pushTrackButton.setVisible(false);
       pullTrackButton.setVisible(false);
+      attachArtifactButton.setVisible(false);
     }
     
     // Old filter control is deprecated - replaced by new 3x3 grid in InitialView
@@ -1044,6 +1145,12 @@ void InspireVSTAudioProcessorEditor::refreshUpdatesDisplay()
     return;
 
   juce::String txt;
+  if (groupedTimelineText.isNotEmpty())
+  {
+    txt += groupedTimelineText;
+    txt += "\n----------------------------------------\n";
+  }
+
   for (auto& v : updatesList)
   {
     if (v.isObject())
@@ -1254,6 +1361,10 @@ void InspireVSTAudioProcessorEditor::logout()
   isGuest = false;
   sessionToken = "";
   authUsername = "";
+  pendingAuthBridgeId = "";
+  pendingAuthBridgeStartedAtMs = 0;
+  lastAuthBridgePollAtMs = 0;
+  authBridgePollInFlight = false;
   lastServerTimeMs = 0;
   sessionStartTimeMs = juce::Time::currentTimeMillis();  // Reset session start time
   
@@ -1343,6 +1454,14 @@ void InspireVSTAudioProcessorEditor::showLogoMenu()
   menu.addItem(4, "Portrait Mode", true, getWidth() < getHeight());
   menu.addItem(5, "Landscape Mode", true, getWidth() >= getHeight());
   menu.addSeparator();
+
+  // Runtime plugin role controls while split products are in progress
+  const auto role = effectivePluginRole();
+  menu.addSectionHeader("Plugin Role");
+  menu.addItem(20, "Master", true, role == "master");
+  menu.addItem(21, "Relay", true, role == "relay");
+  menu.addItem(22, "Create", true, role == "create");
+  menu.addSeparator();
   
   // Utility options
   menu.addItem(6, "Show Error Logs", true, false);
@@ -1391,6 +1510,23 @@ void InspireVSTAudioProcessorEditor::showLogoMenu()
       case 8: // Session Info - Show popup
         showSessionInfoPopup();
         break;
+
+      case 20:
+      case 21:
+      case 22:
+      {
+        pluginRole = (result == 20 ? "master" : (result == 21 ? "relay" : "create"));
+        roleAttached = false;
+        roleLockedByMasterRequirement = false;
+        roleLockReason.clear();
+        if (pluginRole == "master")
+          masterInstanceId = pluginInstanceID;
+        addErrorLog("Switched plugin role to " + pluginRole.toUpperCase());
+        setStatus("Plugin role set to " + pluginRole.toUpperCase());
+        saveSessionData();
+        updateUIForAuthState();
+        break;
+      }
         
       default:
         break;
@@ -1514,38 +1650,63 @@ void InspireVSTAudioProcessorEditor::setStatus(const juce::String& message)
 void InspireVSTAudioProcessorEditor::setBusy(bool shouldBeBusy)
 {
   busy = shouldBeBusy;
+  const bool roleMaster = isMasterRole();
+  const bool roleWorker = isRelayOrCreateRole();
   guestButton.setEnabled(!busy && !isAuthenticated);
   signupButton.setEnabled(!busy && !isAuthenticated);
   loginButton.setEnabled(!busy && !isAuthenticated);
   joinButton.setEnabled(!busy && isAuthenticated);
-  createRoomButton.setEnabled(!busy && isAuthenticated);
+  createRoomButton.setEnabled(!busy && isAuthenticated && roleMaster);
   refreshButton.setEnabled(!busy && isAuthenticated && sessionToken.isNotEmpty());
   downloadButton.setEnabled(!busy && isAuthenticated && sessionToken.isNotEmpty());
+  if (roleWorker && roleLockedByMasterRequirement)
+  {
+    pushTrackButton.setEnabled(false);
+    pullTrackButton.setEnabled(false);
+    attachArtifactButton.setEnabled(false);
+  }
+  else
+  {
+    pushTrackButton.setEnabled(!busy);
+    pullTrackButton.setEnabled(!busy);
+    attachArtifactButton.setEnabled(!busy);
+  }
 }
 
 void InspireVSTAudioProcessorEditor::updateUIForAuthState()
 {
+  const auto role = effectivePluginRole();
+  const auto roleAccent = roleAccentColour();
+
   // Update auth status label
   if (isAuthenticated)
   {
-    juce::String statusText = isGuest ? "Guest Mode" : "Authenticated";
+    juce::String statusText = isGuest ? "Auth: Guest" : "Auth: User";
     if (authUsername.isNotEmpty())
     {
-      statusText += " - " + authUsername;
+      statusText += " (" + authUsername + ")";
     }
     authStatusLabel.setText(statusText, juce::dontSendNotification);
     authStatusLabel.setColour(juce::Label::textColourId, juce::Colour(34, 211, 238).withAlpha(0.9f));
   }
   else
   {
-    authStatusLabel.setText("Not Authenticated - Choose Login Option", juce::dontSendNotification);
+    authStatusLabel.setText("Auth: Not Signed In", juce::dontSendNotification);
     authStatusLabel.setColour(juce::Label::textColourId, juce::Colour(248, 113, 113).withAlpha(0.9f));
   }
+
+  roleStatusLabel.setText("Role: " + role.toUpperCase(), juce::dontSendNotification);
+  roleStatusLabel.setColour(juce::Label::textColourId, roleAccent.withAlpha(0.95f));
+  roleBadgeLabel.setText(role.toUpperCase(), juce::dontSendNotification);
+  roleBadgeLabel.setColour(juce::Label::textColourId, roleAccent.withAlpha(0.95f));
+  updatesCard.setButtonText(isMasterRole() ? "Project" : "Updates");
 
   // Show/hide components based on auth state
   const bool showAuthButtons = !isAuthenticated;
   const bool showPostAuthButtons = isAuthenticated && !inRoom && selectedMode.isEmpty();  // Home screen only
   const bool inRoomCollaboration = isAuthenticated && inRoom;
+  const bool roleMaster = isMasterRole();
+  const bool roleCreate = effectivePluginRole() == "create";
   
   // *** KEY CHANGE: Mode cards show once authenticated, not requiring a room ***
   const bool showModeCards = isAuthenticated && selectedMode.isEmpty();
@@ -1561,13 +1722,18 @@ void InspireVSTAudioProcessorEditor::updateUIForAuthState()
   codeInput.setVisible(showPostAuthButtons);
   passwordInput.setVisible(showPostAuthButtons);
   joinButton.setVisible(showPostAuthButtons);
-  createRoomButton.setVisible(showPostAuthButtons);
+  createRoomButton.setVisible(showPostAuthButtons && roleMaster);
+  joinButton.setButtonText(roleMaster ? "Join Room" : "Attach to Master");
   
   // Mode cards (shown when authenticated and no specific mode selected)
-  writerLabCard.setVisible(showModeCards);
-  producerLabCard.setVisible(showModeCards);
-  editorSuiteCard.setVisible(showModeCards);
+  writerLabCard.setVisible(showModeCards && roleCreate);
+  producerLabCard.setVisible(showModeCards && roleCreate);
+  editorSuiteCard.setVisible(showModeCards && roleCreate);
   updatesCard.setVisible(showModeCards);
+  writerLabCard.setEnabled(roleCreate);
+  producerLabCard.setEnabled(roleCreate);
+  editorSuiteCard.setEnabled(roleCreate);
+  updatesCard.setEnabled(true);
 
   // Mode title and back button (shown when a mode is selected)
   bool inModeView = !selectedMode.isEmpty();
@@ -1578,13 +1744,24 @@ void InspireVSTAudioProcessorEditor::updateUIForAuthState()
   const bool inCreativeMode = isAuthenticated && (selectedMode == "writer" || selectedMode == "producer" || selectedMode == "editor");
   const bool inSearchMode = isAuthenticated && (selectedMode == "search");
 
-  // Auth banner is only shown on home/auth screens to reduce clutter in mode views
-  authStatusLabel.setVisible(!isAuthenticated || selectedMode.isEmpty());
+  // Keep auth/role indicators visible as a persistent status bar.
+  authStatusLabel.setVisible(true);
+  roleStatusLabel.setVisible(true);
+  roleBadgeLabel.setVisible(true);
 
   // Push/Pull buttons and log: only visible when in a room AND in Updates mode
   const bool inUpdatesMode = inRoomCollaboration && selectedMode == "updates";
   pushTrackButton.setVisible(inUpdatesMode);
   pullTrackButton.setVisible(inUpdatesMode);
+  attachArtifactButton.setVisible(inUpdatesMode);
+  if (isRelayOrCreateRole() && roleLockedByMasterRequirement)
+  {
+    pushTrackButton.setEnabled(false);
+    pullTrackButton.setEnabled(false);
+    attachArtifactButton.setEnabled(false);
+    if (roleLockReason.isNotEmpty())
+      syncStatusIndicator.setText("Locked: " + roleLockReason, juce::dontSendNotification);
+  }
   pushLogDisplay.setVisible(inUpdatesMode);
   pushLogLabel.setVisible(inUpdatesMode);
 
@@ -1633,7 +1810,7 @@ void InspireVSTAudioProcessorEditor::startGuestMode()
 
   runAsync([this, serverUrl] {
     addErrorLog("Attempting guest login at: " + serverUrl);
-    const auto result = client.continueAsGuest(serverUrl);
+    const auto result = client.continueAsGuest(serverUrl, effectivePluginRole());
     juce::MessageManager::callAsync([this, result] {
       if (result.token.isNotEmpty())
       {
@@ -1668,27 +1845,48 @@ void InspireVSTAudioProcessorEditor::startSignup()
 
   setStatus("Opening signup in browser...");
 
-  // Frontend UI runs on port 3000 (HTTPS), backend API on port 3001
-  juce::String apiUrl = serverUrlInput.getText().trim();
-  juce::String webUrl;
-  
-  // If API is on localhost:3001, derive frontend URL as localhost:3000
-  if (apiUrl.contains("localhost:3001") || apiUrl.contains("127.0.0.1:3001"))
+  // In local dev, backend is usually :3001 and frontend is :3000.
+  // In deployed environments, frontend and backend may share origin.
+  auto resolveFrontendBaseUrl = [] (juce::String apiUrl) -> juce::String
   {
-    webUrl = "https://localhost:3000";
-  }
-  else if (apiUrl.isEmpty())
-  {
-    webUrl = "https://localhost:3000";
-  }
-  else
-  {
-    // Production: API and frontend are same origin
-    webUrl = apiUrl;
-  }
-  
-  juce::URL signupUrl(webUrl + "/signup");
+    apiUrl = apiUrl.trim();
+    if (apiUrl.isEmpty())
+      return "https://localhost:3000";
+
+    while (apiUrl.endsWithChar('/'))
+      apiUrl = apiUrl.dropLastCharacters(1);
+
+    if (!apiUrl.startsWithIgnoreCase("http://") && !apiUrl.startsWithIgnoreCase("https://"))
+      apiUrl = "http://" + apiUrl;
+
+    juce::URL parsed(apiUrl);
+    const auto host = parsed.getDomain();
+    const auto port = parsed.getPort();
+
+    if (host.isEmpty())
+      return "https://localhost:3000";
+
+    if (port == 3001)
+      return "https://" + host + ":3000";
+
+    // If no explicit port is set, treat it as an API host input and target the dev frontend.
+    if (port <= 0)
+      return "https://" + host + ":3000";
+
+    return apiUrl;
+  };
+
+  juce::String webUrl = resolveFrontendBaseUrl(serverUrlInput.getText());
+  pendingAuthBridgeId = juce::Uuid().toString().retainCharacters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").substring(0, 24);
+  pendingAuthBridgeStartedAtMs = juce::Time::currentTimeMillis();
+  lastAuthBridgePollAtMs = 0;
+  authBridgePollInFlight = false;
+
+  juce::URL signupUrl(webUrl + "/signup?vst_bridge_id=" + juce::URL::addEscapeChars(pendingAuthBridgeId, true));
   signupUrl.launchInDefaultBrowser();
+
+  // Poll bridge completion while waiting for browser auth.
+  startTimer(1000);
 
   setStatus("Complete signup in browser, then click Login.");
 }
@@ -1702,27 +1900,45 @@ void InspireVSTAudioProcessorEditor::startLogin()
 
   setStatus("Opening login in browser...");
 
-  // Frontend UI runs on port 3000 (HTTPS), backend API on port 3001
-  juce::String apiUrl = serverUrlInput.getText().trim();
-  juce::String webUrl;
-  
-  // If API is on localhost:3001, derive frontend URL as localhost:3000
-  if (apiUrl.contains("localhost:3001") || apiUrl.contains("127.0.0.1:3001"))
+  auto resolveFrontendBaseUrl = [] (juce::String apiUrl) -> juce::String
   {
-    webUrl = "https://localhost:3000";
-  }
-  else if (apiUrl.isEmpty())
-  {
-    webUrl = "https://localhost:3000";
-  }
-  else
-  {
-    // Production: API and frontend are same origin
-    webUrl = apiUrl;
-  }
-  
-  juce::URL loginUrl(webUrl);
+    apiUrl = apiUrl.trim();
+    if (apiUrl.isEmpty())
+      return "https://localhost:3000";
+
+    while (apiUrl.endsWithChar('/'))
+      apiUrl = apiUrl.dropLastCharacters(1);
+
+    if (!apiUrl.startsWithIgnoreCase("http://") && !apiUrl.startsWithIgnoreCase("https://"))
+      apiUrl = "http://" + apiUrl;
+
+    juce::URL parsed(apiUrl);
+    const auto host = parsed.getDomain();
+    const auto port = parsed.getPort();
+
+    if (host.isEmpty())
+      return "https://localhost:3000";
+
+    if (port == 3001)
+      return "https://" + host + ":3000";
+
+    if (port <= 0)
+      return "https://" + host + ":3000";
+
+    return apiUrl;
+  };
+
+  juce::String webUrl = resolveFrontendBaseUrl(serverUrlInput.getText());
+  pendingAuthBridgeId = juce::Uuid().toString().retainCharacters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").substring(0, 24);
+  pendingAuthBridgeStartedAtMs = juce::Time::currentTimeMillis();
+  lastAuthBridgePollAtMs = 0;
+  authBridgePollInFlight = false;
+
+  juce::URL loginUrl(webUrl + "/login?vst_bridge_id=" + juce::URL::addEscapeChars(pendingAuthBridgeId, true));
   loginUrl.launchInDefaultBrowser();
+
+  // Poll bridge completion while waiting for browser auth.
+  startTimer(1000);
 
   setStatus("Login in browser, then return here.");
 }
@@ -1746,10 +1962,49 @@ void InspireVSTAudioProcessorEditor::startJoin()
       setStatus("Joining room...");
 
       const auto serverUrl = serverUrlInput.getText().trim();
+      const auto role = effectivePluginRole();
 
-      runAsync([this, serverUrl, roomId, code] {
+      if (isRelayOrCreateRole())
+      {
+        runAsync([this, serverUrl, code, role] {
+          const auto attachResult = client.attachPluginToMaster(serverUrl, sessionToken, role, code.toUpperCase(), pluginInstanceID);
+          juce::MessageManager::callAsync([this, attachResult, code, role] {
+            if (attachResult.ok)
+            {
+              currentSyncRoomCode = attachResult.roomCode.isNotEmpty() ? attachResult.roomCode : code.toUpperCase();
+              masterInstanceId = attachResult.masterInstanceId;
+              roleAttached = true;
+              roleLockedByMasterRequirement = false;
+              roleLockReason.clear();
+              inRoom = true;
+              codeInput.setText(currentSyncRoomCode, false);
+              roomInfoLabel.setText("Room: " + currentSyncRoomCode, juce::dontSendNotification);
+              tokenLabel.setText("Session: " + sessionToken.substring(0, 12) + "...", juce::dontSendNotification);
+              addErrorLog("✓ " + role.toUpperCase() + " attached to Master " + masterInstanceId);
+              setStatus("Attached to Master in room " + currentSyncRoomCode);
+              updateSessionInfoDisplay();
+              saveSessionData();
+              updateUIForAuthState();
+              startSyncPolling();
+            }
+            else
+            {
+              roleAttached = false;
+              roleLockedByMasterRequirement = true;
+              roleLockReason = attachResult.errorMessage.isNotEmpty() ? attachResult.errorMessage : "master_required";
+              addErrorLog("✗ Attach failed: " + roleLockReason);
+              setStatus("Attach failed: " + roleLockReason);
+              updateUIForAuthState();
+            }
+            setBusy(false);
+          });
+        });
+        return;
+      }
+
+      runAsync([this, serverUrl, roomId, code, role] {
         addErrorLog("Joining room: " + roomId + " using access code: " + code);
-        const auto result = client.joinRoom(serverUrl, roomId, code);
+        const auto result = client.joinRoom(serverUrl, roomId, code, role, pluginInstanceID, masterInstanceId);
         juce::MessageManager::callAsync([this, result, code] {
           if (result.token.isNotEmpty())
           {
@@ -1758,6 +2013,10 @@ void InspireVSTAudioProcessorEditor::startJoin()
             if (result.roomId.isNotEmpty())
               roomIdInput.setText(result.roomId, false);
             currentSyncRoomCode = result.roomCode.isNotEmpty() ? result.roomCode : code.toUpperCase();
+            masterInstanceId = pluginInstanceID;
+            roleAttached = true;
+            roleLockedByMasterRequirement = false;
+            roleLockReason.clear();
             codeInput.setText(currentSyncRoomCode, false);
             saveSessionData();
             inRoom = true;  // Mark as in a room
@@ -1795,6 +2054,12 @@ void InspireVSTAudioProcessorEditor::startCreateRoom()
     return;
   }
 
+  if (!isMasterRole())
+  {
+    setStatus("Only Master role can create rooms.");
+    return;
+  }
+
   const auto initialPassword = passwordInput.getText().trim();
 
   showCreateRoomDialog(this, initialPassword,
@@ -1809,13 +2074,17 @@ void InspireVSTAudioProcessorEditor::startCreateRoom()
       runAsync([this, serverUrl, password] {
         juce::String pwdDisplay = password.isEmpty() ? juce::String("(none)") : juce::String("***");
         addErrorLog("Creating room with password: " + pwdDisplay);
-        const auto result = client.createRoom(serverUrl, password, isGuest);
+        const auto result = client.createRoom(serverUrl, password, isGuest, effectivePluginRole(), pluginInstanceID);
         juce::MessageManager::callAsync([this, result, password] {
           if (result.roomId.isNotEmpty() && result.code.isNotEmpty())
           {
             roomIdInput.setText(result.roomId, false);
             codeInput.setText(result.code, false);
             currentSyncRoomCode = result.code;
+            masterInstanceId = pluginInstanceID;
+            roleAttached = true;
+            roleLockedByMasterRequirement = false;
+            roleLockReason.clear();
             inRoom = true;  // Mark as in a room
             saveRoomCode();
             
@@ -2958,6 +3227,11 @@ void InspireVSTAudioProcessorEditor::saveSessionData()
   d->setProperty("sessionStartTimeMs", static_cast<double>(sessionStartTimeMs));
   d->setProperty("sessionDurationMs", static_cast<double>(sessionDurationMs));
   d->setProperty("pluginInstanceID", pluginInstanceID);
+  d->setProperty("pluginRole", pluginRole);
+  d->setProperty("masterInstanceId", masterInstanceId);
+  d->setProperty("roleAttached", roleAttached);
+  d->setProperty("roleLocked", roleLockedByMasterRequirement);
+  d->setProperty("roleLockReason", roleLockReason);
 
   juce::File f = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
     .getChildFile(".inspire-vst-session");
@@ -2999,6 +3273,13 @@ void InspireVSTAudioProcessorEditor::loadSessionData()
     authStatus = dob->getProperty("authStatus").toString();
     sessionStartTimeMs = static_cast<int64_t>(dob->getProperty("sessionStartTimeMs"));
     sessionDurationMs = static_cast<int64_t>(dob->getProperty("sessionDurationMs"));
+    pluginRole = dob->getProperty("pluginRole").toString();
+    if (pluginRole.isEmpty())
+      pluginRole = "master";
+    masterInstanceId = dob->getProperty("masterInstanceId").toString();
+    roleAttached = static_cast<bool>(dob->getProperty("roleAttached"));
+    roleLockedByMasterRequirement = static_cast<bool>(dob->getProperty("roleLocked"));
+    roleLockReason = dob->getProperty("roleLockReason").toString();
     if (sessionToken.isNotEmpty())
       isAuthenticated = true;
   }
@@ -3027,6 +3308,124 @@ void InspireVSTAudioProcessorEditor::startSyncPolling()
   syncPollTimer->startTimer(1500);
 }
 
+juce::String InspireVSTAudioProcessorEditor::effectivePluginRole() const
+{
+  auto role = pluginRole.toLowerCase();
+  if (role == "master" || role == "relay" || role == "create")
+    return role;
+  return "master";
+}
+
+juce::Colour InspireVSTAudioProcessorEditor::roleAccentColour() const
+{
+  const auto role = effectivePluginRole();
+  if (role == "master") return juce::Colour(16, 185, 129);
+  if (role == "relay") return juce::Colour(34, 211, 238);
+  if (role == "create") return juce::Colour(236, 72, 153);
+  return juce::Colour(148, 163, 184);
+}
+
+bool InspireVSTAudioProcessorEditor::isMasterRole() const
+{
+  return effectivePluginRole() == "master";
+}
+
+bool InspireVSTAudioProcessorEditor::isRelayOrCreateRole() const
+{
+  const auto role = effectivePluginRole();
+  return role == "relay" || role == "create";
+}
+
+void InspireVSTAudioProcessorEditor::attemptRoleAttachIfNeeded()
+{
+  if (!isRelayOrCreateRole() || sessionToken.isEmpty() || currentSyncRoomCode.isEmpty())
+    return;
+
+  const auto nowMs = juce::Time::currentTimeMillis();
+  if (roleAttached && !roleLockedByMasterRequirement)
+    return;
+  if (nowMs - lastRoleAttachAttemptMs < 5000)
+    return;
+
+  lastRoleAttachAttemptMs = nowMs;
+  const auto serverUrl = serverUrlInput.getText().trim();
+  const auto role = effectivePluginRole();
+
+  runAsync([this, serverUrl, role] {
+    const auto attach = client.attachPluginToMaster(
+      serverUrl,
+      sessionToken,
+      role,
+      currentSyncRoomCode,
+      pluginInstanceID
+    );
+
+    juce::MessageManager::callAsync([this, attach, role] {
+      if (attach.ok)
+      {
+        roleAttached = true;
+        roleLockedByMasterRequirement = false;
+        roleLockReason.clear();
+        if (attach.masterInstanceId.isNotEmpty())
+          masterInstanceId = attach.masterInstanceId;
+        setStatus(role.toUpperCase() + " attached to Master " + masterInstanceId);
+      }
+      else
+      {
+        roleAttached = false;
+        roleLockedByMasterRequirement = true;
+        roleLockReason = attach.errorMessage.isNotEmpty() ? attach.errorMessage : "master_required";
+        setStatus("Locked: " + roleLockReason);
+      }
+      updateUIForAuthState();
+      saveSessionData();
+    });
+  });
+}
+
+void InspireVSTAudioProcessorEditor::heartbeatAndPollMasterState()
+{
+  if (!isMasterRole() || sessionToken.isEmpty() || currentSyncRoomCode.isEmpty())
+    return;
+
+  const auto nowMs = juce::Time::currentTimeMillis();
+  const auto serverUrl = serverUrlInput.getText().trim();
+
+  if (nowMs - lastMasterHeartbeatMs >= 5000)
+  {
+    lastMasterHeartbeatMs = nowMs;
+    runAsync([this, serverUrl] {
+      juce::String err;
+      const bool ok = client.sendMasterHeartbeat(
+        serverUrl,
+        sessionToken,
+        currentSyncRoomCode,
+        pluginInstanceID,
+        &err
+      );
+      juce::MessageManager::callAsync([this, ok, err] {
+        if (!ok && err.isNotEmpty())
+          addErrorLog("[Master] heartbeat failed: " + err);
+      });
+    });
+  }
+
+  if (nowMs - lastMasterStatePollMs >= 5000)
+  {
+    lastMasterStatePollMs = nowMs;
+    runAsync([this, serverUrl] {
+      const auto state = client.getMasterRoomState(serverUrl, currentSyncRoomCode, sessionToken);
+      juce::MessageManager::callAsync([this, state] {
+        if (!state.ok)
+          return;
+        const juce::String summary = "Master active | Relay: " + juce::String(state.relayCount) +
+                                     " | Create: " + juce::String(state.createCount);
+        syncStatusIndicator.setText(summary, juce::dontSendNotification);
+      });
+    });
+  }
+}
+
 void InspireVSTAudioProcessorEditor::stopSyncPolling()
 {
   if (syncPollTimer != nullptr)
@@ -3043,14 +3442,38 @@ void InspireVSTAudioProcessorEditor::pollTrackState()
   {
     return;
   }
+
+  if (isMasterRole())
+    heartbeatAndPollMasterState();
+  else if (isRelayOrCreateRole())
+    attemptRoleAttachIfNeeded();
+  if (isRelayOrCreateRole() && roleLockedByMasterRequirement)
+    return;
   
   const auto serverUrl = serverUrlInput.getText();
   const auto trackId = syncTrackId;
   const int sinceVersion = trackVersions[syncTrackId];
   
   runAsync([this, serverUrl, trackId, sinceVersion] {
-    const auto response = client.pullTrackState(serverUrl, currentSyncRoomCode, trackId, sinceVersion);
+    const auto response = client.pullTrackState(
+      serverUrl,
+      currentSyncRoomCode,
+      trackId,
+      sinceVersion,
+      sessionToken,
+      effectivePluginRole(),
+      masterInstanceId
+    );
     juce::MessageManager::callAsync([this, response] {
+      if (response.masterRequired)
+      {
+        roleLockedByMasterRequirement = true;
+        roleAttached = false;
+        roleLockReason = response.errorMessage.isNotEmpty() ? response.errorMessage : "master_required";
+        updateUIForAuthState();
+        attemptRoleAttachIfNeeded();
+        return;
+      }
       onSyncPullResponse(response);
     });
   });
@@ -3365,6 +3788,12 @@ int InspireVSTAudioProcessorEditor::getRemainingMinutes() const
 
 void InspireVSTAudioProcessorEditor::selectWriterLab()
 {
+  if (effectivePluginRole() != "create")
+  {
+    setStatus("Writer Lab is only available while Plugin Role is CREATE.");
+    return;
+  }
+
   selectedMode = "writer";
   currentUIState = UIState::InitialView;
   generatedPackItems.clear();
@@ -3469,6 +3898,12 @@ void InspireVSTAudioProcessorEditor::selectWriterLab()
 
 void InspireVSTAudioProcessorEditor::selectProducerLab()
 {
+  if (effectivePluginRole() != "create")
+  {
+    setStatus("Producer Lab is only available while Plugin Role is CREATE.");
+    return;
+  }
+
   selectedMode = "producer";
   currentUIState = UIState::InitialView;
   generatedPackItems.clear();
@@ -3544,6 +3979,12 @@ void InspireVSTAudioProcessorEditor::selectProducerLab()
 
 void InspireVSTAudioProcessorEditor::selectEditorSuite()
 {
+  if (effectivePluginRole() != "create")
+  {
+    setStatus("Editor Suite is only available while Plugin Role is CREATE.");
+    return;
+  }
+
   selectedMode = "editor";
   currentUIState = UIState::InitialView;
   generatedPackItems.clear();
@@ -3619,9 +4060,10 @@ void InspireVSTAudioProcessorEditor::selectEditorSuite()
 
 void InspireVSTAudioProcessorEditor::selectUpdates()
 {
+  const auto modeLabel = isMasterRole() ? juce::String("Project") : juce::String("Updates");
   selectedMode = "updates";
-  addErrorLog("Selected mode: Updates");
-  modeTitleLabel.setText("Updates", juce::dontSendNotification);
+  addErrorLog("Selected mode: " + modeLabel);
+  modeTitleLabel.setText(modeLabel, juce::dontSendNotification);
   modeTitleLabel.setVisible(true);
   backButton.setVisible(true);
   // Add push/pull and updates UI when entering Updates mode
@@ -3629,12 +4071,14 @@ void InspireVSTAudioProcessorEditor::selectUpdates()
     addAndMakeVisible(pushTrackButton);
   if (pullTrackButton.getParentComponent() == nullptr)
     addAndMakeVisible(pullTrackButton);
+  if (attachArtifactButton.getParentComponent() == nullptr)
+    addAndMakeVisible(attachArtifactButton);
   if (pushLogDisplay.getParentComponent() == nullptr)
     addAndMakeVisible(pushLogDisplay);
   if (pushLogLabel.getParentComponent() == nullptr)
     addAndMakeVisible(pushLogLabel);
 
-  pushLogLabel.setText("Updates", juce::dontSendNotification);
+  pushLogLabel.setText(modeLabel, juce::dontSendNotification);
   pushLogDisplay.setReadOnly(true);
 
   // Phase 1: VST Instance Broadcasting - Show instances list
@@ -3648,6 +4092,9 @@ void InspireVSTAudioProcessorEditor::selectUpdates()
   // Phase 3: Try WebSocket first, fall back to polling
   refreshInstancesList();
   refreshSyncStatus();
+  fetchCollabVisualizationForUpdates(false);
+  if (isRelayOrCreateRole())
+    attemptRoleAttachIfNeeded();
   startWebSocketSync();  // Phase 3: Try WebSocket connection
 
   refreshUpdatesDisplay();
@@ -3708,6 +4155,12 @@ void InspireVSTAudioProcessorEditor::pushTrack()
   {
     return;
   }
+  if (isRelayOrCreateRole() && roleLockedByMasterRequirement)
+  {
+    setStatus("Locked: " + (roleLockReason.isNotEmpty() ? roleLockReason : juce::String("master_required")));
+    attemptRoleAttachIfNeeded();
+    return;
+  }
   
   setBusy(true);
   addErrorLog("Pushing track to room...");
@@ -3755,10 +4208,19 @@ void InspireVSTAudioProcessorEditor::pushTrack()
     
     const int baseVersion = trackVersions[syncTrackId];
     const int beatForLog = state.currentBeat;
-    const auto response = client.pushTrackState(serverUrl, state, baseVersion);
-    juce::MessageManager::callAsync([this, response, beatForLog] {
+    const auto response = client.pushTrackState(
+      serverUrl,
+      state,
+      baseVersion,
+      sessionToken,
+      effectivePluginRole(),
+      masterInstanceId
+    );
+    juce::MessageManager::callAsync([this, response, beatForLog, serverUrl] {
       if (response.ok)
       {
+        roleLockedByMasterRequirement = false;
+        roleLockReason.clear();
         auto now = juce::Time::getCurrentTime();
         juce::String logEntry = "[" + now.toString(true, true) + "] Pushed track (" + selectedMode + " mode)";
         pushLog.insert(0, logEntry);
@@ -3783,25 +4245,86 @@ void InspireVSTAudioProcessorEditor::pushTrack()
         if (wsClient && wsClient->isConnected())
         {
           juce::DynamicObject::Ptr pushMsg = new juce::DynamicObject();
+          const auto role = effectivePluginRole();
+          const auto resolvedMasterId = masterInstanceId.isNotEmpty() ? masterInstanceId : pluginInstanceID;
           pushMsg->setProperty("type", "track-pushed");
           pushMsg->setProperty("pluginInstanceId", pluginInstanceID);
           pushMsg->setProperty("roomCode", currentSyncRoomCode);
+          pushMsg->setProperty("pluginRole", role);
+          pushMsg->setProperty("masterInstanceId", resolvedMasterId);
           pushMsg->setProperty("version", response.version);
           pushMsg->setProperty("timestamp", juce::Time::currentTimeMillis());
           wsClient->sendMessage(juce::JSON::toString(juce::var(pushMsg.get())));
         }
 
         addErrorLog("✓ Track pushed successfully");
+        setStatus("Track pushed (v" + juce::String(response.version) + ")");
+        refreshInstancesList();
+        refreshSyncStatus();
+        fetchCollabVisualizationForUpdates(true);
+
+        if (pendingArtifactFile.existsAsFile())
+        {
+          if (response.eventId.isEmpty())
+          {
+            addErrorLog("⚠ Track push succeeded but event ID missing; artifact upload skipped");
+          }
+          else
+          {
+            addErrorLog("Uploading artifact: " + pendingArtifactFile.getFileName());
+            const auto uploadResult = client.uploadCollabAssetChunked(
+              serverUrl,
+              currentSyncRoomCode,
+              sessionToken,
+              response.eventId,
+              syncTrackId,
+              pendingArtifactFile,
+              pendingArtifactMimeType,
+              0.0,
+              256 * 1024
+            );
+
+            if (uploadResult.ok)
+            {
+              addErrorLog("✓ Artifact uploaded: " + pendingArtifactFile.getFileName());
+              appendUpdateEvent("artifact",
+                                pluginInstanceID,
+                                response.version,
+                                beatForLog,
+                                "Uploaded " + pendingArtifactFile.getFileName());
+              pendingArtifactFile = juce::File();
+              pendingArtifactMimeType.clear();
+            }
+            else
+            {
+              addErrorLog("✗ Artifact upload failed: " + uploadResult.errorMessage);
+            }
+          }
+        }
       }
       else
       {
+        if (response.masterRequired)
+        {
+          roleLockedByMasterRequirement = true;
+          roleAttached = false;
+          roleLockReason = response.conflictReason.isNotEmpty() ? response.conflictReason : "master_required";
+          addErrorLog("✗ Track push locked: " + roleLockReason);
+          setStatus("Locked: " + roleLockReason);
+          attemptRoleAttachIfNeeded();
+          setBusy(false);
+          updateUIForAuthState();
+          return;
+        }
         if (response.conflict)
         {
           addErrorLog("✗ Track push failed: conflict - " + response.conflictReason);
+          setStatus("Push conflict: " + response.conflictReason);
         }
         else
         {
           addErrorLog("✗ Track push failed");
+          setStatus("Track push failed");
         }
       }
       setBusy(false);
@@ -3815,6 +4338,12 @@ void InspireVSTAudioProcessorEditor::pullTrack()
   {
     return;
   }
+  if (isRelayOrCreateRole() && roleLockedByMasterRequirement)
+  {
+    setStatus("Locked: " + (roleLockReason.isNotEmpty() ? roleLockReason : juce::String("master_required")));
+    attemptRoleAttachIfNeeded();
+    return;
+  }
   
   setBusy(true);
   addErrorLog("Pulling track from room...");
@@ -3824,8 +4353,33 @@ void InspireVSTAudioProcessorEditor::pullTrack()
   const int sinceVersion = trackVersions[syncTrackId];
   
   runAsync([this, serverUrl, trackId, sinceVersion] {
-    const auto response = client.pullTrackState(serverUrl, currentSyncRoomCode, trackId, sinceVersion);
+    const auto response = client.pullTrackState(
+      serverUrl,
+      currentSyncRoomCode,
+      trackId,
+      sinceVersion,
+      sessionToken,
+      effectivePluginRole(),
+      masterInstanceId
+    );
     juce::MessageManager::callAsync([this, response] {
+      if (response.masterRequired)
+      {
+        roleLockedByMasterRequirement = true;
+        roleAttached = false;
+        roleLockReason = response.errorMessage.isNotEmpty() ? response.errorMessage : "master_required";
+        addErrorLog("✗ Pull locked: " + roleLockReason);
+        setStatus("Locked: " + roleLockReason);
+        updateUIForAuthState();
+        setBusy(false);
+        attemptRoleAttachIfNeeded();
+        return;
+      }
+
+      roleLockedByMasterRequirement = false;
+      if (response.masterRequired == false && response.errorMessage.isEmpty())
+        roleLockReason.clear();
+
       if (response.hasState)
       {
         auto now = juce::Time::getCurrentTime();
@@ -3851,10 +4405,16 @@ void InspireVSTAudioProcessorEditor::pullTrack()
         pushLogDisplay.setText(pushLog.joinIntoString("\n"), false);
         trackVersions.set(syncTrackId, response.version);
         addErrorLog("✓ Track pulled successfully");
+        setStatus("Track pulled (v" + juce::String(response.version) + ")");
+        refreshInstancesList();
+        refreshSyncStatus();
+        fetchCollabVisualizationForUpdates(true);
       }
       else
       {
         addErrorLog("✗ No new track state to pull");
+        setStatus("No new track state available.");
+        refreshSyncStatus();
       }
       setBusy(false);
     });
@@ -4086,6 +4646,129 @@ void InspireVSTAudioProcessorEditor::stopInstancePolling()
   stopTimer();
 }
 
+void InspireVSTAudioProcessorEditor::fetchCollabVisualizationForUpdates(bool incremental)
+{
+  if (currentSyncRoomCode.isEmpty())
+    return;
+
+  const auto serverUrl = serverUrlInput.getText();
+  const auto roomCode = currentSyncRoomCode;
+  const auto authToken = sessionToken;
+  const auto since = incremental ? lastCollabVizFetchAtMs : 0;
+
+  runAsync([this, serverUrl, roomCode, authToken, since]
+  {
+    const auto response = client.getCollabVisualization(serverUrl, roomCode, authToken, 200, since);
+    if (response.isEmpty())
+      return;
+
+    auto parsed = juce::JSON::parse(response);
+    if (!parsed.isObject())
+      return;
+
+    juce::String grouped;
+    int64_t newestEventTime = lastCollabVizFetchAtMs;
+
+    if (auto* obj = parsed.getDynamicObject())
+    {
+      auto summaryVar = obj->getProperty("summary");
+      if (summaryVar.isObject())
+      {
+        if (auto* summary = summaryVar.getDynamicObject())
+        {
+          grouped += "Timeline Tree";
+          auto title = summary->getProperty("roomTitle").toString();
+          if (title.isNotEmpty())
+            grouped += " - " + title;
+          grouped += "\n";
+          grouped += "Pushes: " + summary->getProperty("totalPushes").toString() +
+                     " | Assets: " + summary->getProperty("totalAssets").toString() +
+                     " | Tracks: " + summary->getProperty("tracksTouched").toString() + "\n\n";
+        }
+      }
+
+      auto treeVar = obj->getProperty("tree");
+      if (treeVar.isArray())
+      {
+        const auto* tracks = treeVar.getArray();
+        for (const auto& trackNodeVar : *tracks)
+        {
+          if (!trackNodeVar.isObject())
+            continue;
+          auto* trackNode = trackNodeVar.getDynamicObject();
+          auto trackName = trackNode->getProperty("trackName").toString();
+          auto trackIndex = trackNode->getProperty("trackIndex").toString();
+          grouped += "Track " + trackIndex + ": " + trackName + "\n";
+
+          auto instancesVar = trackNode->getProperty("instances");
+          if (!instancesVar.isArray())
+            continue;
+
+          for (const auto& instanceNodeVar : *instancesVar.getArray())
+          {
+            if (!instanceNodeVar.isObject())
+              continue;
+            auto* instanceNode = instanceNodeVar.getDynamicObject();
+            auto instanceId = instanceNode->getProperty("pluginInstanceId").toString();
+            grouped += "  VST " + instanceId + "\n";
+
+            auto pushesVar = instanceNode->getProperty("pushes");
+            if (!pushesVar.isArray())
+              continue;
+
+            int pushCount = 0;
+            for (const auto& pushVar : *pushesVar.getArray())
+            {
+              if (!pushVar.isObject())
+                continue;
+              if (++pushCount > 5)
+                break;
+
+              auto* pushObj = pushVar.getDynamicObject();
+              int version = static_cast<int>(pushObj->getProperty("version"));
+              auto editType = pushObj->getProperty("editType").toString();
+              auto actor = pushObj->getProperty("pushedByUsername").toString();
+              if (actor.isEmpty())
+                actor = pushObj->getProperty("updatedBy").toString();
+
+              int64 eventTime = static_cast<int64>(pushObj->getProperty("eventTime"));
+              newestEventTime = juce::jmax(newestEventTime, eventTime);
+              juce::String timeText = eventTime > 0
+                ? juce::Time(eventTime).formatted("%H:%M:%S")
+                : juce::String("?");
+
+              juce::String beatText;
+              const auto beatVar = pushObj->getProperty("trackBeat");
+              if (!beatVar.isVoid() && beatVar.toString().isNotEmpty())
+                beatText = " beat:" + beatVar.toString();
+
+              juce::String durationText;
+              const auto durationVar = pushObj->getProperty("durationSeconds");
+              if (!durationVar.isVoid() && durationVar.toString().isNotEmpty())
+                durationText = " dur:" + durationVar.toString() + "s";
+
+              grouped += "    - [" + timeText + "] v" + juce::String(version) + " " + editType;
+              if (actor.isNotEmpty())
+                grouped += " by " + actor;
+              grouped += beatText + durationText + "\n";
+            }
+          }
+          grouped += "\n";
+        }
+      }
+    }
+
+    juce::MessageManager::callAsync([this, grouped, newestEventTime]
+    {
+      groupedTimelineText = grouped;
+      if (newestEventTime > 0)
+        lastCollabVizFetchAtMs = newestEventTime;
+      if (selectedMode == "updates")
+        refreshUpdatesDisplay();
+    });
+  });
+}
+
 void InspireVSTAudioProcessorEditor::checkForRecentPushes()
 {
   // Phase 2: Check for recent pushes without full instances refresh
@@ -4116,6 +4799,7 @@ void InspireVSTAudioProcessorEditor::checkForRecentPushes()
           juce::MessageManager::callAsync([this] {
             refreshInstancesList();
             refreshSyncStatus();
+            fetchCollabVisualizationForUpdates(true);
           });
         }
       }
@@ -4126,8 +4810,81 @@ void InspireVSTAudioProcessorEditor::checkForRecentPushes()
   });
 }
 
+void InspireVSTAudioProcessorEditor::pollAuthBridge()
+{
+  if (pendingAuthBridgeId.isEmpty() || authBridgePollInFlight)
+    return;
+
+  const auto now = juce::Time::currentTimeMillis();
+  const auto timeoutMs = static_cast<int64_t>(2 * 60 * 1000);
+  if (pendingAuthBridgeStartedAtMs > 0 && now - pendingAuthBridgeStartedAtMs > timeoutMs)
+  {
+    pendingAuthBridgeId = "";
+    pendingAuthBridgeStartedAtMs = 0;
+    lastAuthBridgePollAtMs = 0;
+    authBridgePollInFlight = false;
+    setStatus("Browser login timed out. Click Login again.");
+    return;
+  }
+
+  const auto pollIntervalMs = static_cast<int64_t>(1000);
+  if (lastAuthBridgePollAtMs > 0 && now - lastAuthBridgePollAtMs < pollIntervalMs)
+    return;
+
+  authBridgePollInFlight = true;
+  lastAuthBridgePollAtMs = now;
+
+  const auto serverUrl = serverUrlInput.getText().trim();
+  const auto bridgeId = pendingAuthBridgeId;
+
+  runAsync([this, serverUrl, bridgeId]
+  {
+    const auto response = client.consumeVstAuthBridge(serverUrl, bridgeId);
+
+    juce::MessageManager::callAsync([this, bridgeId, response]
+    {
+      authBridgePollInFlight = false;
+
+      if (pendingAuthBridgeId != bridgeId)
+        return;
+
+      if (!response.completed)
+      {
+        if (response.errorMessage.isNotEmpty())
+          addErrorLog("Auth bridge poll error: " + response.errorMessage);
+        return;
+      }
+
+      if (response.accessToken.isEmpty())
+      {
+        addErrorLog("Auth bridge completed without token.");
+        return;
+      }
+
+      sessionToken = response.accessToken;
+      isAuthenticated = true;
+      isGuest = response.isGuest;
+      authUsername = response.displayName.isNotEmpty() ? response.displayName : (isGuest ? "Guest" : "User");
+      authStatus = isGuest ? "guest" : "authenticated";
+      sessionStartTimeMs = juce::Time::currentTimeMillis();
+
+      pendingAuthBridgeId = "";
+      pendingAuthBridgeStartedAtMs = 0;
+      lastAuthBridgePollAtMs = 0;
+
+      updateUIForAuthState();
+      saveSessionData();
+      setStatus("Login successful.");
+      addErrorLog("✓ Browser login linked to VST session.");
+    });
+  });
+}
+
 void InspireVSTAudioProcessorEditor::timerCallback()
 {
+  // Poll browser auth bridge first, regardless of mode.
+  pollAuthBridge();
+
   // Called every 5 seconds when in Updates mode
   if (selectedMode == "updates" && !currentSyncRoomCode.isEmpty()) {
     // Phase 3: Process WebSocket queued messages if connected
@@ -4140,8 +4897,8 @@ void InspireVSTAudioProcessorEditor::timerCallback()
       checkForRecentPushes();
     }
   } else {
-    // Stop polling and WebSocket if we left Updates mode
-    if (selectedMode != "updates")
+    // Stop timer only when neither updates nor auth bridge polling is active.
+    if (pendingAuthBridgeId.isEmpty())
       stopTimer();
   }
 }
@@ -4170,10 +4927,14 @@ void InspireVSTAudioProcessorEditor::startWebSocketSync()
       addErrorLog(msg);
 
       juce::DynamicObject::Ptr joinMsg = new juce::DynamicObject();
+      const auto role = effectivePluginRole();
+      const auto resolvedMasterId = masterInstanceId.isNotEmpty() ? masterInstanceId : pluginInstanceID;
       joinMsg->setProperty("type", "join");
       joinMsg->setProperty("pluginInstanceId", pluginInstanceID);
       joinMsg->setProperty("roomCode", currentSyncRoomCode);
       joinMsg->setProperty("username", authUsername.isNotEmpty() ? authUsername : "Guest");
+      joinMsg->setProperty("pluginRole", role);
+      joinMsg->setProperty("masterInstanceId", resolvedMasterId);
       joinMsg->setProperty("timestamp", juce::Time::currentTimeMillis());
       wsClient->sendMessage(juce::JSON::toString(juce::var(joinMsg.get())));
 
@@ -4256,19 +5017,26 @@ void InspireVSTAudioProcessorEditor::handleWebSocketMessage(const VSWSMessage& m
   
   if (msg.type == "instance-joined")
   {
-    logMsg += " - " + msg.pluginInstanceId.substring(0, 8) + " (" + msg.username + ")";
+    const auto presence = msg.presenceLabel.isNotEmpty() ? msg.presenceLabel : msg.username;
+    logMsg += " - " + msg.pluginInstanceId.substring(0, 8)
+            + (presence.isNotEmpty() ? " (" + presence + ")" : "")
+            + (msg.pluginRole.isNotEmpty() ? " role=" + msg.pluginRole.toUpperCase() : "");
     addErrorLog(logMsg);
     appendUpdateEvent("ws",
                       msg.pluginInstanceId,
                       0,
                       0,
-                      "Instance joined" + (msg.username.isNotEmpty() ? " (" + msg.username + ")" : ""));
+                      "Instance joined" + (presence.isNotEmpty() ? " (" + presence + ")" : ""));
     // Refresh instances list to show new instance
-    juce::MessageManager::callAsync([this] { refreshInstancesList(); });
+    juce::MessageManager::callAsync([this] {
+      refreshInstancesList();
+      fetchCollabVisualizationForUpdates(true);
+    });
   }
   else if (msg.type == "track-update")
   {
-    logMsg += " - " + msg.pluginInstanceId.substring(0, 8) + " v" + juce::String(msg.version);
+    logMsg += " - " + msg.pluginInstanceId.substring(0, 8) + " v" + juce::String(msg.version)
+            + (msg.pluginRole.isNotEmpty() ? " [" + msg.pluginRole.toUpperCase() + "]" : "");
     addErrorLog(logMsg);
     appendUpdateEvent("ws",
                       msg.pluginInstanceId,
@@ -4280,11 +5048,14 @@ void InspireVSTAudioProcessorEditor::handleWebSocketMessage(const VSWSMessage& m
     {
       refreshInstancesList();
       refreshSyncStatus();
+      fetchCollabVisualizationForUpdates(true);
     });
   }
   else if (msg.type == "instance-left")
   {
-    logMsg += " - " + msg.pluginInstanceId.substring(0, 8);
+    const auto presence = msg.presenceLabel.isNotEmpty() ? msg.presenceLabel : msg.username;
+    logMsg += " - " + msg.pluginInstanceId.substring(0, 8)
+            + (presence.isNotEmpty() ? " (" + presence + ")" : "");
     addErrorLog(logMsg);
     appendUpdateEvent("ws",
                       msg.pluginInstanceId,
@@ -4292,7 +5063,10 @@ void InspireVSTAudioProcessorEditor::handleWebSocketMessage(const VSWSMessage& m
                       0,
                       "Instance left room");
     // Refresh instances list after instance leaves
-    juce::MessageManager::callAsync([this] { refreshInstancesList(); });
+    juce::MessageManager::callAsync([this] {
+      refreshInstancesList();
+      fetchCollabVisualizationForUpdates(true);
+    });
   }
 }
 

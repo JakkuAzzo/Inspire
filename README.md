@@ -36,19 +36,19 @@ Inspire is a full-stack TypeScript studio that blends live cultural signals with
 
 Keyless by default with graceful fallbacks. Optional keys unlock richer data.
 
-| Capability | Provider(s) | Keys |
-| --- | --- | --- |
-| Power words, rhymes, syllables | Datamuse | none |
-| Random vocabulary | Random Word API | none |
-| Definitions | Free Dictionary API | none |
-| Meme templates | Picsum (seeded images) | none |
-| Meme captioning | Built‑in (dummyimage) | none (Imgflip optional) |
-| Inspirational images | Picsum | none (Unsplash optional) |
-| Trending memes & reddit topics | Reddit JSON | none |
-| Audio samples & sound design | Freesound | optional: `FREESOUND_API_KEY` |
-| Royalty‑free reference tracks | Jamendo | optional: `JAMENDO_CLIENT_ID` |
-| Instrumentals (search) | Piped (YouTube proxy) | none |
-| News headlines & context | Static NewsAPI mirror | none (NewsAPI optional) |
+| Capability                     | Provider(s)            | Keys                           |
+| ------------------------------ | ---------------------- | ------------------------------ |
+| Power words, rhymes, syllables | Datamuse               | none                           |
+| Random vocabulary              | Random Word API        | none                           |
+| Definitions                    | Free Dictionary API    | none                           |
+| Meme templates                 | Picsum (seeded images) | none                           |
+| Meme captioning                | Built‑in (dummyimage) | none (Imgflip optional)        |
+| Inspirational images           | Picsum                 | none (Unsplash optional)       |
+| Trending memes & reddit topics | Reddit JSON            | none                           |
+| Audio samples & sound design   | Freesound              | optional:`FREESOUND_API_KEY` |
+| Royalty‑free reference tracks | Jamendo                | optional:`JAMENDO_CLIENT_ID` |
+| Instrumentals (search)         | Piped (YouTube proxy)  | none                           |
+| News headlines & context       | Static NewsAPI mirror  | none (NewsAPI optional)        |
 
 ## Project Tour
 
@@ -192,6 +192,7 @@ InspireVST is a VST3 audio plugin for Ableton Live that syncs creative content f
 ```
 
 This automatically:
+
 1. Configures CMake with JUCE 8.0.4
 2. Compiles all source files (PluginProcessor, PluginEditor, NetworkClient)
 3. Builds the VST3 bundle
@@ -224,6 +225,7 @@ This automatically:
 4. Drag the plugin to an audio track
 
 If the plugin doesn't appear:
+
 - Run `./inspirevst-build.sh` again
 - Restart Ableton Live
 - Go to **Preferences** → **Plugins** → **Rescan**
@@ -233,6 +235,7 @@ If the plugin doesn't appear:
 **Installation location**: `~/Library/Audio/Plug-Ins/VST3/InspireVST.vst3`
 
 **Binary details**:
+
 ```
 ├── Contents/
 │   ├── MacOS/InspireVST    (7.6M executable)
@@ -253,12 +256,12 @@ If the plugin doesn't appear:
 
 All plugin source files are in `InspireVST/Source/`:
 
-| File | Purpose |
-|------|---------|
-| `PluginProcessor.h/.cpp` | VST3 AudioProcessor base; MIDI/audio I/O |
-| `PluginEditor.h/.cpp` | UI with room join, file sync, downloads |
-| `NetworkClient.h/.cpp` | Cloud Functions integration (joinRoom, listFiles, getDownloadUrl) |
-| `CMakeLists.txt` | Build configuration |
+| File                       | Purpose                                                           |
+| -------------------------- | ----------------------------------------------------------------- |
+| `PluginProcessor.h/.cpp` | VST3 AudioProcessor base; MIDI/audio I/O                          |
+| `PluginEditor.h/.cpp`    | UI with room join, file sync, downloads                           |
+| `NetworkClient.h/.cpp`   | Cloud Functions integration (joinRoom, listFiles, getDownloadUrl) |
+| `CMakeLists.txt`         | Build configuration                                               |
 
 ### Development Workflow
 
@@ -278,21 +281,25 @@ vim InspireVST/Source/PluginEditor.cpp
 ### Troubleshooting
 
 **"Permission denied" when running script**:
+
 ```bash
 chmod +x ./inspirevst-build.sh
 ```
 
 **"CMake not found"**:
+
 ```bash
 brew install cmake
 ```
 
 **Plugin not visible in Ableton after rebuild**:
+
 1. Ensure build completed successfully
 2. Restart Ableton Live completely
 3. Go to **Preferences** → **Plugins** → **Rescan**
 
 **Compilation errors**:
+
 - Try a clean rebuild: `./inspirevst-build.sh clean`
 - Ensure Xcode Command Line Tools are installed: `xcode-select --install`
 - Check that `InspireVST/` directory exists with `CMakeLists.txt`
@@ -364,6 +371,7 @@ npx playwright test collaboration-multiuser.spec.ts -g "should allow two users"
 ```
 
 Test scenarios include:
+
 - ✅ Two users creating and joining the same session
 - ✅ Guest session timer display (60-minute countdown)
 - ✅ Expired session cleanup and HTTP 410 handling
@@ -389,24 +397,29 @@ Test scenarios include:
 ## Story Arc Pack Card (current state)
 
 **How it works today**
+
 - In the Lyricist flow, the Story Arc card accepts summary, optional theme/genre/BPM, and a node-count selector (default 7 beats).
 - On Generate, the frontend POSTs to `/api/story-arc` with those fields; the backend tries a local ONNX `flan-t5-small` model first, then falls back to template text.
 - Returned beats are slotted into fixed progression labels (Set the scene, Trigger event, Complication, Reversal, Aftershock, Decision, Fallout) and rendered as editable text areas with drag-and-drop ordering.
 
 **What it is supposed to do**
+
 - Produce distinct beat text that evolves the idea across the arc (not just repeat the summary), flavored by theme/genre/BPM and node count.
 - Let users lightly edit/reorder beats, then reuse them alongside words/hooks in the pack.
 
 **What is missing**
+
 - No temperature/top-k tuning or prompt diversification to force variety across beats.
 - No server-side validation that each beat is unique or expands on the summary; UI currently only checks presence.
 - No persistence/export of edited arcs beyond the current pack object.
 
 **What is broken**
+
 - The fallback generation path currently returns identical text for every beat (see Playwright run: all nodes echoed the summary), so progression labels change but content does not diversify.
 - ONNX warnings spam the dev console when the model loads; they are non-blocking but noisy.
 
 **MoSCoW (Story Arc)**
+
 - Must: enforce unique, progressive beat text before returning (dedupe + rewrite where duplicates are detected).
 - Should: tune prompts/temperature/top-k to encourage variation and respect theme/genre/BPM; suppress noisy ONNX initializer warnings in dev logs.
 - Could: persist edited arcs with packs and export/share as structured text; add user-facing duplicate warnings with a one-click regenerate.
@@ -441,11 +454,11 @@ npm install
 ```
 
 - Backend: updated TypeScript test environment to include types for `pg`, `pg-mem`, `express-rate-limit`, `cookie-parser`, and `bcryptjs` in `backend/tsconfig.json` so `ts-jest` can resolve them during tests.
-
 - Tests: added focused integration specs under `backend/__tests__/integration/` for:
-   - auth flows (`auth.integration.test.ts`)
-   - pack persistence using `pg-mem` (`packs.integration.test.ts`)
-   - Socket.IO room join/presence (`socketRooms.integration.test.ts`)
+
+  - auth flows (`auth.integration.test.ts`)
+  - pack persistence using `pg-mem` (`packs.integration.test.ts`)
+  - Socket.IO room join/presence (`socketRooms.integration.test.ts`)
 
 Run backend tests:
 
@@ -498,6 +511,14 @@ Current functionality status after merging the major feature branches (auth, per
 3. **Strengthen CI gates**: raise coverage thresholds, include migrations in the pipeline, and add a smoke job that starts the stack with keyless fallbacks plus a job that runs with seeded API keys.
 4. **Validate live integrations**: record contract tests (or VCR cassettes) for Datamuse/Freesound/Jamendo/NewsAPI/Imgflip/Piped/Unsplash and wire health checks into `/api/health` so the UI can surface degraded providers.
 5. **Keep docs aligned**: refresh `TESTING_SUMMARY.md` once the suites pass and note how to run auth+realtime scenarios locally.
+
+
+Test account
+
+
+* Email: [test.collab.1773326469@example.com](vscode-file://vscode-app/Applications/Visual%20Studio%20Code.app/Contents/Resources/app/out/vs/code/electron-browser/workbench/workbench.html)
+* Password: InspireTest123
+* Display name: Collab Test User
 
 ## License
 

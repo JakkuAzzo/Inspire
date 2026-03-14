@@ -36,7 +36,12 @@ import {
   CommentThread,
   CollaborativeSessionParticipant,
   DAWTrackState,
-  DAWSyncPushRequest
+  DAWSyncPushRequest,
+  CollabFileAssetInput,
+  CollabPushEventRecord,
+  CollabVisualizationResponse,
+  InspirePluginRole,
+  MasterRoomState
 } from './types';
 import {
   generateModePack,
@@ -62,6 +67,8 @@ import { validateEnvironment } from './config/env';
 import { buildAuthRouter } from './auth/routes';
 import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 import { startCleanupJob } from './auth/cleanup';
+import { verifyToken } from './auth/jwt';
+import { findUserById } from './auth/store';
 import { generateStoryArcScaffold } from './services/storyArcService';
 import { initFirebaseAdmin } from './firebase/admin';
 import { setupWebSocketServer, VSTSyncManager } from './websocket';
@@ -327,6 +334,7 @@ interface ReportFlag {
 }
 // Allow overriding the data directory (useful for CI or different run contexts)
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve(__dirname, '..', 'data');
+const COLLAB_ASSET_DIR = path.join(DATA_DIR, 'collab-assets');
 const SAVED_PACKS_FILE = process.env.SAVED_PACKS_FILE || path.join(DATA_DIR, 'savedPacks.json');
 const FEED_FILE = process.env.FEED_FILE || path.join(DATA_DIR, 'communityFeed.json');
 const REPORT_FILE = process.env.REPORT_FILE || path.join(DATA_DIR, 'reportedContent.json');
@@ -344,12 +352,48 @@ const BLOCKED_PHRASES = ['spam', 'scam', 'violence', 'slur'];
 function ensureDataDir() {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(COLLAB_ASSET_DIR)) fs.mkdirSync(COLLAB_ASSET_DIR, { recursive: true });
     if (!fs.existsSync(SAVED_PACKS_FILE)) fs.writeFileSync(SAVED_PACKS_FILE, JSON.stringify(EMPTY_SAVED_STATE, null, 2), 'utf8');
     if (!fs.existsSync(FEED_FILE)) fs.writeFileSync(FEED_FILE, JSON.stringify([], null, 2), 'utf8');
     if (!fs.existsSync(REPORT_FILE)) fs.writeFileSync(REPORT_FILE, JSON.stringify([], null, 2), 'utf8');
   } catch (err) {
     console.error('Failed to ensure data dir:', err);
   }
+}
+
+function sanitizePathSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function decodeInlineBase64(input: string): Buffer {
+  const content = input.includes('base64,') ? input.slice(input.indexOf('base64,') + 7) : input;
+  return Buffer.from(content, 'base64');
+}
+
+function materializeAssetFromInlineData(
+  roomCode: string,
+  trackId: string,
+  eventId: string,
+  asset: CollabFileAssetInput
+): CollabFileAssetInput {
+  if (!asset.inlineBase64) return asset;
+
+  const safeRoom = sanitizePathSegment(roomCode);
+  const safeTrack = sanitizePathSegment(trackId);
+  const safeName = sanitizePathSegment(asset.fileName || `${asset.fileType}-asset`);
+  const roomDir = path.join(COLLAB_ASSET_DIR, safeRoom, safeTrack);
+  fs.mkdirSync(roomDir, { recursive: true });
+
+  const outputPath = path.join(roomDir, `${eventId}_${safeName}`);
+  const data = decodeInlineBase64(asset.inlineBase64);
+  fs.writeFileSync(outputPath, data);
+
+  return {
+    ...asset,
+    filePath: outputPath,
+    sizeBytes: asset.sizeBytes ?? data.byteLength,
+    inlineBase64: undefined
+  };
 }
 
 ensureDataDir();
@@ -1324,12 +1368,42 @@ function buildApiRouter() {
         return res.status(400).json({ error: 'roomCode, trackId, and state are required' });
       }
 
+      const token = extractBearerToken(req);
+      const session = token ? vstSessions.get(token) : undefined;
+      const requestedRole = normalizePluginRole(body.pluginRole ?? body.state.pluginRole ?? session?.pluginRole);
+      const requestedMasterInstanceId = String(
+        body.masterInstanceId ?? body.state.masterInstanceId ?? session?.masterInstanceId ?? ''
+      ).trim();
+
+      if (requestedRole === 'relay' || requestedRole === 'create') {
+        const activeMaster = getActiveMasterPresence(body.roomCode);
+        if (!activeMaster) {
+          return res.status(409).json({
+            ok: false,
+            error: 'master_required',
+            message: 'Inspire Master must be online before relay/create sync operations.'
+          });
+        }
+
+        if (requestedMasterInstanceId && requestedMasterInstanceId !== activeMaster.masterInstanceId) {
+          return res.status(409).json({
+            ok: false,
+            error: 'master_mismatch',
+            message: 'Relay/Create is attached to a different master instance.'
+          });
+        }
+
+        body.state.masterInstanceId = activeMaster.masterInstanceId;
+      }
+
       const baseVersion = typeof body.baseVersion === 'number' ? body.baseVersion : null;
       const updatedBy = body.updatedBy ?? 'unknown';
       const incomingState: DAWTrackState = {
         ...body.state,
         roomCode: body.roomCode,
-        trackId: body.trackId
+        trackId: body.trackId,
+        pluginRole: requestedRole,
+        masterInstanceId: body.state.masterInstanceId
       };
 
       const result = dawSyncStore.upsertTrackState({
@@ -1362,10 +1436,37 @@ function buildApiRouter() {
         });
       }
 
+      let eventId: string | undefined;
+      if (result.next) {
+        const rawAssets = Array.isArray(body.assets) ? body.assets : [];
+        const details = body.pushDetails;
+        eventId = dawSyncStore.recordPushEvent({
+          roomCode: body.roomCode,
+          trackId: body.trackId,
+          version: result.next.version,
+          updatedBy,
+          pluginInstanceId: result.next.state.pluginInstanceId,
+          dawTrackIndex: result.next.state.dawTrackIndex,
+          dawTrackName: result.next.state.dawTrackName,
+          details,
+          payload: {
+            clipCount: result.next.state.clips.length,
+            noteCount: result.next.state.notes.length
+          }
+        });
+
+        const preparedAssets = rawAssets.map((asset) =>
+          materializeAssetFromInlineData(body.roomCode, body.trackId, eventId!, asset)
+        );
+
+        dawSyncStore.recordPushAssets(body.roomCode, body.trackId, eventId, preparedAssets);
+      }
+
       return res.status(201).json({
         ok: true,
         version: result.next?.version,
-        state: result.next?.state
+        state: result.next?.state,
+        eventId
       });
     } catch (err) {
       console.error('[daw-sync] push failed', err);
@@ -1379,9 +1480,32 @@ function buildApiRouter() {
       const trackId = String(req.query.trackId || '');
       const sinceRaw = req.query.sinceVersion;
       const sinceVersion = Number.isFinite(Number(sinceRaw)) ? Number(sinceRaw) : null;
+      const token = extractBearerToken(req);
+      const session = token ? vstSessions.get(token) : undefined;
+      const requestedRole = normalizePluginRole(req.query.pluginRole ?? session?.pluginRole);
+      const requestedMasterInstanceId = String(req.query.masterInstanceId ?? session?.masterInstanceId ?? '').trim();
 
       if (!roomCode || !trackId) {
         return res.status(400).json({ error: 'roomCode and trackId are required' });
+      }
+
+      if (requestedRole === 'relay' || requestedRole === 'create') {
+        const activeMaster = getActiveMasterPresence(roomCode);
+        if (!activeMaster) {
+          return res.status(409).json({
+            ok: false,
+            error: 'master_required',
+            message: 'Inspire Master must be online before relay/create sync operations.'
+          });
+        }
+
+        if (requestedMasterInstanceId && requestedMasterInstanceId !== activeMaster.masterInstanceId) {
+          return res.status(409).json({
+            ok: false,
+            error: 'master_mismatch',
+            message: 'Relay/Create is attached to a different master instance.'
+          });
+        }
       }
 
       const current = dawSyncStore.getTrackState(roomCode, trackId);
@@ -1424,6 +1548,9 @@ function buildApiRouter() {
       const instancesMap = new Map<string, {
         pluginInstanceId: string;
         username?: string;
+        pluginRole?: InspirePluginRole;
+        masterInstanceId?: string;
+        presenceLabel?: string;
         dawTrackIndex?: number;
         dawTrackName?: string;
         lastPushAt: number;
@@ -1440,6 +1567,10 @@ function buildApiRouter() {
           if (!existing || track.updatedAt > existing.lastPushAt) {
             instancesMap.set(instanceId, {
               pluginInstanceId: instanceId,
+              username: track.updatedBy,
+              pluginRole: normalizePluginRole(track.state.pluginRole),
+              masterInstanceId: track.state.masterInstanceId,
+              presenceLabel: `[${normalizePluginRole(track.state.pluginRole).toUpperCase()}] ${track.updatedBy || 'Unknown'}`,
               dawTrackIndex: track.state.dawTrackIndex,
               dawTrackName: track.state.dawTrackName,
               lastPushAt: track.updatedAt,
@@ -1452,15 +1583,24 @@ function buildApiRouter() {
       }
 
       for (const connected of connectedInstances) {
-        if (!instancesMap.has(connected.pluginInstanceId)) {
+        const existing = instancesMap.get(connected.pluginInstanceId);
+        if (!existing) {
           instancesMap.set(connected.pluginInstanceId, {
             pluginInstanceId: connected.pluginInstanceId,
             username: connected.username,
+            pluginRole: connected.pluginRole,
+            masterInstanceId: connected.masterInstanceId,
+            presenceLabel: connected.presenceLabel,
             lastPushAt: connected.connectedAt,
             lastPushBy: connected.username,
             version: 0,
             trackId: ''
           });
+        } else {
+          existing.username = existing.username || connected.username;
+          existing.pluginRole = existing.pluginRole || connected.pluginRole;
+          existing.masterInstanceId = existing.masterInstanceId || connected.masterInstanceId;
+          existing.presenceLabel = existing.presenceLabel || connected.presenceLabel;
         }
       }
 
@@ -1553,8 +1693,110 @@ function buildApiRouter() {
   // ============ VST ROOM MANAGEMENT (LOCAL) ============
 
   // In-memory store for VST rooms (for local development, no Firebase dependency)
+  type VstSessionRecord = {
+    roomId?: string;
+    roomCode?: string;
+    createdAt: number;
+    expiresAt: number;
+    isGuest?: boolean;
+    guestId?: string;
+    username?: string;
+    pluginRole?: InspirePluginRole;
+    pluginInstanceId?: string;
+    masterInstanceId?: string;
+  };
+
+  type MasterPresenceRecord = {
+    roomCode: string;
+    roomId?: string;
+    masterInstanceId: string;
+    sessionToken?: string;
+    lastHeartbeat: number;
+  };
+
+  type VstAuthBridgeRecord = {
+    bridgeId: string;
+    accessToken: string;
+    displayName?: string;
+    isGuest?: boolean;
+    createdAt: number;
+    expiresAt: number;
+  };
+
+  const MASTER_HEARTBEAT_TTL_MS = 30_000;
+  const VST_AUTH_BRIDGE_TTL_MS = 10 * 60 * 1000;
+
   const vstRooms = new Map<string, any>();
-  const vstSessions = new Map<string, any>();
+  const vstSessions = new Map<string, VstSessionRecord>();
+  const roomMasterPresence = new Map<string, MasterPresenceRecord>();
+  const vstAuthBridges = new Map<string, VstAuthBridgeRecord>();
+
+  const normalizePluginRole = (value: unknown): InspirePluginRole => {
+    const role = String(value ?? '').toLowerCase();
+    if (role === 'master' || role === 'relay' || role === 'create') return role;
+    return 'legacy';
+  };
+
+  const extractBearerToken = (req: Request): string | undefined => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return undefined;
+    return authHeader.slice(7);
+  };
+
+  const getActiveMasterPresence = (roomCode: string): MasterPresenceRecord | null => {
+    const key = String(roomCode || '').toUpperCase();
+    if (!key) return null;
+    const presence = roomMasterPresence.get(key);
+    if (!presence) return null;
+    if (Date.now() - presence.lastHeartbeat > MASTER_HEARTBEAT_TTL_MS) {
+      roomMasterPresence.delete(key);
+      return null;
+    }
+    return presence;
+  };
+
+  const cleanupExpiredAuthBridges = () => {
+    const now = Date.now();
+    for (const [bridgeId, bridge] of vstAuthBridges.entries()) {
+      if (bridge.expiresAt <= now) {
+        vstAuthBridges.delete(bridgeId);
+      }
+    }
+  };
+
+  const resolveVstSessionFromBearer = (token: string): VstSessionRecord | null => {
+    const existing = vstSessions.get(token);
+    if (existing) {
+      if (typeof existing.expiresAt === 'number' && Date.now() > existing.expiresAt) {
+        vstSessions.delete(token);
+      } else {
+        return existing;
+      }
+    }
+
+    const decoded = verifyToken(token);
+    if (!decoded) {
+      return null;
+    }
+
+    const user = findUserById(decoded.sub);
+    if (!user) {
+      return null;
+    }
+
+    const now = Date.now();
+    const expiresAt = Math.max(now + 5 * 60 * 1000, decoded.exp * 1000);
+    const materialized: VstSessionRecord = {
+      createdAt: now,
+      expiresAt,
+      isGuest: false,
+      username: user.displayName || user.email,
+      pluginRole: 'legacy'
+    };
+
+    vstSessions.set(token, materialized);
+    return materialized;
+  };
 
   /**
    * POST /api/vst/create-room
@@ -1562,7 +1804,15 @@ function buildApiRouter() {
    */
   router.post('/vst/create-room', (req: Request, res: Response) => {
     try {
-      const { password, name, isGuest } = req.body || {};
+      const { password, name, isGuest, pluginRole, pluginInstanceId } = req.body || {};
+      const requestedRole = normalizePluginRole(pluginRole);
+
+      if (requestedRole === 'relay' || requestedRole === 'create') {
+        return res.status(403).json({
+          error: 'room_control_master_only',
+          message: 'Only Inspire Master can create rooms. Relay/Create must attach to an active Master.'
+        });
+      }
       
       const roomId = createId('room');
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -1591,7 +1841,9 @@ function buildApiRouter() {
         code: room.code,
         expiresAt: room.expiresAt,
         ttlMinutes: Math.floor(ttlMs / 60000),
-        isGuest: room.isGuest
+        isGuest: room.isGuest,
+        pluginRole: requestedRole,
+        pluginInstanceId: typeof pluginInstanceId === 'string' ? pluginInstanceId : undefined
       });
     } catch (err) {
       console.error('[VST] Failed to create room:', err);
@@ -1605,7 +1857,15 @@ function buildApiRouter() {
    */
   router.post('/vst/join-room', (req: Request, res: Response) => {
     try {
-      const { roomId, code } = req.body || {};
+      const { roomId, code, pluginRole, pluginInstanceId, masterInstanceId } = req.body || {};
+      const requestedRole = normalizePluginRole(pluginRole);
+
+      if (requestedRole === 'relay' || requestedRole === 'create') {
+        return res.status(403).json({
+          error: 'room_control_master_only',
+          message: 'Relay/Create should attach via /api/vst/relay/attach or /api/vst/create/attach after Master joins.'
+        });
+      }
 
       if (!roomId || !code) {
         return res.status(400).json({ error: 'roomId and code are required' });
@@ -1652,9 +1912,23 @@ function buildApiRouter() {
 
       vstSessions.set(token, {
         roomId,
+        roomCode: room.code,
         createdAt: Date.now(),
-        expiresAt: sessionExpiresAt
+        expiresAt: sessionExpiresAt,
+        pluginRole: requestedRole,
+        pluginInstanceId: typeof pluginInstanceId === 'string' ? pluginInstanceId : undefined,
+        masterInstanceId: typeof masterInstanceId === 'string' ? masterInstanceId : undefined
       });
+
+      if (requestedRole === 'master' && typeof pluginInstanceId === 'string' && pluginInstanceId.trim()) {
+        roomMasterPresence.set(String(room.code).toUpperCase(), {
+          roomCode: room.code,
+          roomId: room.roomId,
+          masterInstanceId: pluginInstanceId,
+          sessionToken: token,
+          lastHeartbeat: Date.now()
+        });
+      }
 
       room.participants++;
 
@@ -1666,7 +1940,8 @@ function buildApiRouter() {
         roomId: room.roomId,
         roomCode: room.code,
         roomName: room.name,
-        joinedWith: roomCodeMatches ? 'room-code' : 'password'
+        joinedWith: roomCodeMatches ? 'room-code' : 'password',
+        pluginRole: requestedRole
       });
     } catch (err) {
       console.error('[VST] Failed to join room:', err);
@@ -1680,6 +1955,7 @@ function buildApiRouter() {
    */
   router.post('/vst/guest-continue', (req: Request, res: Response) => {
     try {
+      const requestedRole = normalizePluginRole(req.body?.pluginRole);
       const guestId = createId('guest');
       const token = createId('guest-token');
       
@@ -1687,7 +1963,8 @@ function buildApiRouter() {
         guestId,
         createdAt: Date.now(),
         expiresAt: Date.now() + 15 * 60 * 1000, // 15 minutes
-        isGuest: true
+        isGuest: true,
+        pluginRole: requestedRole
       });
 
       console.log(`[VST] Guest session created: ${guestId}`);
@@ -1696,13 +1973,213 @@ function buildApiRouter() {
         token,
         guestId,
         expiresAt: Date.now() + 15 * 60 * 1000,
-        username: `Guest_${guestId.substring(0, 6)}`
+        username: `Guest_${guestId.substring(0, 6)}`,
+        pluginRole: requestedRole
       });
     } catch (err) {
       console.error('[VST] Failed to create guest session:', err);
       res.status(500).json({ error: 'Failed to create guest session' });
     }
   });
+
+  /**
+   * POST /api/vst/auth-bridge/complete
+   * Browser-side completion step: store authenticated token for VST polling.
+   */
+  router.post('/vst/auth-bridge/complete', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    try {
+      cleanupExpiredAuthBridges();
+
+      const bridgeId = String(req.body?.bridgeId ?? '').trim();
+      const accessToken = String(req.body?.accessToken ?? '').trim();
+      const displayName = String(req.body?.displayName ?? '').trim();
+      const isGuest = Boolean(req.body?.isGuest);
+
+      if (!bridgeId || bridgeId.length < 8) {
+        return res.status(400).json({ error: 'bridgeId is required' });
+      }
+      if (!accessToken) {
+        return res.status(400).json({ error: 'accessToken is required' });
+      }
+
+      const now = Date.now();
+      vstAuthBridges.set(bridgeId, {
+        bridgeId,
+        accessToken,
+        displayName: displayName || undefined,
+        isGuest,
+        createdAt: now,
+        expiresAt: now + VST_AUTH_BRIDGE_TTL_MS
+      });
+
+      return res.json({ ok: true, bridgeId, expiresAt: now + VST_AUTH_BRIDGE_TTL_MS });
+    } catch (err) {
+      console.error('[VST] Auth bridge completion failed:', err);
+      return res.status(500).json({ error: 'Failed to complete VST auth bridge' });
+    }
+  });
+
+  const consumeVstAuthBridge = (req: Request, res: Response) => {
+    try {
+      cleanupExpiredAuthBridges();
+
+      const bridgeId = String(req.query.bridgeId ?? req.body?.bridgeId ?? '').trim();
+      if (!bridgeId) {
+        return res.status(400).json({ error: 'bridgeId is required' });
+      }
+
+      const bridge = vstAuthBridges.get(bridgeId);
+      if (!bridge) {
+        return res.json({ status: 'pending' });
+      }
+
+      vstAuthBridges.delete(bridgeId);
+
+      return res.json({
+        status: 'complete',
+        accessToken: bridge.accessToken,
+        displayName: bridge.displayName,
+        isGuest: Boolean(bridge.isGuest)
+      });
+    } catch (err) {
+      console.error('[VST] Auth bridge consume failed:', err);
+      return res.status(500).json({ error: 'Failed to consume VST auth bridge' });
+    }
+  };
+
+  /**
+   * /api/vst/auth-bridge/consume
+   * VST-side polling step: consume token once and mark bridge as completed.
+   * Supports GET (query) and POST (JSON body) for plugin compatibility.
+   */
+  router.get('/vst/auth-bridge/consume', consumeVstAuthBridge);
+  router.post('/vst/auth-bridge/consume', consumeVstAuthBridge);
+
+  router.post('/vst/master/heartbeat', (req: Request, res: Response) => {
+    try {
+      const token = extractBearerToken(req);
+      if (!token) {
+        return res.status(401).json({ error: 'Missing bearer token' });
+      }
+
+      const session = resolveVstSessionFromBearer(token);
+      if (!session) {
+        return res.status(401).json({ error: 'Invalid session token' });
+      }
+
+      const roomCode = String(req.body?.roomCode ?? session.roomCode ?? '').toUpperCase();
+      const pluginInstanceId = String(req.body?.pluginInstanceId ?? session.pluginInstanceId ?? '').trim();
+      if (!roomCode || !pluginInstanceId) {
+        return res.status(400).json({ error: 'roomCode and pluginInstanceId are required' });
+      }
+
+      session.pluginRole = 'master';
+      session.roomCode = roomCode;
+      session.pluginInstanceId = pluginInstanceId;
+      session.masterInstanceId = pluginInstanceId;
+
+      roomMasterPresence.set(roomCode, {
+        roomCode,
+        roomId: session.roomId,
+        masterInstanceId: pluginInstanceId,
+        sessionToken: token,
+        lastHeartbeat: Date.now()
+      });
+
+      return res.json({
+        ok: true,
+        roomCode,
+        masterInstanceId: pluginInstanceId,
+        active: true,
+        ttlMs: MASTER_HEARTBEAT_TTL_MS
+      });
+    } catch (err) {
+      console.error('[VST] Master heartbeat failed:', err);
+      return res.status(500).json({ error: 'Failed to process master heartbeat' });
+    }
+  });
+
+  router.get('/master/room/:roomCode/state', (req: Request, res: Response) => {
+    try {
+      const roomCode = String(req.params.roomCode || '').toUpperCase();
+      const master = getActiveMasterPresence(roomCode);
+
+      let relayCount = 0;
+      let createCount = 0;
+      for (const session of vstSessions.values()) {
+        if (String(session.roomCode || '').toUpperCase() !== roomCode) continue;
+        if (session.pluginRole === 'relay') relayCount += 1;
+        if (session.pluginRole === 'create') createCount += 1;
+      }
+
+      const payload: MasterRoomState = {
+        roomCode,
+        active: !!master,
+        masterInstanceId: master?.masterInstanceId,
+        lastHeartbeat: master?.lastHeartbeat,
+        relayCount,
+        createCount
+      };
+
+      return res.json(payload);
+    } catch (err) {
+      console.error('[VST] Master room state failed:', err);
+      return res.status(500).json({ error: 'Failed to load master room state' });
+    }
+  });
+
+  const handlePluginAttach = (role: 'relay' | 'create') => (req: Request, res: Response) => {
+    try {
+      const token = extractBearerToken(req);
+      if (!token) {
+        return res.status(401).json({ error: 'Missing bearer token' });
+      }
+
+      const session = resolveVstSessionFromBearer(token);
+      if (!session) {
+        return res.status(401).json({ error: 'Invalid session token' });
+      }
+
+      if (typeof session.expiresAt === 'number' && Date.now() > session.expiresAt) {
+        vstSessions.delete(token);
+        return res.status(401).json({ error: 'Session expired' });
+      }
+
+      const roomCode = String(req.body?.roomCode ?? '').toUpperCase();
+      const pluginInstanceId = String(req.body?.pluginInstanceId ?? '').trim();
+      if (!roomCode || !pluginInstanceId) {
+        return res.status(400).json({ error: 'roomCode and pluginInstanceId are required' });
+      }
+
+      const master = getActiveMasterPresence(roomCode);
+      if (!master) {
+        return res.status(409).json({
+          error: 'master_required',
+          message: 'Inspire Master must be online before Relay/Create can attach.'
+        });
+      }
+
+      session.roomCode = roomCode;
+      session.pluginRole = role;
+      session.pluginInstanceId = pluginInstanceId;
+      session.masterInstanceId = master.masterInstanceId;
+
+      return res.json({
+        ok: true,
+        roomCode,
+        pluginRole: role,
+        pluginInstanceId,
+        masterInstanceId: master.masterInstanceId,
+        masterLastHeartbeat: master.lastHeartbeat
+      });
+    } catch (err) {
+      console.error(`[VST] ${role} attach failed:`, err);
+      return res.status(500).json({ error: `Failed to attach ${role} plugin` });
+    }
+  };
+
+  router.post('/vst/relay/attach', handlePluginAttach('relay'));
+  router.post('/vst/create/attach', handlePluginAttach('create'));
 
   // ============ COLLABORATIVE SESSION ROUTES ============
 
@@ -1762,7 +2239,105 @@ function buildApiRouter() {
   // Populate mock sessions
   mockSessions.forEach(session => {
     collaborativeSessions.set(session.id, session);
+    dawSyncStore.recordRoomMembership({
+      roomCode: session.id,
+      userId: session.hostId,
+      username: session.hostUsername,
+      role: 'host',
+      joinedAt: session.createdAt
+    });
+    for (const participant of session.participants ?? []) {
+      const participantRow = participant as any;
+      const participantId = String(participantRow.userId ?? participantRow.id ?? '');
+      const participantRole = participantRow.role === 'host' || participantRow.role === 'viewer' || participantRow.role === 'collaborator'
+        ? participantRow.role
+        : 'collaborator';
+      if (!participantId) continue;
+      dawSyncStore.recordRoomMembership({
+        roomCode: session.id,
+        userId: participantId,
+        username: participantRow.username ?? 'Unknown',
+        role: participantRole,
+        joinedAt: participantRow.joinedAt
+      });
+    }
+    for (const viewer of session.viewers ?? []) {
+      const viewerRow = viewer as any;
+      const viewerId = String(viewerRow.userId ?? viewerRow.id ?? '');
+      if (!viewerId) continue;
+      dawSyncStore.recordRoomMembership({
+        roomCode: session.id,
+        userId: viewerId,
+        username: viewerRow.username ?? 'Unknown',
+        role: 'viewer',
+        joinedAt: viewerRow.joinedAt
+      });
+    }
   });
+
+  const userCanAccessRoom = (roomCode: string, userId?: string): boolean => {
+    if (!userId) return false;
+
+    const session = collaborativeSessions.get(roomCode);
+    if (session) {
+      if (session.hostId === userId) return true;
+
+      const inParticipants = (session.participants ?? []).some((participant: any) => {
+        const participantId = String(participant.userId ?? participant.id ?? '');
+        return participantId === userId;
+      });
+      if (inParticipants) return true;
+
+      const inViewers = (session.viewers ?? []).some((viewer: any) => {
+        const viewerId = String(viewer.userId ?? viewer.id ?? '');
+        return viewerId === userId;
+      });
+      if (inViewers) return true;
+    }
+
+    if (dawSyncStore.roomHasMembershipUser(roomCode, userId)) return true;
+    if (dawSyncStore.roomHasUserActivity(roomCode, userId)) return true;
+    return false;
+  };
+
+  const resolveRoomAccess = (req: Request, roomCode: string): { allowed: boolean; userId?: string; via?: 'jwt' | 'vst' } => {
+    const authHeader = req.headers.authorization;
+    const bearer = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const cookieToken = (req as any).cookies?.accessToken as string | undefined;
+    const token = bearer || cookieToken;
+
+    if (!token) return { allowed: false };
+
+    const decoded = verifyToken(token);
+    if (decoded) {
+      const user = findUserById(decoded.sub);
+      if (user && userCanAccessRoom(roomCode, user.id)) {
+        return { allowed: true, userId: user.id, via: 'jwt' };
+      }
+    }
+
+    const vstSession = vstSessions.get(token);
+    if (vstSession) {
+      if (typeof vstSession.expiresAt === 'number' && Date.now() > vstSession.expiresAt) {
+        vstSessions.delete(token);
+        return { allowed: false };
+      }
+
+      const roomUpper = String(roomCode).toUpperCase();
+      const sessionRoomCode = String(vstSession.roomCode ?? '').toUpperCase();
+      const sessionRoomId = String(vstSession.roomId ?? '');
+
+      if (sessionRoomCode === roomUpper || sessionRoomId === roomCode) {
+        return {
+          allowed: true,
+          userId: String(vstSession.guestId ?? `vst-session-${token.slice(0, 12)}`),
+          via: 'vst'
+        };
+      }
+    }
+
+    return { allowed: false };
+  };
 
   /**
    * POST /api/sessions/collaborate
@@ -1772,7 +2347,18 @@ function buildApiRouter() {
    */
   router.post('/sessions/collaborate', (req: Request, res: Response) => {
     try {
-      const { title, description, mode, submode, maxParticipants = 4, maxStreams = 4, isGuest = false, hostId } = req.body || {};
+      const {
+        title,
+        description,
+        mode,
+        submode,
+        maxParticipants = 4,
+        maxStreams = 4,
+        isGuest = false,
+        hostId,
+        hostUsername,
+        roomPassword
+      } = req.body || {};
 
       if (!title || !mode || !submode) {
         return res.status(400).json({ error: 'title, mode, and submode required' });
@@ -1785,15 +2371,19 @@ function buildApiRouter() {
       const sessionId = createId('collab-session');
       const now = Date.now();
       const expiresAt = isGuest ? now + 60 * 60 * 1000 : undefined; // 1 hour for guests, unlimited for authenticated
+      const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const resolvedRoomPassword = String(roomPassword ?? '').trim() || Math.random().toString().slice(2, 8);
 
       const session: any = {
         id: sessionId,
+        roomCode,
+        roomPassword: resolvedRoomPassword,
         title,
         description: description || '',
         mode,
         submode,
         hostId: hostId || 'user-' + Date.now(), // In production, get from auth
-        hostUsername: 'Creator',
+        hostUsername: hostUsername || 'Creator',
         createdAt: now,
         expiresAt,
         isGuestSession: isGuest,
@@ -1828,10 +2418,67 @@ function buildApiRouter() {
       };
 
       collaborativeSessions.set(sessionId, session);
+      dawSyncStore.recordRoomMembership({
+        roomCode: sessionId,
+        userId: session.hostId,
+        username: session.hostUsername,
+        role: 'host',
+        joinedAt: now
+      });
       res.status(201).json(session);
     } catch (err) {
       console.error('[Collab] Failed to create session:', err);
       res.status(500).json({ error: 'Failed to create session' });
+    }
+  });
+
+  /**
+   * POST /api/sessions/join-room
+   * Join a collaborative session via room code (or session id) and password.
+   */
+  router.post('/sessions/join-room', (req: Request, res: Response) => {
+    try {
+      const room = String(req.body?.room ?? '').trim();
+      const password = String(req.body?.password ?? '').trim();
+
+      if (!room || !password) {
+        return res.status(400).json({ error: 'room and password are required' });
+      }
+
+      const roomUpper = room.toUpperCase();
+      const session = Array.from(collaborativeSessions.values()).find((candidate: any) => {
+        if (!candidate) return false;
+        const sessionId = String(candidate.id ?? '').toUpperCase();
+        const sessionRoomCode = String(candidate.roomCode ?? '').toUpperCase();
+        return sessionId === roomUpper || sessionRoomCode === roomUpper;
+      }) as any;
+
+      if (!session) {
+        return res.status(404).json({ error: 'Room not found' });
+      }
+
+      if (session.status === 'ended') {
+        return res.status(410).json({ error: 'Room has ended' });
+      }
+
+      if (session.isGuestSession && session.expiresAt && Date.now() > session.expiresAt) {
+        collaborativeSessions.delete(session.id);
+        return res.status(410).json({ error: 'Room has expired' });
+      }
+
+      const expectedPassword = String(session.roomPassword ?? '').trim();
+      if (!expectedPassword || password !== expectedPassword) {
+        return res.status(401).json({ error: 'Invalid room/password' });
+      }
+
+      return res.json({
+        ok: true,
+        session,
+        joinedWith: String(session.roomCode ?? session.id)
+      });
+    } catch (err) {
+      console.error('[Collab] Failed to join by room/password:', err);
+      return res.status(500).json({ error: 'Failed to join room' });
     }
   });
 
@@ -2028,6 +2675,14 @@ function buildApiRouter() {
         status: 'pending',
         createdAt: Date.now()
       });
+
+      dawSyncStore.recordRoomMembership({
+        roomCode: sessionId,
+        userId,
+        username,
+        role: role || 'collaborator',
+        joinedAt: Date.now()
+      });
     } catch (err) {
       console.error('[Collab] Failed to create join request:', err);
       res.status(500).json({ error: 'Failed to request join' });
@@ -2090,6 +2745,457 @@ function buildApiRouter() {
     } catch (err) {
       console.error('[Collab] Failed to list sessions:', err);
       res.status(500).json({ error: 'Failed to list sessions' });
+    }
+  });
+
+  /**
+   * GET /api/sessions/my-rooms
+   * List collaboration rooms created by the authenticated user, grouped by active/inactive.
+   */
+  router.get('/sessions/my-rooms', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId;
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const now = Date.now();
+      const mine = Array.from(collaborativeSessions.values())
+        .filter((session: any) => String(session.hostId || '') === String(userId))
+        .map((session: any) => {
+          const expired = Boolean(session.expiresAt && now > Number(session.expiresAt));
+          const ended = String(session.status || '') === 'ended';
+          const isActive = !expired && !ended;
+          return {
+            id: session.id,
+            roomCode: session.roomCode,
+            roomPassword: session.roomPassword,
+            title: session.title,
+            mode: session.mode,
+            submode: session.submode,
+            hostUsername: session.hostUsername,
+            createdAt: session.createdAt,
+            expiresAt: session.expiresAt,
+            status: session.status,
+            isGuestSession: Boolean(session.isGuestSession),
+            participants: Array.isArray(session.participants) ? session.participants.length : 0,
+            viewers: Array.isArray(session.viewers) ? session.viewers.length : 0,
+            active: isActive
+          };
+        })
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+
+      const active = mine.filter((session) => session.active);
+      const inactive = mine.filter((session) => !session.active);
+
+      return res.json({ active, inactive, total: mine.length });
+    } catch (err) {
+      console.error('[Collab] Failed to load my rooms:', err);
+      return res.status(500).json({ error: 'Failed to load your rooms' });
+    }
+  });
+
+  router.get('/collab/:roomCode/visualization', (req: Request, res: Response) => {
+    try {
+      const { roomCode } = req.params;
+      const since = req.query.since ? Number(req.query.since) : undefined;
+      const limit = req.query.limit ? Math.min(Number(req.query.limit), 1000) : 300;
+      const session = collaborativeSessions.get(roomCode);
+
+      const access = resolveRoomAccess(req, roomCode);
+      const allowPublicSpectate = !access.allowed && !!session && session.status !== 'ended';
+      if (!access.allowed && !allowPublicSpectate) {
+        return res.status(401).json({ error: 'Authentication required for room visualization' });
+      }
+
+      if (access.via === 'jwt' && !userCanAccessRoom(roomCode, access.userId)) {
+        return res.status(403).json({ error: 'Room access denied' });
+      }
+
+      const memberships = dawSyncStore.listRoomMemberships(roomCode);
+      const pushEvents = dawSyncStore.listPushEventsByRoom(roomCode, { since, limit });
+      const activeInstances = vstSyncManager.getConnectedInstances(roomCode).length;
+      const includeAssetDownloadUrls = access.allowed;
+
+      const timeline: CollabPushEventRecord[] = pushEvents.map((event) => ({
+        ...event,
+        assets: event.assets.map((asset) => ({
+          ...asset,
+          downloadUrl: includeAssetDownloadUrls ? `/api/collab/assets/${asset.id}` : undefined
+        }))
+      }));
+
+      if (!timeline.length) {
+        const roomTracks = dawSyncStore.listTrackStates(roomCode);
+        for (const track of roomTracks) {
+          const changes = dawSyncStore.listChangesSince(roomCode, track.trackId, 0);
+          for (const change of changes.slice(0, 100)) {
+            timeline.push({
+              id: `backfill-${change.id}`,
+              roomCode,
+              trackId: change.trackId,
+              version: change.version,
+              eventTime: change.updatedAt,
+              updatedBy: change.updatedBy,
+              pluginInstanceId: change.state.pluginInstanceId,
+              dawTrackIndex: change.state.dawTrackIndex,
+              dawTrackName: change.state.dawTrackName,
+              pushedByUserId: change.updatedBy,
+              pushedByUsername: change.updatedBy,
+              editType: change.state.trackType === 'midi' ? 'midi' : 'audio',
+              trackBeat: change.state.currentBeat,
+              durationSeconds: undefined,
+              fileTypes: (change.state.files ?? []).map((file) => file.fileType),
+              source: 'backfill',
+              payload: {
+                clipCount: change.state.clips.length,
+                noteCount: change.state.notes.length,
+                backfilled: true
+              },
+              assets: (change.state.files ?? []).map((file) => ({
+                id: `${change.id}-${file.id}`,
+                eventId: `backfill-${change.id}`,
+                roomCode,
+                trackId: change.trackId,
+                fileName: file.fileName,
+                fileType: file.fileType,
+                filePath: file.filePath,
+                sizeBytes: file.sizeBytes,
+                durationSeconds: file.durationBeats,
+                createdAt: file.updatedAt ?? change.updatedAt,
+                downloadUrl: undefined
+              }))
+            });
+          }
+        }
+      }
+
+      timeline.sort((a, b) => b.eventTime - a.eventTime);
+
+      const trackTree = new Map<string, {
+        trackId: string;
+        trackName: string;
+        trackIndex: number;
+        instances: Map<string, CollabPushEventRecord[]>;
+      }>();
+
+      for (const event of timeline) {
+        const trackNode = trackTree.get(event.trackId) ?? {
+          trackId: event.trackId,
+          trackName: event.dawTrackName ?? event.trackId,
+          trackIndex: event.dawTrackIndex ?? 0,
+          instances: new Map<string, CollabPushEventRecord[]>()
+        };
+        const instanceKey = event.pluginInstanceId ?? 'unknown-instance';
+        const list = trackNode.instances.get(instanceKey) ?? [];
+        list.push(event);
+        trackNode.instances.set(instanceKey, list);
+        trackTree.set(event.trackId, trackNode);
+      }
+
+      const tree = Array.from(trackTree.values())
+        .sort((a, b) => a.trackIndex - b.trackIndex)
+        .map((trackNode) => ({
+          trackId: trackNode.trackId,
+          trackName: trackNode.trackName,
+          trackIndex: trackNode.trackIndex,
+          instances: Array.from(trackNode.instances.entries()).map(([pluginInstanceId, pushes]) => ({
+            pluginInstanceId,
+            pushes: pushes.sort((a, b) => {
+              const beatA = typeof a.trackBeat === 'number' ? a.trackBeat : Number.MAX_SAFE_INTEGER;
+              const beatB = typeof b.trackBeat === 'number' ? b.trackBeat : Number.MAX_SAFE_INTEGER;
+              if (beatA !== beatB) return beatA - beatB;
+              return a.eventTime - b.eventTime;
+            })
+          }))
+        }));
+
+      const payload: CollabVisualizationResponse = {
+        roomCode,
+        generatedAt: Date.now(),
+        summary: {
+          roomTitle: session?.title,
+          totalPushes: timeline.length,
+          totalAssets: timeline.reduce((acc, event) => acc + event.assets.length, 0),
+          totalParticipants: memberships.length,
+          activeInstances,
+          tracksTouched: tree.length
+        },
+        members: memberships,
+        timeline,
+        tree
+      };
+
+      return res.json(payload);
+    } catch (err) {
+      console.error('[collab] visualization failed', err);
+      return res.status(500).json({ error: 'Failed to build collaboration visualization' });
+    }
+  });
+
+  router.post(
+    '/collab/:roomCode/assets/upload-chunk',
+    express.raw({ type: '*/*', limit: '200mb' }),
+    (req: Request, res: Response) => {
+      try {
+        const { roomCode } = req.params;
+        const access = resolveRoomAccess(req, roomCode);
+        if (!access.allowed) {
+          return res.status(401).json({ error: 'Authentication required for room upload' });
+        }
+
+        const bodyBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
+        if (!bodyBuffer.length) {
+          return res.status(400).json({ error: 'Chunk body is required' });
+        }
+
+        const uploadId = String(req.headers['x-upload-id'] || createId('collab-upload'));
+        const fileName = String(req.headers['x-file-name'] || 'upload.bin');
+        const chunkIndex = Number(req.headers['x-chunk-index'] || 0);
+        const totalChunks = Number(req.headers['x-total-chunks'] || 1);
+
+        if (!Number.isFinite(chunkIndex) || chunkIndex < 0) {
+          return res.status(400).json({ error: 'x-chunk-index must be a non-negative number' });
+        }
+
+        const uploadRoot = path.join(COLLAB_ASSET_DIR, 'uploads', sanitizePathSegment(roomCode), sanitizePathSegment(uploadId));
+        fs.mkdirSync(uploadRoot, { recursive: true });
+
+        const metadataPath = path.join(uploadRoot, 'metadata.json');
+        const metadata = {
+          roomCode,
+          uploadId,
+          fileName,
+          fileType: String(req.headers['x-file-type'] || 'application/octet-stream'),
+          trackId: String(req.headers['x-track-id'] || ''),
+          eventId: String(req.headers['x-event-id'] || ''),
+          durationSeconds: req.headers['x-duration-seconds'] ? Number(req.headers['x-duration-seconds']) : undefined,
+          checksum: String(req.headers['x-checksum'] || ''),
+          totalChunks,
+          updatedAt: Date.now()
+        };
+        fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+
+        const chunkPath = path.join(uploadRoot, `chunk_${chunkIndex}.part`);
+        fs.writeFileSync(chunkPath, bodyBuffer);
+
+        return res.status(201).json({
+          ok: true,
+          uploadId,
+          roomCode,
+          chunkIndex,
+          totalChunks,
+          receivedBytes: bodyBuffer.length
+        });
+      } catch (err) {
+        console.error('[collab] upload chunk failed', err);
+        return res.status(500).json({ error: 'Failed to upload chunk' });
+      }
+    }
+  );
+
+  router.post('/collab/:roomCode/assets/complete-upload', (req: Request, res: Response) => {
+    try {
+      const { roomCode } = req.params;
+      const access = resolveRoomAccess(req, roomCode);
+      if (!access.allowed) {
+        return res.status(401).json({ error: 'Authentication required for room upload' });
+      }
+
+      const {
+        uploadId,
+        eventId,
+        trackId,
+        fileName,
+        fileType,
+        durationSeconds,
+        checksum,
+        metadata,
+        totalChunks
+      } = req.body || {};
+
+      if (!uploadId || !eventId || !trackId || !fileName || !fileType) {
+        return res.status(400).json({ error: 'uploadId, eventId, trackId, fileName, and fileType are required' });
+      }
+
+      const uploadRoot = path.join(COLLAB_ASSET_DIR, 'uploads', sanitizePathSegment(roomCode), sanitizePathSegment(String(uploadId)));
+      if (!fs.existsSync(uploadRoot)) {
+        return res.status(404).json({ error: 'Upload session not found' });
+      }
+
+      const chunkFiles = fs
+        .readdirSync(uploadRoot)
+        .filter((name) => name.startsWith('chunk_') && name.endsWith('.part'))
+        .sort((a, b) => {
+          const ia = Number(a.replace('chunk_', '').replace('.part', ''));
+          const ib = Number(b.replace('chunk_', '').replace('.part', ''));
+          return ia - ib;
+        });
+
+      if (!chunkFiles.length) {
+        return res.status(400).json({ error: 'No uploaded chunks found for this uploadId' });
+      }
+
+      if (Number.isFinite(Number(totalChunks)) && chunkFiles.length < Number(totalChunks)) {
+        return res.status(400).json({ error: `Upload incomplete: received ${chunkFiles.length}/${Number(totalChunks)} chunks` });
+      }
+
+      const targetDir = path.join(COLLAB_ASSET_DIR, sanitizePathSegment(roomCode), sanitizePathSegment(String(trackId)));
+      fs.mkdirSync(targetDir, { recursive: true });
+
+      const outputName = `${sanitizePathSegment(String(eventId))}_${sanitizePathSegment(String(fileName))}`;
+      const outputPath = path.join(targetDir, outputName);
+
+      const parts = chunkFiles.map((chunkFile) => {
+        const chunkPath = path.join(uploadRoot, chunkFile);
+        return fs.readFileSync(chunkPath);
+      });
+      fs.writeFileSync(outputPath, Buffer.concat(parts));
+
+      const fileStat = fs.statSync(outputPath);
+      const assetRows = dawSyncStore.recordPushAssets(roomCode, String(trackId), String(eventId), [
+        {
+          fileName: String(fileName),
+          fileType: String(fileType),
+          filePath: outputPath,
+          sizeBytes: fileStat.size,
+          durationSeconds: typeof durationSeconds === 'number' ? durationSeconds : undefined,
+          checksum: typeof checksum === 'string' ? checksum : undefined,
+          metadata: metadata && typeof metadata === 'object' ? metadata : undefined
+        }
+      ]);
+
+      fs.rmSync(uploadRoot, { recursive: true, force: true });
+
+      return res.status(201).json({
+        ok: true,
+        roomCode,
+        eventId,
+        uploadedChunks: chunkFiles.length,
+        asset: assetRows[0]
+      });
+    } catch (err) {
+      console.error('[collab] complete upload failed', err);
+      return res.status(500).json({ error: 'Failed to complete upload' });
+    }
+  });
+
+  router.post('/collab/:roomCode/backfill', (req: Request, res: Response) => {
+    try {
+      const { roomCode } = req.params;
+      const access = resolveRoomAccess(req, roomCode);
+      if (!access.allowed) {
+        return res.status(401).json({ error: 'Authentication required for room backfill' });
+      }
+
+      if (access.via === 'jwt' && !userCanAccessRoom(roomCode, access.userId)) {
+        return res.status(403).json({ error: 'Room access denied' });
+      }
+
+      const trackIds = dawSyncStore.listTrackIdsForRoom(roomCode);
+      let scanned = 0;
+      let inserted = 0;
+      let deduped = 0;
+
+      for (const trackId of trackIds) {
+        const changes = dawSyncStore.listAllChangesForRoom(roomCode, trackId);
+        for (const change of changes) {
+          scanned += 1;
+          const sourceRef = change.id;
+
+          if (dawSyncStore.hasPushEventSourceRef(roomCode, sourceRef)) {
+            deduped += 1;
+            continue;
+          }
+
+          const state = change.state;
+          const eventId = dawSyncStore.recordPushEvent({
+            roomCode,
+            trackId,
+            version: change.version,
+            updatedBy: change.updatedBy,
+            pluginInstanceId: state.pluginInstanceId,
+            dawTrackIndex: state.dawTrackIndex,
+            dawTrackName: state.dawTrackName,
+            sourceRef,
+            details: {
+              source: 'backfill',
+              editType: state.trackType === 'midi' ? 'midi' : state.trackType === 'audio' ? 'audio' : 'hybrid',
+              trackBeat: state.currentBeat,
+              fileTypes: (state.files ?? []).map((file) => file.fileType),
+              pushedByUserId: change.updatedBy,
+              pushedByUsername: change.updatedBy,
+              notes: 'Legacy backfilled DAW track change'
+            },
+            payload: {
+              clipCount: state.clips.length,
+              noteCount: state.notes.length,
+              backfilledAt: Date.now()
+            }
+          });
+
+          const fileAssets = (state.files ?? []).map((file) => ({
+            fileName: file.fileName,
+            fileType: file.fileType,
+            filePath: file.filePath,
+            checksum: file.checksum,
+            sizeBytes: file.sizeBytes,
+            durationSeconds: file.durationBeats,
+            metadata: {
+              source: file.source,
+              updatedAt: file.updatedAt
+            }
+          }));
+          if (fileAssets.length) {
+            dawSyncStore.recordPushAssets(roomCode, trackId, eventId, fileAssets);
+          }
+
+          inserted += 1;
+        }
+      }
+
+      return res.json({
+        ok: true,
+        roomCode,
+        scanned,
+        inserted,
+        deduped,
+        totalPushEvents: dawSyncStore.countPushEvents(roomCode)
+      });
+    } catch (err) {
+      console.error('[collab] backfill failed', err);
+      return res.status(500).json({ error: 'Failed to backfill collaboration history' });
+    }
+  });
+
+  router.get('/collab/assets/:assetId', (req: Request, res: Response) => {
+    try {
+      const { assetId } = req.params;
+      const asset = dawSyncStore.getPushAssetById(assetId);
+
+      if (!asset) {
+        return res.status(404).json({ error: 'Asset not found' });
+      }
+
+      const access = resolveRoomAccess(req, asset.roomCode);
+      if (!access.allowed) {
+        return res.status(401).json({ error: 'Authentication required for room asset access' });
+      }
+
+      if (access.via === 'jwt' && !userCanAccessRoom(asset.roomCode, access.userId)) {
+        return res.status(403).json({ error: 'Room access denied' });
+      }
+
+      if (!asset.filePath || !fs.existsSync(asset.filePath)) {
+        return res.status(404).json({ error: 'Asset file is unavailable' });
+      }
+
+      res.setHeader('Content-Type', asset.fileType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${asset.fileName}"`);
+      return res.sendFile(path.resolve(asset.filePath));
+    } catch (err) {
+      console.error('[collab] asset download failed', err);
+      return res.status(500).json({ error: 'Failed to stream asset' });
     }
   });
 

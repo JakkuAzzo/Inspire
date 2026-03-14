@@ -227,6 +227,10 @@ void WebSocketClient::parseAndQueueMessage(const juce::String& jsonStr)
   msg.pluginInstanceId = obj->getProperty("pluginInstanceId").toString();
   msg.roomCode = obj->getProperty("roomCode").toString();
   msg.username = obj->getProperty("username").toString();
+  msg.displayName = obj->getProperty("displayName").toString();
+  msg.pluginRole = obj->getProperty("pluginRole").toString();
+  msg.masterInstanceId = obj->getProperty("masterInstanceId").toString();
+  msg.presenceLabel = obj->getProperty("presenceLabel").toString();
   msg.version = obj->getProperty("version");
   msg.timestamp = obj->getProperty("timestamp");
   msg.raw = jsonStr;

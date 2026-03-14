@@ -97,13 +97,15 @@ private:
   juce::Label tokenLabel;
   juce::Label syncStatusLabel;
   juce::Label authStatusLabel;
+  juce::Label roleStatusLabel;
+  juce::Label roleBadgeLabel;
   juce::ListBox fileList;
   
   // Mode selection cards (shown after joining/creating room)
   juce::TextButton writerLabCard{"Writer Lab"};
   juce::TextButton producerLabCard{"Producer Lab"};
   juce::TextButton editorSuiteCard{"Editor Suite"};
-  juce::TextButton updatesCard{"Updates"};
+  juce::TextButton updatesCard{"Project"};
   juce::TextButton searchCard{"Search"};
   
   // When a mode is opened, show this header and a back button to return to mode selection
@@ -113,6 +115,7 @@ private:
   // Push/Pull controls (within updates card)
   juce::TextButton pushTrackButton{"Push This Track"};
   juce::TextButton pullTrackButton{"Pull This Track"};
+  juce::TextButton attachArtifactButton{"Attach & Upload"};
   juce::TextEditor pushLogDisplay;
   juce::Label pushLogLabel;
 
@@ -131,6 +134,7 @@ private:
   // Phase 2: Smart polling - track recent pushes without full refresh
   int64 lastPollTime = 0;
   void checkForRecentPushes();
+  void fetchCollabVisualizationForUpdates(bool incremental = true);
 
   // Phase 3: Real-time WebSocket sync for instant updates
   std::unique_ptr<WebSocketClient> wsClient;
@@ -139,6 +143,11 @@ private:
   void handleWebSocketMessage(const VSWSMessage& msg);
   void startWebSocketSync();
   void stopWebSocketSync();
+  void attemptRoleAttachIfNeeded();
+  void heartbeatAndPollMasterState();
+  juce::String effectivePluginRole() const;
+  bool isMasterRole() const;
+  bool isRelayOrCreateRole() const;
 
   // Room info displayed at top when in a room
   juce::Label roomInfoLabel;
@@ -300,16 +309,33 @@ private:
   bool isAuthenticated = false;
   bool isGuest = false;
   juce::String authUsername;
+  juce::String pendingAuthBridgeId;
+  int64_t pendingAuthBridgeStartedAtMs = 0;
+  int64_t lastAuthBridgePollAtMs = 0;
+  bool authBridgePollInFlight = false;
   bool inRoom = false;  // Track if we're in a collaboration room
   juce::String selectedMode;  // "writer", "producer", "editor", or empty
   juce::StringArray pushLog;  // Recent push/pull activity log
   juce::Array<juce::var> updatesList; // structured updates for Updates mode
+  juce::String groupedTimelineText;
+  int64_t lastCollabVizFetchAtMs = 0;
+  juce::File pendingArtifactFile;
+  juce::String pendingArtifactMimeType;
+  std::unique_ptr<juce::FileChooser> artifactFileChooser;
 
   // Session info for collaboration display
   juce::String authStatus{"guest"};  // "guest" or "authenticated"
   int64_t sessionStartTimeMs = 0;    // When session/room was created
   int64_t sessionDurationMs = 3600000; // Default 1 hour in ms
   juce::String pluginInstanceID;     // Unique identifier for this plugin instance
+  juce::String pluginRole{"master"};
+  juce::String masterInstanceId;
+  bool roleAttached = false;
+  bool roleLockedByMasterRequirement = false;
+  juce::String roleLockReason;
+  int64_t lastRoleAttachAttemptMs = 0;
+  int64_t lastMasterHeartbeatMs = 0;
+  int64_t lastMasterStatePollMs = 0;
   
   // Session card button bounds for click detection
   juce::Rectangle<int> sessionCardBounds;
@@ -317,6 +343,7 @@ private:
   juce::Rectangle<int> passwordCopyBounds;
   juce::Rectangle<int> leaveRoomBounds;
   juce::Rectangle<int> logoBounds;  // Logo click area for menu
+  juce::Rectangle<int> roleStatusBarBounds;
   int64_t lastCopyFeedbackTimeMs = 0;  // For copy feedback animation
   int lastCopiedButton = -1;  // 0 = room code, 1 = password
 
@@ -333,6 +360,7 @@ private:
   void showLogoMenu();
   void showSessionInfoPopup();
   void logout();
+  juce::Colour roleAccentColour() const;
   
   // DAW Sync - room code persistence and track synchronization
   juce::String pendingRoomCode;
@@ -382,6 +410,7 @@ private:
   // Authentication and save with retry
   void attemptSaveWithTokenRefresh();
   bool isResponseAuthError(const juce::String& response);
+  void pollAuthBridge();
   juce::String currentPackToSave;  // Temporary storage for save retry
 
   class FileListModel : public juce::ListBoxModel

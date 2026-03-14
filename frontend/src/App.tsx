@@ -26,6 +26,7 @@ import { CreatorSettingsModal } from './components/workspace/CreatorSettingsModa
 import { FocusModeControls } from './components/workspace/FocusModeControls';
 import { AudioIOControls } from './components/daw/AudioIOControls';
 import { CollaborativeSessionDetail } from './pages/CollaborativeSession';
+import { DashboardPage } from './pages/DashboardPage';
 import { trackEvent } from './utils/analytics';
 import * as authService from './services/authService';
 import type { AuthUser } from './services/authService';
@@ -913,7 +914,17 @@ function App() {
 	const [showAccountModal, setShowAccountModal] = useState(false);
 	const [showAccountDetails, setShowAccountDetails] = useState(false);
 	const [vstRedirectUri, setVstRedirectUri] = useState<string | null>(null);
+	const [vstBridgeId, setVstBridgeId] = useState<string | null>(null);
+	const canUseLegacyVstCallback = useMemo(() => {
+		if (!vstRedirectUri || vstBridgeId) return false;
+		return /^https?:\/\//i.test(vstRedirectUri);
+	}, [vstRedirectUri, vstBridgeId]);
+	const hasTriggeredVstCallbackRef = useRef(false);
+	const hasTriggeredVstBridgeRef = useRef(false);
 	const [showCommunityOverlay, setShowCommunityOverlay] = useState(false);
+	const isDashboardRoute =
+		typeof window !== 'undefined' &&
+		window.location.pathname.replace(/\/+$/, '') === '/dashboard';
         const [controlsCollapsed, setControlsCollapsed] = useState<boolean>(() => {
                 if (typeof window === 'undefined') return true;
                 const stored = window.localStorage.getItem(CONTROLS_COLLAPSED_KEY);
@@ -953,8 +964,12 @@ function App() {
 	const [activeCollaborativeSession, setActiveCollaborativeSession] = useState<CollaborativeSession | null>(null);
 	const [showCollaborativeCreate, setShowCollaborativeCreate] = useState(false);
 	const [collaborativeSessionTitle, setCollaborativeSessionTitle] = useState('');
+	const [collaborativeSessionPassword, setCollaborativeSessionPassword] = useState('');
 	const [collaborativeSessionMode, setCollaborativeSessionMode] = useState<CreativeMode>('lyricist');
 	const [collaborativeSessionSubmode, setCollaborativeSessionSubmode] = useState('rapper');
+	const [joinCollabRoomInput, setJoinCollabRoomInput] = useState('');
+	const [joinCollabPasswordInput, setJoinCollabPasswordInput] = useState('');
+	const [joiningCollabByRoom, setJoiningCollabByRoom] = useState(false);
 	const [userRole, setUserRole] = useState<'host' | 'collaborator' | 'viewer'>('host');
 	const [deckOrder, setDeckOrder] = useState<string[]>([]);
 	const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
@@ -1278,13 +1293,13 @@ function App() {
 			setAuthUser(user);
 			setUserId(user.displayName || user.id);
 			setShowAccountModal(false);
-			if (vstRedirectUri && typeof window !== 'undefined') {
+			if (canUseLegacyVstCallback && vstRedirectUri && typeof window !== 'undefined') {
 				window.location.href = `/api/auth/callback?vst_uri=${encodeURIComponent(vstRedirectUri)}`;
 			}
 		} catch (err: any) {
 			throw new Error(err.message || 'OTP verification failed');
 		}
-	}, [vstRedirectUri]);
+	}, [canUseLegacyVstCallback, vstRedirectUri]);
 
 	const handleVerifyLoginOtp = useCallback(async (email: string, otpCode: string) => {
 		try {
@@ -1292,13 +1307,13 @@ function App() {
 			setAuthUser(user);
 			setUserId(user.displayName || user.id);
 			setShowAccountModal(false);
-			if (vstRedirectUri && typeof window !== 'undefined') {
+			if (canUseLegacyVstCallback && vstRedirectUri && typeof window !== 'undefined') {
 				window.location.href = `/api/auth/callback?vst_uri=${encodeURIComponent(vstRedirectUri)}`;
 			}
 		} catch (err: any) {
 			throw new Error(err.message || 'OTP verification failed');
 		}
-	}, [vstRedirectUri]);
+	}, [canUseLegacyVstCallback, vstRedirectUri]);
 
 	const handleLogin = useCallback(async (email: string, password: string) => {
 		try {
@@ -1314,13 +1329,13 @@ function App() {
 			setAuthUser(user);
 			setUserId(user.displayName || user.id);
 			setShowAccountModal(false);
-			if (vstRedirectUri && typeof window !== 'undefined') {
+			if (canUseLegacyVstCallback && vstRedirectUri && typeof window !== 'undefined') {
 				window.location.href = `/api/auth/callback?vst_uri=${encodeURIComponent(vstRedirectUri)}`;
 			}
 		} catch (err: any) {
 			throw new Error(err.message || 'Guest mode failed');
 		}
-	}, [vstRedirectUri]);
+	}, [canUseLegacyVstCallback, vstRedirectUri]);
 
 	const handleSignOut = useCallback(async () => {
 		try {
@@ -1340,12 +1355,16 @@ function App() {
 
 	// Load current user on mount
 	useEffect(() => {
-		// Check for VST redirect URI in query params
+		// Check for VST auth callback params in query string.
 		if (typeof window !== 'undefined') {
 			const params = new URLSearchParams(window.location.search);
 			const vst = params.get('vst_uri') || params.get('redirect_uri');
 			if (vst) {
 				setVstRedirectUri(vst);
+			}
+			const bridgeId = params.get('vst_bridge_id');
+			if (bridgeId) {
+				setVstBridgeId(bridgeId);
 			}
 		}
 		authService.getCurrentUser().then(user => {
@@ -1355,6 +1374,58 @@ function App() {
 			}
 		});
 	}, []);
+
+	useEffect(() => {
+		if (!canUseLegacyVstCallback || !vstRedirectUri || !authUser || typeof window === 'undefined' || hasTriggeredVstCallbackRef.current) {
+			return;
+		}
+
+		hasTriggeredVstCallbackRef.current = true;
+		window.location.href = `/api/auth/callback?vst_uri=${encodeURIComponent(vstRedirectUri)}`;
+	}, [canUseLegacyVstCallback, vstRedirectUri, authUser]);
+
+	useEffect(() => {
+		if (!vstBridgeId || !authUser || typeof window === 'undefined' || hasTriggeredVstBridgeRef.current) {
+			return;
+		}
+
+		hasTriggeredVstBridgeRef.current = true;
+
+		const completeBridge = async () => {
+			try {
+				const callbackRes = await fetch('/api/auth/callback', {
+					method: 'GET',
+					credentials: 'include'
+				});
+
+				if (!callbackRes.ok) {
+					throw new Error(`Callback failed with ${callbackRes.status}`);
+				}
+
+				const callbackBody = await callbackRes.json();
+				const accessToken = callbackBody?.accessToken;
+				if (!accessToken || typeof accessToken !== 'string') {
+					throw new Error('Missing access token from callback');
+				}
+
+				await fetch('/api/vst/auth-bridge/complete', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					credentials: 'include',
+					body: JSON.stringify({
+						bridgeId: vstBridgeId,
+						accessToken,
+						displayName: authUser.displayName || authUser.email || 'User',
+						isGuest: Boolean(authUser.isGuest)
+					})
+				});
+			} catch (bridgeErr) {
+				console.error('VST auth bridge completion failed:', bridgeErr);
+			}
+		};
+
+		void completeBridge();
+	}, [vstBridgeId, authUser]);
 
 	useEffect(() => {
 		const updateCountdown = () => setChallengeCountdown(formatChallengeCountdown(dailyChallenge.expiresAt));
@@ -1683,7 +1754,10 @@ function App() {
 				title: collaborativeSessionTitle || `${collaborativeSessionMode} Collab`,
 				mode: collaborativeSessionMode,
 				submode: collaborativeSessionSubmode,
-				isGuest
+				isGuest,
+				hostId: authUser?.id,
+				hostUsername: authUser?.displayName || authUser?.email,
+				roomPassword: collaborativeSessionPassword.trim() || undefined
 			};
 
 			const res = await fetch('/api/sessions/collaborate', {
@@ -1699,13 +1773,16 @@ function App() {
 			setActiveCollaborativeSession(session);
 			setShowCollaborativeCreate(false);
 			setCollaborativeSessionTitle('');
+			setCollaborativeSessionPassword('');
 			setUserRole('host');
 			
 			// Show expiry warning for guests
+			const roomDescriptor = session.roomCode || session.id;
+			const passwordDescriptor = session.roomPassword || 'hidden';
 			if (isGuest && body.remainingMinutes) {
 				setStatus(`Collaboration room created! (Expires in ${body.remainingMinutes} minutes)`);
 			} else {
-				setStatus('Collaboration room created! Invite others to join.');
+				setStatus(`Collaboration room created. Room ${roomDescriptor} · Password ${passwordDescriptor}`);
 			}
 			
 			trackEvent('collaborative_session_created', { 
@@ -1718,7 +1795,43 @@ function App() {
 			console.error('Failed to create collaborative session:', err);
 			setError('Unable to create collaboration room. Please try again.');
 		}
-	}, [collaborativeSessionTitle, collaborativeSessionMode, collaborativeSessionSubmode, userId, authUser]);
+	}, [collaborativeSessionTitle, collaborativeSessionMode, collaborativeSessionSubmode, collaborativeSessionPassword, userId, authUser]);
+
+	const handleJoinCollaborativeByRoom = useCallback(async () => {
+		const room = joinCollabRoomInput.trim();
+		const password = joinCollabPasswordInput.trim();
+
+		if (!room || !password) {
+			setStatus('Enter both room and password to join.');
+			return;
+		}
+
+		setJoiningCollabByRoom(true);
+		try {
+			const response = await fetch('/api/sessions/join-room', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ room, password })
+			});
+
+			const body = await response.json();
+			if (!response.ok) {
+				throw new Error(body?.error || body?.message || 'Unable to join room');
+			}
+
+			const session: CollaborativeSession = body.session || body;
+			setActiveCollaborativeSession(session);
+			setUserRole('collaborator');
+			setJoinCollabRoomInput('');
+			setJoinCollabPasswordInput('');
+			setStatus(`Joined collaboration room ${session.roomCode || session.id}.`);
+		} catch (err: any) {
+			console.error('Failed to join collaborative room:', err);
+			setStatus(err?.message || 'Unable to join collaboration room.');
+		} finally {
+			setJoiningCollabByRoom(false);
+		}
+	}, [joinCollabRoomInput, joinCollabPasswordInput]);
 
 	// handleJoinCollaborativeSession merged into handleRequestJoinCollaborativeSession below
 	const handleLeaveCollaborativeSession = useCallback(() => {
@@ -2038,31 +2151,6 @@ function App() {
 				setError('Unable to load session');
 			});
 	}, []);
-
-		const handleRequestToJoinCollab = useCallback((sessionId: string) => {
-			const targetSession = activeSessions.find((session) => session.id === sessionId);
-			if (!targetSession) return;
-			
-			// Send request to backend
-			fetch(`/api/sessions/${sessionId}/request-join`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					userId: userId || 'guest',
-					username: 'Spectator',
-					role: 'collaborator'
-				})
-			}).then(res => res.json())
-			  .then(() => {
-				setStatus(`Request to join ${targetSession.title} sent`);
-				setSelectedSessionId(sessionId);
-				setViewerMode('joining');
-			  })
-			  .catch(err => {
-				console.error('Failed to send join request:', err);
-				setStatus('Unable to send join request. Try again.');
-			  });
-		}, [activeSessions, userId]);
 
 		const handleSpectatorEngagement = useCallback((sessionId: string, type: 'like' | 'react' | 'message') => {
 			const targetSession = activeSessions.find((session) => session.id === sessionId);
@@ -3740,6 +3828,10 @@ function App() {
 		</>
 	);
 
+	if (isDashboardRoute) {
+		return <DashboardPage />;
+	}
+
 	return (
 		<div className={appClassName} style={appStyle}>
 			{!mode && <MouseParticles particleCount={500} repelDistance={300} colors={['#ec4899', '#22d3ee', '#a855f7', '#8b5cf6', '#06b6d4', '#f472b6']} particleSize={2} />}
@@ -4029,6 +4121,30 @@ function App() {
 									aria-label="Search collaboration sessions"
 								/>
 							</div>
+							<div className="session-join-credentials">
+								<input
+									type="text"
+									value={joinCollabRoomInput}
+									onChange={(e) => setJoinCollabRoomInput(e.target.value)}
+									placeholder="Room"
+									aria-label="Room code or session id"
+								/>
+								<input
+									type="password"
+									value={joinCollabPasswordInput}
+									onChange={(e) => setJoinCollabPasswordInput(e.target.value)}
+									placeholder="Password"
+									aria-label="Room password"
+								/>
+								<button
+									type="button"
+									className="btn micro halo"
+									disabled={joiningCollabByRoom}
+									onClick={handleJoinCollaborativeByRoom}
+								>
+									{joiningCollabByRoom ? 'Joining...' : 'Join Collab'}
+								</button>
+							</div>
 							{isAuthenticated && (
 								<button 
 									type="button" 
@@ -4054,10 +4170,13 @@ function App() {
 											<button 
 												type="button" 
 												className="btn micro halo"
-												onClick={() => handleRequestToJoinCollab(session.id)}
-												title="Request to join"
+												onClick={() => {
+													setJoinCollabRoomInput(((session as any).roomCode || session.id) as string);
+													setStatus('Enter room password, then click Join Collab.');
+												}}
+												title="Join by room + password"
 											>
-												Request
+												Join Collab
 											</button>
 											<div className="session-peak-reactions">
 												<button type="button" className="icon-button" title="Like" onClick={() => handleSpectatorEngagement(session.id, 'like')}>
@@ -4253,6 +4372,17 @@ function App() {
 									onChange={(e) => setCollaborativeSessionTitle(e.target.value)}
 									placeholder="My awesome collab"
 									maxLength={100}
+								/>
+							</div>
+							<div className="form-group">
+								<label htmlFor="collab-password">Room Password</label>
+								<input
+									id="collab-password"
+									type="text"
+									value={collaborativeSessionPassword}
+									onChange={(e) => setCollaborativeSessionPassword(e.target.value)}
+									placeholder="Leave blank to auto-generate"
+									maxLength={32}
 								/>
 							</div>
 							<div className="form-group">

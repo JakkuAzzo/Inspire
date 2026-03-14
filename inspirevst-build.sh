@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # InspireVST Build Script
-# Builds the InspireVST VST3 plugin and installs it to /Library/Audio/Plug-Ins/VST3
+# Builds InspireVST VST3 and AU plugins and installs them for DAWs/Logic
 # Usage: ./inspirevst-build.sh [clean] [release|debug]
 
 set -e
@@ -17,8 +17,10 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_DIR="$SCRIPT_DIR/InspireVST"
 BUILD_DIR="$PROJECT_DIR/build"
-PLUGIN_SOURCE="$BUILD_DIR/InspireVST_artefacts/Release/VST3/InspireVST.vst3"
-INSTALL_DIR="$HOME/Library/Audio/Plug-Ins/VST3"
+VST3_SOURCE="$BUILD_DIR/InspireVST_artefacts/Release/VST3/InspireVST.vst3"
+AU_SOURCE="$BUILD_DIR/InspireVST_artefacts/Release/AU/InspireVST.component"
+VST3_INSTALL_DIR="$HOME/Library/Audio/Plug-Ins/VST3"
+AU_INSTALL_DIR="$HOME/Library/Audio/Plug-Ins/Components"
 BUILD_TYPE="Release"
 
 # Parse arguments
@@ -30,7 +32,8 @@ fi
 
 if [[ "$1" == "debug" || "$1" == "Debug" ]]; then
   BUILD_TYPE="Debug"
-  PLUGIN_SOURCE="$BUILD_DIR/InspireVST_artefacts/Debug/VST3/InspireVST.vst3"
+  VST3_SOURCE="$BUILD_DIR/InspireVST_artefacts/Debug/VST3/InspireVST.vst3"
+  AU_SOURCE="$BUILD_DIR/InspireVST_artefacts/Debug/AU/InspireVST.component"
 fi
 
 # Functions
@@ -64,7 +67,8 @@ print_section "Configuration"
 echo "Project Directory: $PROJECT_DIR"
 echo "Build Directory: $BUILD_DIR"
 echo "Build Type: $BUILD_TYPE"
-echo "Install Directory: $INSTALL_DIR"
+echo "VST3 Install Directory: $VST3_INSTALL_DIR"
+echo "AU Install Directory: $AU_INSTALL_DIR"
 
 # Check if project directory exists
 if [ ! -d "$PROJECT_DIR" ]; then
@@ -109,43 +113,68 @@ else
   exit 1
 fi
 
-# Verify VST3 bundle was created
+# Verify plugin bundles were created
 print_section "Verifying Build Output"
-if [ ! -f "$PLUGIN_SOURCE/Contents/MacOS/InspireVST" ]; then
+if [ ! -f "$VST3_SOURCE/Contents/MacOS/InspireVST" ]; then
   print_error "VST3 binary not found at expected location"
-  echo "Expected: $PLUGIN_SOURCE/Contents/MacOS/InspireVST"
+  echo "Expected: $VST3_SOURCE/Contents/MacOS/InspireVST"
   exit 1
 fi
 print_success "VST3 binary created"
+if [ ! -f "$AU_SOURCE/Contents/MacOS/InspireVST" ]; then
+  print_error "AU binary not found at expected location"
+  echo "Expected: $AU_SOURCE/Contents/MacOS/InspireVST"
+  exit 1
+fi
+print_success "AU component binary created"
 
-# Create install directory if needed
+# Create install directories if needed
 print_section "Installing Plugin"
-if [ ! -d "$INSTALL_DIR" ]; then
-  mkdir -p "$INSTALL_DIR"
-  print_success "Created plugin directory: $INSTALL_DIR"
+if [ ! -d "$VST3_INSTALL_DIR" ]; then
+  mkdir -p "$VST3_INSTALL_DIR"
+  print_success "Created plugin directory: $VST3_INSTALL_DIR"
+fi
+if [ ! -d "$AU_INSTALL_DIR" ]; then
+  mkdir -p "$AU_INSTALL_DIR"
+  print_success "Created plugin directory: $AU_INSTALL_DIR"
 fi
 
-# Remove old plugin if it exists
-if [ -d "$INSTALL_DIR/InspireVST.vst3" ]; then
-  rm -rf "$INSTALL_DIR/InspireVST.vst3"
+# Remove old plugins if they exist
+if [ -d "$VST3_INSTALL_DIR/InspireVST.vst3" ]; then
+  rm -rf "$VST3_INSTALL_DIR/InspireVST.vst3"
   print_info "Removed previous installation"
 fi
+if [ -d "$AU_INSTALL_DIR/InspireVST.component" ]; then
+  rm -rf "$AU_INSTALL_DIR/InspireVST.component"
+  print_info "Removed previous AU installation"
+fi
 
-# Copy new plugin
-if cp -r "$PLUGIN_SOURCE" "$INSTALL_DIR/"; then
-  print_success "Plugin installed to $INSTALL_DIR/InspireVST.vst3"
+# Copy new plugins
+if cp -r "$VST3_SOURCE" "$VST3_INSTALL_DIR/"; then
+  print_success "VST3 installed to $VST3_INSTALL_DIR/InspireVST.vst3"
 else
-  print_error "Failed to copy plugin to installation directory"
+  print_error "Failed to copy VST3 plugin to installation directory"
+  exit 1
+fi
+
+if cp -r "$AU_SOURCE" "$AU_INSTALL_DIR/"; then
+  print_success "AU installed to $AU_INSTALL_DIR/InspireVST.component"
+else
+  print_error "Failed to copy AU plugin to installation directory"
   exit 1
 fi
 
 # Verify installation
 print_section "Verifying Installation"
-if [ -d "$INSTALL_DIR/InspireVST.vst3" ]; then
-  BINARY_SIZE=$(ls -lh "$INSTALL_DIR/InspireVST.vst3/Contents/MacOS/InspireVST" | awk '{print $5}')
+if [ -d "$VST3_INSTALL_DIR/InspireVST.vst3" ] && [ -d "$AU_INSTALL_DIR/InspireVST.component" ]; then
+  VST3_BINARY_SIZE=$(ls -lh "$VST3_INSTALL_DIR/InspireVST.vst3/Contents/MacOS/InspireVST" | awk '{print $5}')
+  AU_BINARY_SIZE=$(ls -lh "$AU_INSTALL_DIR/InspireVST.component/Contents/MacOS/InspireVST" | awk '{print $5}')
   print_success "InspireVST.vst3 is installed and ready"
-  echo "Location: $INSTALL_DIR/InspireVST.vst3"
-  echo "Binary Size: $BINARY_SIZE"
+  echo "Location: $VST3_INSTALL_DIR/InspireVST.vst3"
+  echo "Binary Size: $VST3_BINARY_SIZE"
+  print_success "InspireVST.component is installed and ready for Logic"
+  echo "Location: $AU_INSTALL_DIR/InspireVST.component"
+  echo "Binary Size: $AU_BINARY_SIZE"
 else
   print_error "Installation verification failed"
   exit 1
@@ -157,13 +186,19 @@ print_header
 echo -e "${GREEN}Build and Installation Complete!${NC}"
 echo ""
 echo "📍 Plugin Location:"
-echo "   $INSTALL_DIR/InspireVST.vst3"
+echo "   $VST3_INSTALL_DIR/InspireVST.vst3"
+echo "   $AU_INSTALL_DIR/InspireVST.component"
 echo ""
 echo "🎵 Ableton Live:"
 echo "   • Open Ableton Live"
 echo "   • Create an audio track"
 echo "   • In the Browser, look for InspireVST in Audio Effects"
 echo "   • Drag to the track to load"
+echo ""
+echo "🎹 Logic Pro (Audio Unit):"
+echo "   • Open Logic Pro"
+echo "   • Insert Audio FX > Audio Units > InspireVST"
+echo "   • If not visible, run Plugin Manager and rescan"
 echo ""
 echo "🔧 For Development:"
 echo "   • Edit source files in: $PROJECT_DIR/Source/"

@@ -23,6 +23,10 @@ struct VSWSMessage {
   juce::String pluginInstanceId;
   juce::String roomCode;
   juce::String username;
+  juce::String displayName;
+  juce::String pluginRole;
+  juce::String masterInstanceId;
+  juce::String presenceLabel;
   int version = 0;
   juce::int64 timestamp = 0;
   juce::String raw;           // Raw JSON for advanced parsing

@@ -393,6 +393,39 @@ export interface DAWFileAsset {
   updatedAt?: number;
 }
 
+export type CollabEditType = 'audio' | 'midi' | 'automation' | 'fx' | 'hybrid' | 'other';
+
+export interface CollabMidiSummary {
+  noteCount?: number;
+  averageVelocity?: number;
+  pitchRange?: { min: number; max: number };
+}
+
+export interface CollabPushDetails {
+  editType?: CollabEditType;
+  trackBeat?: number;
+  durationSeconds?: number;
+  fileTypes?: string[];
+  fxUsed?: string[];
+  automationLanes?: string[];
+  midiSummary?: CollabMidiSummary;
+  notes?: string;
+  pushedByUserId?: string;
+  pushedByUsername?: string;
+  source?: 'vst' | 'web' | 'backfill';
+}
+
+export interface CollabFileAssetInput {
+  fileName: string;
+  fileType: string;
+  sizeBytes?: number;
+  durationSeconds?: number;
+  checksum?: string;
+  filePath?: string;
+  inlineBase64?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface DAWTrackState {
   roomCode: string;
   trackId: string;
@@ -430,12 +463,15 @@ export interface DAWSyncPushRequest {
   baseVersion?: number;
   state: DAWTrackState;
   updatedBy?: string;
+  pushDetails?: CollabPushDetails;
+  assets?: CollabFileAssetInput[];
 }
 
 export interface DAWSyncPushResponse {
   ok: boolean;
   version?: number;
   state?: DAWTrackState;
+  eventId?: string;
   conflict?: boolean;
   current?: {
     version: number;
@@ -494,6 +530,8 @@ export interface CollaborativeSessionParticipant {
 
 export interface CollaborativeSession {
   id: string;
+  roomCode?: string;
+  roomPassword?: string;
   title: string;
   description: string;
   mode: CreativeMode;
@@ -524,6 +562,9 @@ export interface CollaborativeSessionRequest {
   maxParticipants?: number;
   maxStreams?: number;
   isGuest?: boolean; // If true, session expires after 1 hour
+  hostId?: string;
+  hostUsername?: string;
+  roomPassword?: string;
 }
 
 export interface StreamEventPayload {
@@ -532,4 +573,101 @@ export interface StreamEventPayload {
   userId: string;
   username: string;
   data?: any;
+}
+
+export interface CollabPushAssetRecord {
+  id: string;
+  eventId: string;
+  roomCode: string;
+  trackId: string;
+  fileName: string;
+  fileType: string;
+  filePath?: string;
+  downloadUrl?: string;
+  sizeBytes?: number;
+  durationSeconds?: number;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+}
+
+export interface CollabPushEventRecord {
+  id: string;
+  roomCode: string;
+  trackId: string;
+  version: number;
+  eventTime: number;
+  updatedBy?: string;
+  pluginInstanceId?: string;
+  dawTrackIndex?: number;
+  dawTrackName?: string;
+  pushedByUserId?: string;
+  pushedByUsername?: string;
+  editType: CollabEditType;
+  trackBeat?: number;
+  durationSeconds?: number;
+  fileTypes: string[];
+  fxUsed?: string[];
+  automationLanes?: string[];
+  midiSummary?: CollabMidiSummary;
+  notes?: string;
+  source: 'vst' | 'web' | 'backfill';
+  payload?: Record<string, unknown>;
+  assets: CollabPushAssetRecord[];
+}
+
+export interface CollabRoomMemberRecord {
+  id: string;
+  roomCode: string;
+  userId: string;
+  username: string;
+  role: 'host' | 'collaborator' | 'viewer';
+  joinedAt: number;
+}
+
+export type InspirePluginRole = 'master' | 'relay' | 'create' | 'legacy';
+
+export interface RoomPresenceInstance {
+  pluginInstanceId: string;
+  username?: string;
+  pluginRole?: InspirePluginRole;
+  masterInstanceId?: string;
+  presenceLabel?: string;
+  dawTrackIndex?: number;
+  dawTrackName?: string;
+  lastPushAt: number;
+  lastPushBy?: string;
+  version: number;
+  trackId: string;
+}
+
+export interface RoomPresenceResponse {
+  roomCode: string;
+  instances: RoomPresenceInstance[];
+  count: number;
+}
+
+export interface CollabVisualizationTrackNode {
+  trackId: string;
+  trackName: string;
+  trackIndex: number;
+  instances: Array<{
+    pluginInstanceId: string;
+    pushes: CollabPushEventRecord[];
+  }>;
+}
+
+export interface CollabVisualizationResponse {
+  roomCode: string;
+  generatedAt: number;
+  summary: {
+    roomTitle?: string;
+    totalPushes: number;
+    totalAssets: number;
+    totalParticipants: number;
+    activeInstances: number;
+    tracksTouched: number;
+  };
+  members: CollabRoomMemberRecord[];
+  timeline: CollabPushEventRecord[];
+  tree: CollabVisualizationTrackNode[];
 }
