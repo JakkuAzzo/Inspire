@@ -36,6 +36,9 @@ import {
   CommentThread,
   CollaborativeSessionParticipant,
   DAWTrackState,
+  DAWClip,
+  DAWNote,
+  DAWFileAsset,
   DAWSyncPushRequest,
   CollabFileAssetInput,
   CollabPushEventRecord,
@@ -128,6 +131,67 @@ const envValidation = validateEnvironment();
 const modeDefinitions: ModeDefinition[] = listModeDefinitions();
 const modeIds = new Set(modeDefinitions.map((definition) => definition.id));
 const FALLBACK_FILTERS: RelevanceFilter = { timeframe: 'fresh', tone: 'funny', semantic: 'tight' };
+
+function coerceArrayFromUnknown<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed as T[];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function normalizeIncomingTrackState(rawState: unknown, roomCode: string, trackId: string): DAWTrackState {
+  const source = (rawState && typeof rawState === 'object')
+    ? (rawState as Record<string, unknown>)
+    : {};
+
+  const clips = coerceArrayFromUnknown<DAWClip>(source.clips ?? source.clipsJson);
+  const notes = coerceArrayFromUnknown<DAWNote>(source.notes ?? source.notesJson);
+  const files = coerceArrayFromUnknown<DAWFileAsset>(source.files);
+
+  const bpm = typeof source.bpm === 'number' ? source.bpm : 120;
+  const tempo = typeof source.tempo === 'number' ? source.tempo : bpm;
+  const trackType = source.trackType === 'midi' || source.trackType === 'audio' || source.trackType === 'hybrid'
+    ? source.trackType
+    : notes.length > 0
+      ? 'midi'
+      : clips.length > 0
+        ? 'audio'
+        : 'hybrid';
+
+  const normalized: DAWTrackState = {
+    roomCode,
+    trackId,
+    trackIndex: typeof source.trackIndex === 'number' ? source.trackIndex : undefined,
+    trackName: typeof source.trackName === 'string' ? source.trackName : undefined,
+    trackType,
+    bpm,
+    tempo,
+    timeSignature: typeof source.timeSignature === 'string' && source.timeSignature.trim()
+      ? source.timeSignature
+      : '4/4',
+    currentBeat: typeof source.currentBeat === 'number' ? source.currentBeat : undefined,
+    clips,
+    notes,
+    files,
+    updatedAt: Date.now(),
+    updatedBy: typeof source.updatedBy === 'string' ? source.updatedBy : undefined,
+    pluginInstanceId: typeof source.pluginInstanceId === 'string' ? source.pluginInstanceId : undefined,
+    dawTrackIndex: typeof source.dawTrackIndex === 'number' ? source.dawTrackIndex : undefined,
+    dawTrackName: typeof source.dawTrackName === 'string' ? source.dawTrackName : undefined,
+    pluginRole: source.pluginRole === 'master' || source.pluginRole === 'relay' || source.pluginRole === 'create' || source.pluginRole === 'legacy'
+      ? source.pluginRole
+      : undefined,
+    masterInstanceId: typeof source.masterInstanceId === 'string' ? source.masterInstanceId : undefined
+  };
+
+  return normalized;
+}
 
 function parseRelevanceFilters(query: any): Partial<RelevanceFilter> {
   const filters: Partial<RelevanceFilter> = {};
@@ -1398,13 +1462,9 @@ function buildApiRouter() {
 
       const baseVersion = typeof body.baseVersion === 'number' ? body.baseVersion : null;
       const updatedBy = body.updatedBy ?? 'unknown';
-      const incomingState: DAWTrackState = {
-        ...body.state,
-        roomCode: body.roomCode,
-        trackId: body.trackId,
-        pluginRole: requestedRole,
-        masterInstanceId: body.state.masterInstanceId
-      };
+      const incomingState = normalizeIncomingTrackState(body.state, body.roomCode, body.trackId);
+      incomingState.pluginRole = requestedRole;
+      incomingState.masterInstanceId = body.state.masterInstanceId;
 
       const result = dawSyncStore.upsertTrackState({
         roomCode: body.roomCode,

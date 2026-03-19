@@ -36,6 +36,10 @@ private:
   void startGuestMode();
   void startJoin();
   void startCreateRoom();
+  void startViewActiveRooms();
+  void joinRoomWithCredentials(const juce::String& roomId,
+                               const juce::String& code,
+                               bool fromSavedRoom);
   void refreshFiles();
   void updateSessionInfoDisplay();
   void downloadSelected();
@@ -72,6 +76,7 @@ private:
   void selectSearch();
   void pushTrack();
   void pullTrack();
+  void refreshRecordReadyBanner();
   void generatePackForSelection();
 
   InspireVSTAudioProcessor& processor;
@@ -90,6 +95,7 @@ private:
   juce::TextButton loginButton{"Login"};
   juce::TextButton createRoomButton{"Create Room"};
   juce::TextButton joinButton{"Join Room"};
+  juce::TextButton viewActiveRoomsButton{"View Active Rooms"};
   juce::TextButton refreshButton{"Refresh Files"};
   juce::TextButton downloadButton{"Download Selected"};
   juce::TextButton settingsButton{"Settings"};
@@ -116,6 +122,14 @@ private:
   juce::TextButton pushTrackButton{"Push This Track"};
   juce::TextButton pullTrackButton{"Pull This Track"};
   juce::TextButton attachArtifactButton{"Attach & Upload"};
+  juce::Label sourceInstanceLabel;
+  juce::ComboBox sourceInstanceCombo;
+  juce::Label destinationInstanceLabel;
+  juce::Label destinationInstanceValue;
+  juce::Label lastTransferLabel;
+  juce::TextEditor lastTransferDisplay;
+  juce::Label recordReadyLabel;
+  juce::TextEditor recordReadyDisplay;
   juce::TextEditor pushLogDisplay;
   juce::Label pushLogLabel;
 
@@ -124,9 +138,17 @@ private:
   juce::TextEditor instancesDisplay;
   juce::Label syncStatusIndicator;
   juce::Array<juce::var> activeInstances;
+  juce::StringArray sourceOptionInstanceIds;
+  juce::StringArray sourceOptionTrackIds;
+  juce::String selectedSourceInstanceId;
+  juce::String selectedSourceTrackId;
   int myVersionNumber = 0;
   int latestVersionNumber = 0;
   void refreshInstancesList();
+  void refreshTransferSelectionOptions();
+  void downloadPulledAssetsAsync(const juce::String& roomCode,
+                                 const juce::String& trackId,
+                                 int version);
   void refreshSyncStatus();
   void startInstancePolling();
   void stopInstancePolling();
@@ -348,6 +370,7 @@ private:
   int lastCopiedButton = -1;  // 0 = room code, 1 = password
 
   void refreshUpdatesDisplay();
+  void setLastTransferReceipt(const juce::String& receipt);
   void appendUpdateEvent(const juce::String& source,
                          const juce::String& actor,
                          int version,

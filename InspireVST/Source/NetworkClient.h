@@ -135,6 +135,9 @@ public:
   InspireListResult listFiles(const juce::String& token, int64_t sinceMs);
   juce::String getDownloadUrl(const juce::String& token, const juce::String& fileId);
   bool downloadFile(const juce::String& url, const juce::File& destination);
+  bool downloadFileWithAuth(const juce::String& url,
+                            const juce::String& bearerToken,
+                            const juce::File& destination);
 
   // Mode & pack helpers (public)
   juce::String getModeDefinitions(const juce::String& serverUrl, const juce::String& bearerToken = {});
@@ -142,6 +145,7 @@ public:
   juce::String createModePackForMode(const juce::String& serverUrl, const juce::String& mode, const juce::String& jsonPayload, const juce::String& bearerToken = {});
   juce::String savePack(const juce::String& serverUrl, const juce::String& jsonPayload, const juce::String& bearerToken = {});
   juce::String getCommunityFeed(const juce::String& serverUrl, const juce::String& bearerToken = {});
+  juce::String getMyRooms(const juce::String& serverUrl, const juce::String& bearerToken = {});
   juce::String searchCommunityFeed(const juce::String& serverUrl,
                                    const juce::String& query,
                                    int page = 1,

@@ -332,6 +332,36 @@ bool InspireNetworkClient::downloadFile(const juce::String& url,
   return false;
 }
 
+bool InspireNetworkClient::downloadFileWithAuth(const juce::String& url,
+                                                const juce::String& bearerToken,
+                                                const juce::File& destination)
+{
+  juce::URL target(url);
+  juce::File parent = destination.getParentDirectory();
+  if (!parent.exists())
+  {
+    parent.createDirectory();
+  }
+
+  juce::String headers = bearerToken.isNotEmpty() ? "Authorization: Bearer " + bearerToken : "";
+  auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+    .withHttpRequestCmd("GET")
+    .withExtraHeaders(headers)
+    .withConnectionTimeoutMs(30000);
+
+  auto stream = target.createInputStream(options);
+  if (stream != nullptr)
+  {
+    auto output = destination.createOutputStream();
+    if (output != nullptr)
+    {
+      output->writeFromInputStream(*stream, -1);
+      return true;
+    }
+  }
+  return false;
+}
+
 DAWSyncPushResponse InspireNetworkClient::pushTrackState(const juce::String& serverUrl,
                                                         const DAWTrackState& state,
                                                         int baseVersion,
@@ -350,9 +380,28 @@ DAWSyncPushResponse InspireNetworkClient::pushTrackState(const juce::String& ser
   stateObj->setProperty("trackIndex", state.trackIndex);
   stateObj->setProperty("trackName", state.trackName);
   stateObj->setProperty("bpm", state.bpm);
+  stateObj->setProperty("tempo", state.bpm);
+  stateObj->setProperty("trackType", "midi");
   stateObj->setProperty("timeSignature", state.timeSignature);
   stateObj->setProperty("currentBeat", state.currentBeat);
   stateObj->setProperty("updatedBy", state.updatedBy);
+
+  auto clips = juce::JSON::parse(state.clipsJson);
+  if (!clips.isArray())
+  {
+    juce::Array<juce::var> emptyClips;
+    clips = juce::var(emptyClips);
+  }
+
+  auto notes = juce::JSON::parse(state.notesJson);
+  if (!notes.isArray())
+  {
+    juce::Array<juce::var> emptyNotes;
+    notes = juce::var(emptyNotes);
+  }
+
+  stateObj->setProperty("clips", clips);
+  stateObj->setProperty("notes", notes);
   stateObj->setProperty("clipsJson", state.clipsJson);
   stateObj->setProperty("notesJson", state.notesJson);
   // Phase 1: VST Instance Broadcasting
@@ -438,8 +487,15 @@ DAWSyncPullResponse InspireNetworkClient::pullTrackState(const juce::String& ser
           result.state.currentBeat = static_cast<int>(stateObj->getProperty("currentBeat"));
           result.state.updatedAt = parseTimestampMs(stateObj->getProperty("updatedAt"));
           result.state.updatedBy = stateObj->getProperty("updatedBy").toString();
-          result.state.clipsJson = stateObj->getProperty("clipsJson").toString();
-          result.state.notesJson = stateObj->getProperty("notesJson").toString();
+          auto clipsVar = stateObj->getProperty("clips");
+          if (!clipsVar.isArray())
+            clipsVar = stateObj->getProperty("clipsJson");
+          result.state.clipsJson = clipsVar.isArray() ? juce::JSON::toString(clipsVar) : clipsVar.toString();
+
+          auto notesVar = stateObj->getProperty("notes");
+          if (!notesVar.isArray())
+            notesVar = stateObj->getProperty("notesJson");
+          result.state.notesJson = notesVar.isArray() ? juce::JSON::toString(notesVar) : notesVar.toString();
           result.state.pluginInstanceId = stateObj->getProperty("pluginInstanceId").toString();
           result.state.dawTrackIndex = static_cast<int>(stateObj->getProperty("dawTrackIndex"));
           result.state.dawTrackName = stateObj->getProperty("dawTrackName").toString();
@@ -802,6 +858,17 @@ juce::String InspireNetworkClient::getCommunityFeed(const juce::String& serverUr
   if (url.endsWithChar('/'))
     url = url.dropLastCharacters(1);
   url += "/api/community-feed";
+
+  return getJson(url, bearerToken);
+}
+
+juce::String InspireNetworkClient::getMyRooms(const juce::String& serverUrl,
+                                              const juce::String& bearerToken)
+{
+  juce::String url = serverUrl;
+  if (url.endsWithChar('/'))
+    url = url.dropLastCharacters(1);
+  url += "/api/sessions/my-rooms";
 
   return getJson(url, bearerToken);
 }

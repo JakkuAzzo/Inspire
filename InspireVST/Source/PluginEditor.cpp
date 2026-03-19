@@ -53,6 +53,23 @@ static juce::String guessMimeTypeForFile(const juce::File& file)
   return "application/octet-stream";
 }
 
+static juce::String shortInstanceId(const juce::String& instanceId)
+{
+  return instanceId.substring(0, juce::jmin(8, instanceId.length()));
+}
+
+static int countJsonArrayItems(const juce::String& payload)
+{
+  if (payload.trim().isEmpty())
+    return 0;
+
+  const auto parsed = juce::JSON::parse(payload);
+  if (parsed.isArray() && parsed.getArray() != nullptr)
+    return parsed.getArray()->size();
+
+  return 0;
+}
+
 // Style text inputs - matching web app glassmorphism
   auto styleTextInput = [](juce::TextEditor& input) {
     input.setColour(juce::TextEditor::backgroundColourId, juce::Colour(10, 16, 37).withAlpha(0.62f));
@@ -109,6 +126,7 @@ static juce::String guessMimeTypeForFile(const juce::File& file)
   styleButton(loginButton, cyanAccent);
   styleButton(joinButton, cyanAccent);
   styleButton(createRoomButton, cyanAccent);
+  styleButton(viewActiveRoomsButton, cyanAccent);
   styleButton(refreshButton, cyanAccent);
   styleButton(downloadButton, cyanAccent);
 
@@ -117,6 +135,7 @@ static juce::String guessMimeTypeForFile(const juce::File& file)
   loginButton.onClick = [this] { startLogin(); };
   joinButton.onClick = [this] { startJoin(); };
   createRoomButton.onClick = [this] { startCreateRoom(); };
+  viewActiveRoomsButton.onClick = [this] { startViewActiveRooms(); };
   refreshButton.onClick = [this] {
     if (selectedMode == "updates")
     {
@@ -250,6 +269,33 @@ static juce::String guessMimeTypeForFile(const juce::File& file)
   styleButton(pushTrackButton, producerAccent);
   styleButton(pullTrackButton, producerAccent);
   styleButton(attachArtifactButton, juce::Colour(120, 204, 120));
+  pushTrackButton.setButtonText("Push This Instance");
+  pullTrackButton.setButtonText("Pull Latest To This Instance");
+
+  sourceInstanceLabel.setText("Source", juce::dontSendNotification);
+  sourceInstanceLabel.setColour(juce::Label::textColourId, juce::Colour(241, 245, 255).withAlpha(0.8f));
+  sourceInstanceLabel.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+  sourceInstanceLabel.setJustificationType(juce::Justification::centredLeft);
+
+  sourceInstanceCombo.setTextWhenNothingSelected("Select source instance");
+  sourceInstanceCombo.onChange = [this] {
+    const int idx = sourceInstanceCombo.getSelectedItemIndex();
+    if (idx >= 0 && idx < sourceOptionInstanceIds.size())
+    {
+      selectedSourceInstanceId = sourceOptionInstanceIds[idx];
+      selectedSourceTrackId = sourceOptionTrackIds[idx];
+    }
+  };
+
+  destinationInstanceLabel.setText("Destination", juce::dontSendNotification);
+  destinationInstanceLabel.setColour(juce::Label::textColourId, juce::Colour(241, 245, 255).withAlpha(0.8f));
+  destinationInstanceLabel.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+  destinationInstanceLabel.setJustificationType(juce::Justification::centredLeft);
+
+  destinationInstanceValue.setText("This instance " + shortInstanceId(pluginInstanceID), juce::dontSendNotification);
+  destinationInstanceValue.setColour(juce::Label::textColourId, juce::Colour(241, 245, 255).withAlpha(0.92f));
+  destinationInstanceValue.setFont(juce::Font(juce::FontOptions(11.0f)));
+  destinationInstanceValue.setJustificationType(juce::Justification::centredLeft);
   
   writerLabCard.onClick = [this] { selectWriterLab(); };
   producerLabCard.onClick = [this] { selectProducerLab(); };
@@ -303,6 +349,41 @@ static juce::String guessMimeTypeForFile(const juce::File& file)
   pushLogLabel.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
   pushLogLabel.setJustificationType(juce::Justification::centredLeft);
 
+  lastTransferLabel.setText("Last Transfer", juce::dontSendNotification);
+  lastTransferLabel.setColour(juce::Label::textColourId, juce::Colour(241, 245, 255).withAlpha(0.8f));
+  lastTransferLabel.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+  lastTransferLabel.setJustificationType(juce::Justification::centredLeft);
+
+  lastTransferDisplay.setMultiLine(true);
+  lastTransferDisplay.setReadOnly(true);
+  lastTransferDisplay.setScrollbarsShown(true);
+  lastTransferDisplay.setColour(juce::TextEditor::backgroundColourId, juce::Colour(10, 16, 37).withAlpha(0.62f));
+  lastTransferDisplay.setColour(juce::TextEditor::textColourId, juce::Colour(241, 245, 255).withAlpha(0.9f));
+  lastTransferDisplay.setColour(juce::TextEditor::outlineColourId, juce::Colour(148, 163, 184).withAlpha(0.18f));
+  lastTransferDisplay.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::plain)));
+  lastTransferDisplay.setText(
+    "No transfer has run yet.\n"
+    "Run Push This Instance or Pull Latest To This Instance.",
+    false
+  );
+
+  recordReadyLabel.setText("Record-Ready Check", juce::dontSendNotification);
+  recordReadyLabel.setColour(juce::Label::textColourId, juce::Colour(241, 245, 255).withAlpha(0.8f));
+  recordReadyLabel.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+  recordReadyLabel.setJustificationType(juce::Justification::centredLeft);
+
+  recordReadyDisplay.setMultiLine(true);
+  recordReadyDisplay.setReadOnly(true);
+  recordReadyDisplay.setScrollbarsShown(false);
+  recordReadyDisplay.setColour(juce::TextEditor::backgroundColourId, juce::Colour(10, 16, 37).withAlpha(0.62f));
+  recordReadyDisplay.setColour(juce::TextEditor::textColourId, juce::Colour(241, 245, 255).withAlpha(0.9f));
+  recordReadyDisplay.setColour(juce::TextEditor::outlineColourId, juce::Colour(148, 163, 184).withAlpha(0.18f));
+  recordReadyDisplay.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::plain)));
+  recordReadyDisplay.setText(
+    "Checking host transport and MIDI output...",
+    false
+  );
+
   // Phase 1: VST Instance Broadcasting - Instances list display
   instancesListLabel.setText("Active VST Instances", juce::dontSendNotification);
   instancesListLabel.setColour(juce::Label::textColourId, juce::Colour(241, 245, 255).withAlpha(0.8f));
@@ -326,6 +407,14 @@ static juce::String guessMimeTypeForFile(const juce::File& file)
   addChildComponent(instancesListLabel);
   addChildComponent(instancesDisplay);
   addChildComponent(syncStatusIndicator);
+  addChildComponent(sourceInstanceLabel);
+  addChildComponent(sourceInstanceCombo);
+  addChildComponent(destinationInstanceLabel);
+  addChildComponent(destinationInstanceValue);
+  addChildComponent(lastTransferLabel);
+  addChildComponent(lastTransferDisplay);
+  addChildComponent(recordReadyLabel);
+  addChildComponent(recordReadyDisplay);
 
   statusLabel.setText("Ready", juce::dontSendNotification);
   statusLabel.setColour(juce::Label::textColourId, juce::Colour(241, 245, 255).withAlpha(0.7f));
@@ -517,6 +606,7 @@ static juce::String guessMimeTypeForFile(const juce::File& file)
   addAndMakeVisible(passwordInput);
   addAndMakeVisible(joinButton);
   addAndMakeVisible(createRoomButton);
+  addAndMakeVisible(viewActiveRoomsButton);
   addAndMakeVisible(refreshButton);
   addAndMakeVisible(downloadButton);
   addAndMakeVisible(statusLabel);
@@ -786,7 +876,7 @@ void InspireVSTAudioProcessorEditor::resized()
     roleStatusLabel.setBounds(padding + halfW + gap, yPos, halfW - 10, 22);
     yPos += 24;
 
-    if (!inRoom && selectedMode.isEmpty())
+    if (!inRoom && selectedMode.isEmpty() && isMasterRole())
     {
       // Room join/create controls
       roomIdInput.setBounds(padding, yPos, getWidth() - padding * 2, lineHeight);
@@ -797,9 +887,10 @@ void InspireVSTAudioProcessorEditor::resized()
       passwordInput.setBounds(padding + halfW + gap, yPos, halfW, lineHeight);
       yPos += lineHeight + gap;
 
-      int roomBtnW = (getWidth() - padding * 2 - gap) / 2;
+      int roomBtnW = (getWidth() - padding * 2 - gap * 2) / 3;
       joinButton.setBounds(padding, yPos, roomBtnW, lineHeight);
       createRoomButton.setBounds(padding + roomBtnW + gap, yPos, roomBtnW, lineHeight);
+      viewActiveRoomsButton.setBounds(padding + (roomBtnW + gap) * 2, yPos, roomBtnW, lineHeight);
       yPos += lineHeight + gap + 8;
     }
 
@@ -1039,21 +1130,51 @@ void InspireVSTAudioProcessorEditor::resized()
           // Updates mode: show push log if in room, or message if not
           if (inRoom)
           {
-            // Phase 1: Split display area between push log and instances list
-            const int halfHeight = logHeight / 2;
+            // Updates mode layout: transfer receipt + instances + activity log
             const int gap = 8;
+            const int receiptHeight = 78;
+            const int selectorHeight = 24;
             
+            sourceInstanceLabel.setBounds(padding, yPos, 56, selectorHeight);
+            sourceInstanceLabel.setVisible(true);
+            sourceInstanceCombo.setBounds(padding + 60, yPos, getWidth() - padding * 2 - 60, selectorHeight);
+            sourceInstanceCombo.setVisible(true);
+            yPos += selectorHeight + 4;
+
+            destinationInstanceLabel.setBounds(padding, yPos, 80, selectorHeight);
+            destinationInstanceLabel.setVisible(true);
+            destinationInstanceValue.setBounds(padding + 84, yPos, getWidth() - padding * 2 - 84, selectorHeight);
+            destinationInstanceValue.setVisible(true);
+            yPos += selectorHeight + gap;
+
             // Sync status indicator at top
             syncStatusIndicator.setBounds(padding, yPos, getWidth() - padding * 2, 20);
             syncStatusIndicator.setVisible(true);
             yPos += 24;
+
+            const int recordReadyHeight = 64;
+            recordReadyLabel.setBounds(padding, yPos, getWidth() - padding * 2, 18);
+            recordReadyLabel.setVisible(true);
+            yPos += 20;
+            recordReadyDisplay.setBounds(padding, yPos, getWidth() - padding * 2, recordReadyHeight);
+            recordReadyDisplay.setVisible(true);
+            yPos += recordReadyHeight + gap;
+
+            // Last transfer receipt panel
+            lastTransferLabel.setBounds(padding, yPos, getWidth() - padding * 2, 18);
+            lastTransferLabel.setVisible(true);
+            yPos += 20;
+            lastTransferDisplay.setBounds(padding, yPos, getWidth() - padding * 2, receiptHeight);
+            lastTransferDisplay.setVisible(true);
+            yPos += receiptHeight + gap;
             
             // Instances list section (top half)
             instancesListLabel.setBounds(padding, yPos, getWidth() - padding * 2, 18);
             instancesListLabel.setVisible(true);
             yPos += 20;
             
-            const int instancesHeight = (logHeight - 64) / 2;  // Account for labels and status
+            const int remainingHeight = getHeight() - yPos - padding;
+            const int instancesHeight = juce::jmax(80, (remainingHeight - 24) / 2);
             instancesDisplay.setBounds(padding, yPos, getWidth() - padding * 2, instancesHeight);
             instancesDisplay.setVisible(true);
             yPos += instancesHeight + gap;
@@ -1071,6 +1192,14 @@ void InspireVSTAudioProcessorEditor::resized()
           {
             // Not in a room - hide instance list and show invitational message
             syncStatusIndicator.setVisible(false);
+            sourceInstanceLabel.setVisible(false);
+            sourceInstanceCombo.setVisible(false);
+            destinationInstanceLabel.setVisible(false);
+            destinationInstanceValue.setVisible(false);
+            lastTransferLabel.setVisible(false);
+            lastTransferDisplay.setVisible(false);
+            recordReadyLabel.setVisible(false);
+            recordReadyDisplay.setVisible(false);
             instancesListLabel.setVisible(false);
             instancesDisplay.setVisible(false);
             pushLogLabel.setVisible(false);
@@ -1097,6 +1226,8 @@ void InspireVSTAudioProcessorEditor::resized()
           roomCodeCopyBounds = juce::Rectangle<int>();
           passwordCopyBounds = juce::Rectangle<int>();
           leaveRoomBounds = juce::Rectangle<int>();
+          recordReadyLabel.setVisible(false);
+          recordReadyDisplay.setVisible(false);
           // Other modes
           pushLogDisplay.setVisible(false);
           producerDetailDisplay.setVisible(false);
@@ -1647,6 +1778,13 @@ void InspireVSTAudioProcessorEditor::setStatus(const juce::String& message)
   statusLabel.setText(message, juce::dontSendNotification);
 }
 
+void InspireVSTAudioProcessorEditor::setLastTransferReceipt(const juce::String& receipt)
+{
+  if (receipt.trim().isEmpty())
+    return;
+  lastTransferDisplay.setText(receipt, false);
+}
+
 void InspireVSTAudioProcessorEditor::setBusy(bool shouldBeBusy)
 {
   busy = shouldBeBusy;
@@ -1657,6 +1795,7 @@ void InspireVSTAudioProcessorEditor::setBusy(bool shouldBeBusy)
   loginButton.setEnabled(!busy && !isAuthenticated);
   joinButton.setEnabled(!busy && isAuthenticated);
   createRoomButton.setEnabled(!busy && isAuthenticated && roleMaster);
+  viewActiveRoomsButton.setEnabled(!busy && isAuthenticated && roleMaster);
   refreshButton.setEnabled(!busy && isAuthenticated && sessionToken.isNotEmpty());
   downloadButton.setEnabled(!busy && isAuthenticated && sessionToken.isNotEmpty());
   if (roleWorker && roleLockedByMasterRequirement)
@@ -1664,12 +1803,14 @@ void InspireVSTAudioProcessorEditor::setBusy(bool shouldBeBusy)
     pushTrackButton.setEnabled(false);
     pullTrackButton.setEnabled(false);
     attachArtifactButton.setEnabled(false);
+    sourceInstanceCombo.setEnabled(false);
   }
   else
   {
     pushTrackButton.setEnabled(!busy);
     pullTrackButton.setEnabled(!busy);
     attachArtifactButton.setEnabled(!busy);
+    sourceInstanceCombo.setEnabled(!busy && sourceOptionInstanceIds.size() > 0);
   }
 }
 
@@ -1718,12 +1859,14 @@ void InspireVSTAudioProcessorEditor::updateUIForAuthState()
   loginButton.setVisible(showAuthButtons);
 
   // Room collaboration controls (optional)
-  roomIdInput.setVisible(showPostAuthButtons);
-  codeInput.setVisible(showPostAuthButtons);
-  passwordInput.setVisible(showPostAuthButtons);
-  joinButton.setVisible(showPostAuthButtons);
-  createRoomButton.setVisible(showPostAuthButtons && roleMaster);
-  joinButton.setButtonText(roleMaster ? "Join Room" : "Attach to Master");
+  const bool showMasterRoomControls = showPostAuthButtons && roleMaster;
+  roomIdInput.setVisible(showMasterRoomControls);
+  codeInput.setVisible(showMasterRoomControls);
+  passwordInput.setVisible(showMasterRoomControls);
+  joinButton.setVisible(showMasterRoomControls);
+  createRoomButton.setVisible(showMasterRoomControls);
+  viewActiveRoomsButton.setVisible(showMasterRoomControls);
+  joinButton.setButtonText("Join Room");
   
   // Mode cards (shown when authenticated and no specific mode selected)
   writerLabCard.setVisible(showModeCards && roleCreate);
@@ -1754,6 +1897,14 @@ void InspireVSTAudioProcessorEditor::updateUIForAuthState()
   pushTrackButton.setVisible(inUpdatesMode);
   pullTrackButton.setVisible(inUpdatesMode);
   attachArtifactButton.setVisible(inUpdatesMode);
+  sourceInstanceLabel.setVisible(inUpdatesMode);
+  sourceInstanceCombo.setVisible(inUpdatesMode);
+  destinationInstanceLabel.setVisible(inUpdatesMode);
+  destinationInstanceValue.setVisible(inUpdatesMode);
+  lastTransferLabel.setVisible(inUpdatesMode);
+  lastTransferDisplay.setVisible(inUpdatesMode);
+  recordReadyLabel.setVisible(inUpdatesMode);
+  recordReadyDisplay.setVisible(inUpdatesMode);
   if (isRelayOrCreateRole() && roleLockedByMasterRequirement)
   {
     pushTrackButton.setEnabled(false);
@@ -1957,94 +2108,196 @@ void InspireVSTAudioProcessorEditor::startJoin()
     [this](juce::String roomId, juce::String code) {
       roomIdInput.setText(roomId, false);
       codeInput.setText(code, false);
+      joinRoomWithCredentials(roomId, code, false);
+    });
+}
 
-      setBusy(true);
-      setStatus("Joining room...");
+void InspireVSTAudioProcessorEditor::joinRoomWithCredentials(const juce::String& roomId,
+                                                             const juce::String& code,
+                                                             bool fromSavedRoom)
+{
+  if (roomId.trim().isEmpty() || code.trim().isEmpty())
+  {
+    setStatus("Room ID and code are required.");
+    return;
+  }
 
-      const auto serverUrl = serverUrlInput.getText().trim();
-      const auto role = effectivePluginRole();
+  setBusy(true);
+  setStatus(fromSavedRoom ? "Rejoining room..." : "Joining room...");
 
-      if (isRelayOrCreateRole())
+  const auto serverUrl = serverUrlInput.getText().trim();
+  const auto role = effectivePluginRole();
+
+  if (isRelayOrCreateRole())
+  {
+    runAsync([this, serverUrl, code, role] {
+      const auto attachResult = client.attachPluginToMaster(serverUrl, sessionToken, role, code.toUpperCase(), pluginInstanceID);
+      juce::MessageManager::callAsync([this, attachResult, code, role] {
+        if (attachResult.ok)
+        {
+          currentSyncRoomCode = attachResult.roomCode.isNotEmpty() ? attachResult.roomCode : code.toUpperCase();
+          masterInstanceId = attachResult.masterInstanceId;
+          roleAttached = true;
+          roleLockedByMasterRequirement = false;
+          roleLockReason.clear();
+          inRoom = true;
+          codeInput.setText(currentSyncRoomCode, false);
+          roomInfoLabel.setText("Room: " + currentSyncRoomCode, juce::dontSendNotification);
+          tokenLabel.setText("Session: " + sessionToken.substring(0, 12) + "...", juce::dontSendNotification);
+          addErrorLog("✓ " + role.toUpperCase() + " attached to Master " + masterInstanceId);
+          setStatus("Attached to Master in room " + currentSyncRoomCode);
+          updateSessionInfoDisplay();
+          saveSessionData();
+          updateUIForAuthState();
+          startSyncPolling();
+        }
+        else
+        {
+          roleAttached = false;
+          roleLockedByMasterRequirement = true;
+          roleLockReason = attachResult.errorMessage.isNotEmpty() ? attachResult.errorMessage : "master_required";
+          addErrorLog("✗ Attach failed: " + roleLockReason);
+          setStatus("Attach failed: " + roleLockReason);
+          updateUIForAuthState();
+        }
+        setBusy(false);
+      });
+    });
+    return;
+  }
+
+  runAsync([this, serverUrl, roomId, code, role, fromSavedRoom] {
+    addErrorLog("Joining room: " + roomId + " using access code: " + code);
+    const auto result = client.joinRoom(serverUrl, roomId, code, role, pluginInstanceID, masterInstanceId);
+    juce::MessageManager::callAsync([this, result, code, fromSavedRoom] {
+      if (result.token.isNotEmpty())
       {
-        runAsync([this, serverUrl, code, role] {
-          const auto attachResult = client.attachPluginToMaster(serverUrl, sessionToken, role, code.toUpperCase(), pluginInstanceID);
-          juce::MessageManager::callAsync([this, attachResult, code, role] {
-            if (attachResult.ok)
-            {
-              currentSyncRoomCode = attachResult.roomCode.isNotEmpty() ? attachResult.roomCode : code.toUpperCase();
-              masterInstanceId = attachResult.masterInstanceId;
-              roleAttached = true;
-              roleLockedByMasterRequirement = false;
-              roleLockReason.clear();
-              inRoom = true;
-              codeInput.setText(currentSyncRoomCode, false);
-              roomInfoLabel.setText("Room: " + currentSyncRoomCode, juce::dontSendNotification);
-              tokenLabel.setText("Session: " + sessionToken.substring(0, 12) + "...", juce::dontSendNotification);
-              addErrorLog("✓ " + role.toUpperCase() + " attached to Master " + masterInstanceId);
-              setStatus("Attached to Master in room " + currentSyncRoomCode);
-              updateSessionInfoDisplay();
-              saveSessionData();
-              updateUIForAuthState();
-              startSyncPolling();
-            }
-            else
-            {
-              roleAttached = false;
-              roleLockedByMasterRequirement = true;
-              roleLockReason = attachResult.errorMessage.isNotEmpty() ? attachResult.errorMessage : "master_required";
-              addErrorLog("✗ Attach failed: " + roleLockReason);
-              setStatus("Attach failed: " + roleLockReason);
-              updateUIForAuthState();
-            }
-            setBusy(false);
-          });
-        });
+        sessionToken = result.token;
+        lastServerTimeMs = result.expiresAtMs;
+        if (result.roomId.isNotEmpty())
+          roomIdInput.setText(result.roomId, false);
+        currentSyncRoomCode = result.roomCode.isNotEmpty() ? result.roomCode : code.toUpperCase();
+        masterInstanceId = pluginInstanceID;
+        roleAttached = true;
+        roleLockedByMasterRequirement = false;
+        roleLockReason.clear();
+        codeInput.setText(currentSyncRoomCode, false);
+        saveSessionData();
+        inRoom = true;
+        saveRoomCode();
+        roomInfoLabel.setText("Room: " + roomIdInput.getText().trim(), juce::dontSendNotification);
+        if (roomPasswordLabel.getText().isEmpty())
+          roomPasswordLabel.setText("Password: (none)", juce::dontSendNotification);
+        tokenLabel.setText("Session: " + sessionToken.substring(0, 12) + "...", juce::dontSendNotification);
+        addErrorLog("✓ Room joined successfully (roomCode=" + currentSyncRoomCode + ")");
+        setStatus((fromSavedRoom ? "Rejoined " : "Joined ") + currentSyncRoomCode + ". Select your mode.");
+
+        updateSessionInfoDisplay();
+        updateUIForAuthState();
+        startSyncPolling();
+      }
+      else
+      {
+        juce::String reason = result.errorMessage.isNotEmpty() ? result.errorMessage : juce::String("Check room ID/code.");
+        addErrorLog("✗ Join failed: " + reason);
+        setStatus("Join failed: " + reason);
+      }
+      setBusy(false);
+    });
+  });
+}
+
+void InspireVSTAudioProcessorEditor::startViewActiveRooms()
+{
+  if (busy || !isAuthenticated || !isMasterRole())
+    return;
+
+  setBusy(true);
+  setStatus("Loading your active rooms...");
+
+  const auto serverUrl = serverUrlInput.getText().trim();
+  runAsync([this, serverUrl] {
+    const auto response = client.getMyRooms(serverUrl, sessionToken);
+    const auto parsed = juce::JSON::parse(response);
+
+    juce::MessageManager::callAsync([this, parsed] {
+      setBusy(false);
+
+      if (!parsed.isObject() || parsed.getDynamicObject() == nullptr)
+      {
+        setStatus("Unable to load your rooms.");
         return;
       }
 
-      runAsync([this, serverUrl, roomId, code, role] {
-        addErrorLog("Joining room: " + roomId + " using access code: " + code);
-        const auto result = client.joinRoom(serverUrl, roomId, code, role, pluginInstanceID, masterInstanceId);
-        juce::MessageManager::callAsync([this, result, code] {
-          if (result.token.isNotEmpty())
+      auto* root = parsed.getDynamicObject();
+      const auto activeVar = root->getProperty("active");
+      const auto inactiveVar = root->getProperty("inactive");
+      auto* active = activeVar.getArray();
+      auto* inactive = inactiveVar.getArray();
+
+      juce::PopupMenu menu;
+      juce::Array<juce::String> roomIds;
+      juce::Array<juce::String> roomCodes;
+      int commandId = 200;
+
+      auto addRooms = [&menu, &roomIds, &roomCodes, &commandId](const juce::var& roomsVar,
+                                                                 const juce::String& prefix)
+      {
+        if (!roomsVar.isArray() || roomsVar.getArray() == nullptr)
+          return;
+
+        for (const auto& roomVar : *roomsVar.getArray())
+        {
+          if (!roomVar.isObject() || roomVar.getDynamicObject() == nullptr)
+            continue;
+
+          auto* room = roomVar.getDynamicObject();
+          const auto roomId = room->getProperty("id").toString();
+          const auto roomCode = room->getProperty("roomCode").toString();
+          const auto title = room->getProperty("title").toString();
+          if (roomId.isEmpty() || roomCode.isEmpty())
+            continue;
+
+          juce::String label = prefix + " " + roomCode;
+          if (title.isNotEmpty())
+            label += " - " + title;
+
+          menu.addItem(commandId, label);
+          roomIds.add(roomId);
+          roomCodes.add(roomCode);
+          ++commandId;
+        }
+      };
+
+      menu.addSectionHeader("My Active Rooms");
+      addRooms(activeVar, "[Active]");
+      if (active == nullptr || active->isEmpty())
+        menu.addItem(1, "No active rooms found", false, false);
+
+      menu.addSeparator();
+      menu.addSectionHeader("Previous Rooms");
+      addRooms(inactiveVar, "[Previous]");
+      if (inactive == nullptr || inactive->isEmpty())
+        menu.addItem(2, "No previous rooms found", false, false);
+
+      menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&viewActiveRoomsButton),
+        [this, roomIds, roomCodes](int result) {
+          if (result < 200)
           {
-            sessionToken = result.token;
-            lastServerTimeMs = result.expiresAtMs;
-            if (result.roomId.isNotEmpty())
-              roomIdInput.setText(result.roomId, false);
-            currentSyncRoomCode = result.roomCode.isNotEmpty() ? result.roomCode : code.toUpperCase();
-            masterInstanceId = pluginInstanceID;
-            roleAttached = true;
-            roleLockedByMasterRequirement = false;
-            roleLockReason.clear();
-            codeInput.setText(currentSyncRoomCode, false);
-            saveSessionData();
-            inRoom = true;  // Mark as in a room
-            saveRoomCode();
-            roomInfoLabel.setText("Room: " + roomIdInput.getText().trim(), juce::dontSendNotification);
-            if (roomPasswordLabel.getText().isEmpty())
-              roomPasswordLabel.setText("Password: (none)", juce::dontSendNotification);
-            tokenLabel.setText("Session: " + sessionToken.substring(0, 12) + "...",
-              juce::dontSendNotification);
-            addErrorLog("✓ Room joined successfully (roomCode=" + currentSyncRoomCode + ")");
-            setStatus("Joined room " + currentSyncRoomCode + ". Select your mode.");
-            
-            // Update session info display
-            updateSessionInfoDisplay();
-            
-            updateUIForAuthState();  // Show mode cards
-            startSyncPolling();
+            setStatus("Room list ready.");
+            return;
           }
-          else
-          {
-            juce::String reason = result.errorMessage.isNotEmpty() ? result.errorMessage : juce::String("Check room ID/code.");
-            addErrorLog("✗ Join failed: " + reason);
-            setStatus("Join failed: " + reason);
-          }
-          setBusy(false);
+
+          const int index = result - 200;
+          if (index < 0 || index >= roomIds.size() || index >= roomCodes.size())
+            return;
+
+          roomIdInput.setText(roomIds[index], false);
+          codeInput.setText(roomCodes[index], false);
+          joinRoomWithCredentials(roomIds[index], roomCodes[index], true);
         });
-      });
     });
+  });
 }
 
 void InspireVSTAudioProcessorEditor::startCreateRoom()
@@ -4080,6 +4333,8 @@ void InspireVSTAudioProcessorEditor::selectUpdates()
 
   pushLogLabel.setText(modeLabel, juce::dontSendNotification);
   pushLogDisplay.setReadOnly(true);
+  destinationInstanceValue.setText("This instance " + shortInstanceId(pluginInstanceID), juce::dontSendNotification);
+  refreshRecordReadyBanner();
 
   // Phase 1: VST Instance Broadcasting - Show instances list
   if (instancesListLabel.getParentComponent() == nullptr)
@@ -4091,6 +4346,7 @@ void InspireVSTAudioProcessorEditor::selectUpdates()
   
   // Phase 3: Try WebSocket first, fall back to polling
   refreshInstancesList();
+  refreshTransferSelectionOptions();
   refreshSyncStatus();
   fetchCollabVisualizationForUpdates(false);
   if (isRelayOrCreateRole())
@@ -4099,6 +4355,25 @@ void InspireVSTAudioProcessorEditor::selectUpdates()
 
   refreshUpdatesDisplay();
   updateUIForAuthState();
+}
+
+void InspireVSTAudioProcessorEditor::refreshRecordReadyBanner()
+{
+  const auto hostInfo = processor.getHostTransportInfo();
+  const bool transportRunning = hostInfo.isPlaying;
+  const bool midiOutputActive = processor.producesMidi();
+  const bool readyToCapture = transportRunning && midiOutputActive;
+
+  juce::String text;
+  text << "Status: " << (readyToCapture ? "Ready to capture" : "Needs attention") << "\n";
+  text << "Transport: " << (transportRunning ? "Running" : "Stopped") << "\n";
+  text << "Destination track armed: verify in host (AU/VST3 host-controlled)\n";
+  text << "Plugin MIDI output: " << (midiOutputActive ? "Active" : "Unavailable");
+
+  recordReadyDisplay.setText(text, false);
+  recordReadyDisplay.setColour(
+    juce::TextEditor::outlineColourId,
+    (readyToCapture ? juce::Colour(16, 185, 129) : juce::Colour(251, 191, 36)).withAlpha(0.55f));
 }
 
 void InspireVSTAudioProcessorEditor::selectSearch()
@@ -4157,6 +4432,12 @@ void InspireVSTAudioProcessorEditor::pushTrack()
   }
   if (isRelayOrCreateRole() && roleLockedByMasterRequirement)
   {
+    setLastTransferReceipt(
+      "Status: Push blocked (locked)\n"
+      "Reason: " + (roleLockReason.isNotEmpty() ? roleLockReason : juce::String("master_required")) + "\n"
+      "Source: This instance " + shortInstanceId(pluginInstanceID) + "\n"
+      "Action: Attach to active master, then retry push."
+    );
     setStatus("Locked: " + (roleLockReason.isNotEmpty() ? roleLockReason : juce::String("master_required")));
     attemptRoleAttachIfNeeded();
     return;
@@ -4194,9 +4475,14 @@ void InspireVSTAudioProcessorEditor::pushTrack()
       state.currentBeat = 0;
     }
     
-    // Serialize mode info as JSON
-    state.clipsJson = "{ \"mode\": \"" + selectedMode + "\", \"timestamp\": " + 
-                     juce::String(juce::Time::currentTimeMillis()) + " }";
+    // Serialize a minimal clip snapshot for receipt-friendly sync metadata.
+    state.clipsJson = "[{"
+              "\"id\":\"" + syncTrackId + "-clip\","
+              "\"trackId\":\"" + syncTrackId + "\","
+              "\"type\":\"midi\","
+              "\"startBeat\":" + juce::String(juce::jmax(0, state.currentBeat - 1)) + ","
+              "\"durationBeats\":4"
+              "}]";
     state.notesJson = "[]";
     
     // Phase 1: VST Instance Broadcasting - add plugin instance info
@@ -4204,10 +4490,13 @@ void InspireVSTAudioProcessorEditor::pushTrack()
     // Note: DAW track info extraction is host-dependent and may not be available
     // For now, use placeholder values. Full implementation requires VST3/AU extensions
     state.dawTrackIndex = 0;    // TODO: Extract from host if available
-    state.dawTrackName = "";    // TODO: Extract from host if available
+    state.dawTrackName = "Current Logic Track (host hidden)";    // TODO: Extract from host if available
     
     const int baseVersion = trackVersions[syncTrackId];
     const int beatForLog = state.currentBeat;
+    const int pushedClipCount = countJsonArrayItems(state.clipsJson);
+    const int pushedNoteCount = countJsonArrayItems(state.notesJson);
+    const float pushedBpm = state.bpm;
     const auto response = client.pushTrackState(
       serverUrl,
       state,
@@ -4216,7 +4505,7 @@ void InspireVSTAudioProcessorEditor::pushTrack()
       effectivePluginRole(),
       masterInstanceId
     );
-    juce::MessageManager::callAsync([this, response, beatForLog, serverUrl] {
+    juce::MessageManager::callAsync([this, response, beatForLog, pushedClipCount, pushedNoteCount, pushedBpm, serverUrl] {
       if (response.ok)
       {
         roleLockedByMasterRequirement = false;
@@ -4258,7 +4547,21 @@ void InspireVSTAudioProcessorEditor::pushTrack()
         }
 
         addErrorLog("✓ Track pushed successfully");
-        setStatus("Track pushed (v" + juce::String(response.version) + ")");
+        const juce::String receipt = "Push complete: "
+          "" + juce::String(pushedClipCount) + " clip(s), " + juce::String(pushedNoteCount) + " note(s), "
+          "source This Instance " + shortInstanceId(pluginInstanceID) + ", "
+          "tempo " + juce::String(pushedBpm, 1) + " BPM, beat " + juce::String(beatForLog) + ".";
+        addErrorLog(receipt);
+        setLastTransferReceipt(
+          "Status: Push succeeded\n"
+          "Source: This instance " + shortInstanceId(pluginInstanceID) + "\n"
+          "Destination: Room " + currentSyncRoomCode + " (server sync state)\n"
+          "Details: " + juce::String(pushedClipCount) + " clip(s), " + juce::String(pushedNoteCount) + " note(s), "
+          + juce::String(pushedBpm, 1) + " BPM, beat " + juce::String(beatForLog) + "\n"
+          "Version: v" + juce::String(response.version) + "\n"
+          "Placement: Host-dependent (AU/VST3); manual region placement may be required."
+        );
+        setStatus("Push complete to room " + currentSyncRoomCode + " (v" + juce::String(response.version) + ")");
         refreshInstancesList();
         refreshSyncStatus();
         fetchCollabVisualizationForUpdates(true);
@@ -4310,6 +4613,12 @@ void InspireVSTAudioProcessorEditor::pushTrack()
           roleAttached = false;
           roleLockReason = response.conflictReason.isNotEmpty() ? response.conflictReason : "master_required";
           addErrorLog("✗ Track push locked: " + roleLockReason);
+          setLastTransferReceipt(
+            "Status: Push failed (locked)\n"
+            "Reason: " + roleLockReason + "\n"
+            "Source: This instance " + shortInstanceId(pluginInstanceID) + "\n"
+            "Action: Attach to active master, then retry push."
+          );
           setStatus("Locked: " + roleLockReason);
           attemptRoleAttachIfNeeded();
           setBusy(false);
@@ -4319,11 +4628,22 @@ void InspireVSTAudioProcessorEditor::pushTrack()
         if (response.conflict)
         {
           addErrorLog("✗ Track push failed: conflict - " + response.conflictReason);
+          setLastTransferReceipt(
+            "Status: Push failed (version conflict)\n"
+            "Reason: " + response.conflictReason + "\n"
+            "Source: This instance " + shortInstanceId(pluginInstanceID) + "\n"
+            "Action: Pull latest changes first, then push again."
+          );
           setStatus("Push conflict: " + response.conflictReason);
         }
         else
         {
           addErrorLog("✗ Track push failed");
+          setLastTransferReceipt(
+            "Status: Push failed\n"
+            "Source: This instance " + shortInstanceId(pluginInstanceID) + "\n"
+            "Action: Check connection and room role, then retry."
+          );
           setStatus("Track push failed");
         }
       }
@@ -4340,19 +4660,39 @@ void InspireVSTAudioProcessorEditor::pullTrack()
   }
   if (isRelayOrCreateRole() && roleLockedByMasterRequirement)
   {
+    setLastTransferReceipt(
+      "Status: Pull blocked (locked)\n"
+      "Reason: " + (roleLockReason.isNotEmpty() ? roleLockReason : juce::String("master_required")) + "\n"
+      "Destination: This instance " + shortInstanceId(pluginInstanceID) + "\n"
+      "Action: Attach to active master, then retry pull."
+    );
     setStatus("Locked: " + (roleLockReason.isNotEmpty() ? roleLockReason : juce::String("master_required")));
     attemptRoleAttachIfNeeded();
     return;
   }
+
+  if (selectedSourceTrackId.isEmpty())
+  {
+    setLastTransferReceipt(
+      "Status: Pull blocked\n"
+      "Reason: No source selected\n"
+      "Action: Choose a source instance, then retry pull."
+    );
+    setStatus("Select a source instance before pulling.");
+    return;
+  }
+
+  refreshRecordReadyBanner();
   
   setBusy(true);
   addErrorLog("Pulling track from room...");
   
   const auto serverUrl = serverUrlInput.getText();
-  const auto trackId = syncTrackId;
+  const auto trackId = selectedSourceTrackId;
+  const auto sourceInstanceId = selectedSourceInstanceId;
   const int sinceVersion = trackVersions[syncTrackId];
   
-  runAsync([this, serverUrl, trackId, sinceVersion] {
+  runAsync([this, serverUrl, trackId, sourceInstanceId, sinceVersion] {
     const auto response = client.pullTrackState(
       serverUrl,
       currentSyncRoomCode,
@@ -4369,6 +4709,12 @@ void InspireVSTAudioProcessorEditor::pullTrack()
         roleAttached = false;
         roleLockReason = response.errorMessage.isNotEmpty() ? response.errorMessage : "master_required";
         addErrorLog("✗ Pull locked: " + roleLockReason);
+        setLastTransferReceipt(
+          "Status: Pull failed (locked)\n"
+          "Reason: " + roleLockReason + "\n"
+          "Destination: This instance " + shortInstanceId(pluginInstanceID) + "\n"
+          "Action: Attach to active master, then retry pull."
+        );
         setStatus("Locked: " + roleLockReason);
         updateUIForAuthState();
         setBusy(false);
@@ -4382,10 +4728,57 @@ void InspireVSTAudioProcessorEditor::pullTrack()
 
       if (response.hasState)
       {
+        const int clipCount = countJsonArrayItems(response.state.clipsJson);
+        const int noteCount = countJsonArrayItems(response.state.notesJson);
+        juce::String sourceTrack = response.state.dawTrackName;
+        if (sourceTrack.isEmpty())
+          sourceTrack = response.state.trackName;
+        if (sourceTrack.isEmpty())
+          sourceTrack = response.trackId;
+        juce::String sourceActor = response.state.updatedBy;
+        if (sourceActor.isEmpty())
+          sourceActor = response.state.pluginInstanceId;
+        if (sourceActor.isEmpty())
+          sourceActor = sourceInstanceId;
+        if (sourceActor.isEmpty())
+          sourceActor = "unknown source";
+
         auto now = juce::Time::getCurrentTime();
         juce::String logEntry = "[" + now.toString(true, true) + "] Pulled track (version " + 
                                juce::String(response.version) + ")";
         pushLog.insert(0, logEntry);
+
+        juce::DynamicObject::Ptr pulledSnapshot = new juce::DynamicObject();
+        pulledSnapshot->setProperty("type", "daw-sync-pull");
+        pulledSnapshot->setProperty("trackId", response.trackId);
+        pulledSnapshot->setProperty("version", response.version);
+        pulledSnapshot->setProperty("sourceTrack", sourceTrack);
+        pulledSnapshot->setProperty("sourceActor", sourceActor);
+        pulledSnapshot->setProperty("bpm", response.state.bpm);
+        pulledSnapshot->setProperty("timeSignature", response.state.timeSignature);
+        pulledSnapshot->setProperty("noteCount", noteCount);
+        pulledSnapshot->setProperty("clipCount", clipCount);
+        pulledSnapshot->setProperty("notesJson", response.state.notesJson);
+        processor.insertPackToDAW(juce::var(pulledSnapshot.get()));
+
+        downloadPulledAssetsAsync(currentSyncRoomCode, response.trackId, response.version);
+
+        const juce::String receipt = "Pull complete: "
+          "" + juce::String(clipCount) + " clip(s), " + juce::String(noteCount) + " note(s), "
+          "from " + sourceTrack + " by " + sourceActor + ", "
+          "to This Instance " + shortInstanceId(pluginInstanceID) + ". "
+          "Placement is sync snapshot only; host behavior varies in AU/VST3 and may require manual region placement.";
+        addErrorLog(receipt);
+        setLastTransferReceipt(
+          "Status: Pull succeeded\n"
+          "Source: " + sourceTrack + " (" + sourceActor + ")\n"
+          "Destination: This instance " + shortInstanceId(pluginInstanceID) + "\n"
+          "Details: " + juce::String(clipCount) + " clip(s), " + juce::String(noteCount) + " note(s), "
+          + juce::String(response.state.bpm, 1) + " BPM, " + response.state.timeSignature + "\n"
+          "MIDI Writeback: queued to plugin MIDI output (arm+record destination track to capture visible regions)\n"
+          "Version: v" + juce::String(response.version) + "\n"
+          "Placement: Sync snapshot only; AU/VST3 host behavior may require manual MIDI region placement."
+        );
 
         // Add structured update for pull
         juce::String pulledBy = response.state.updatedBy.isEmpty() ? juce::String("unknown") : response.state.updatedBy;
@@ -4405,7 +4798,7 @@ void InspireVSTAudioProcessorEditor::pullTrack()
         pushLogDisplay.setText(pushLog.joinIntoString("\n"), false);
         trackVersions.set(syncTrackId, response.version);
         addErrorLog("✓ Track pulled successfully");
-        setStatus("Track pulled (v" + juce::String(response.version) + ")");
+        setStatus("Pull complete from " + sourceTrack + " (v" + juce::String(response.version) + ")");
         refreshInstancesList();
         refreshSyncStatus();
         fetchCollabVisualizationForUpdates(true);
@@ -4413,6 +4806,12 @@ void InspireVSTAudioProcessorEditor::pullTrack()
       else
       {
         addErrorLog("✗ No new track state to pull");
+        setLastTransferReceipt(
+          "Status: Pull finished (no new changes)\n"
+          "Source: " + (sourceInstanceId.isNotEmpty() ? shortInstanceId(sourceInstanceId) : juce::String("selected instance")) + "\n"
+          "Destination: This instance " + shortInstanceId(pluginInstanceID) + "\n"
+          "Action: Wait for another collaborator push, then pull again."
+        );
         setStatus("No new track state available.");
         refreshSyncStatus();
       }
@@ -4549,6 +4948,8 @@ void InspireVSTAudioProcessorEditor::refreshInstancesList()
             if (count == 0) {
               displayText = "No VST instances found in this room.\nPush a track to register this instance.";
             } else {
+              displayText += "Destination: This plugin instance (" + shortInstanceId(pluginInstanceID) + ")\n";
+              displayText += "Placement: Sync snapshot (AU/VST3 host behavior may not create visible MIDI regions directly).\n\n";
               for (const auto& inst : *instancesArray.getArray()) {
                 activeInstances.add(inst);
                 
@@ -4557,28 +4958,240 @@ void InspireVSTAudioProcessorEditor::refreshInstancesList()
                 juce::String trackName = instObj->getProperty("dawTrackName").toString();
                 int trackIndex = instObj->getProperty("dawTrackIndex");
                 int version = instObj->getProperty("version");
+                juce::String role = instObj->getProperty("pluginRole").toString().toUpperCase();
+                juce::String performer = instObj->getProperty("presenceLabel").toString();
+                if (performer.isEmpty())
+                  performer = instObj->getProperty("username").toString();
+                if (performer.isEmpty())
+                  performer = "Collaborator";
                 
                 // Highlight this instance with arrow
                 juce::String marker = (id == pluginInstanceID) ? "→ " : "  ";
-                
-                displayText += marker + id.substring(0, 8) + " | ";
-                if (trackIndex >= 0)
-                  displayText += "Track " + juce::String(trackIndex) + " ";
+
+                juce::String humanTrack = "Track not reported by host";
                 if (trackName.isNotEmpty())
-                  displayText += "(" + trackName + ") ";
-                displayText += "| v" + juce::String(version) + "\n";
+                  humanTrack = trackName;
+                else if (trackIndex >= 0)
+                  humanTrack = "Logic Track " + juce::String(trackIndex + 1);
+
+                displayText += marker + performer;
+                if (role.isNotEmpty())
+                  displayText += " [" + role + "]";
+                displayText += "\n";
+                displayText += "   Source Track: " + humanTrack + " | Version " + juce::String(version)
+                  + " | ID " + shortInstanceId(id) + "\n";
               }
             }
             
             instancesDisplay.setText(displayText, false);
+            refreshTransferSelectionOptions();
           }
         }
       });
     } else {
       juce::MessageManager::callAsync([this] {
         instancesDisplay.setText("Failed to fetch instances. Check connection.", false);
+        activeInstances.clear();
+        refreshTransferSelectionOptions();
       });
     }
+  });
+}
+
+void InspireVSTAudioProcessorEditor::refreshTransferSelectionOptions()
+{
+  sourceOptionInstanceIds.clear();
+  sourceOptionTrackIds.clear();
+  sourceInstanceCombo.clear(juce::dontSendNotification);
+
+  int preferredIndex = -1;
+  int firstNonSelfIndex = -1;
+
+  for (const auto& inst : activeInstances)
+  {
+    if (!inst.isObject())
+      continue;
+
+    auto* instObj = inst.getDynamicObject();
+    if (instObj == nullptr)
+      continue;
+
+    const juce::String instanceId = instObj->getProperty("pluginInstanceId").toString();
+    juce::String trackId = instObj->getProperty("trackId").toString();
+    if (trackId.isEmpty())
+      trackId = "vst-" + instanceId;
+
+    juce::String performer = instObj->getProperty("presenceLabel").toString();
+    if (performer.isEmpty())
+      performer = instObj->getProperty("username").toString();
+    if (performer.isEmpty())
+      performer = "Collaborator";
+
+    juce::String trackName = instObj->getProperty("dawTrackName").toString();
+    if (trackName.isEmpty())
+      trackName = trackId;
+
+    const int rowIndex = sourceOptionInstanceIds.size();
+    sourceOptionInstanceIds.add(instanceId);
+    sourceOptionTrackIds.add(trackId);
+    sourceInstanceCombo.addItem(performer + " - " + trackName + " (" + shortInstanceId(instanceId) + ")", rowIndex + 1);
+
+    if (instanceId == selectedSourceInstanceId)
+      preferredIndex = rowIndex;
+    if (firstNonSelfIndex < 0 && instanceId != pluginInstanceID)
+      firstNonSelfIndex = rowIndex;
+  }
+
+  if (sourceOptionInstanceIds.isEmpty())
+  {
+    sourceInstanceCombo.addItem("No source instances available", 1);
+    sourceInstanceCombo.setSelectedId(1, juce::dontSendNotification);
+    sourceInstanceCombo.setEnabled(false);
+    selectedSourceInstanceId.clear();
+    selectedSourceTrackId.clear();
+    return;
+  }
+
+  sourceInstanceCombo.setEnabled(true);
+  int selectedIndex = preferredIndex;
+  if (selectedIndex < 0)
+    selectedIndex = firstNonSelfIndex >= 0 ? firstNonSelfIndex : 0;
+
+  sourceInstanceCombo.setSelectedItemIndex(selectedIndex, juce::dontSendNotification);
+  selectedSourceInstanceId = sourceOptionInstanceIds[selectedIndex];
+  selectedSourceTrackId = sourceOptionTrackIds[selectedIndex];
+}
+
+void InspireVSTAudioProcessorEditor::downloadPulledAssetsAsync(const juce::String& roomCode,
+                                                               const juce::String& trackId,
+                                                               int version)
+{
+  if (roomCode.isEmpty() || trackId.isEmpty() || version <= 0)
+    return;
+
+  const auto serverUrl = serverUrlInput.getText();
+  const auto token = sessionToken;
+
+  runAsync([this, serverUrl, token, roomCode, trackId, version]
+  {
+    const auto vizResponse = client.getCollabVisualization(serverUrl, roomCode, token, 200, 0);
+    if (vizResponse.isEmpty())
+      return;
+
+    auto parsed = juce::JSON::parse(vizResponse);
+    if (!parsed.isObject())
+      return;
+
+    juce::Array<juce::var> assetsToDownload;
+    if (auto* rootObj = parsed.getDynamicObject())
+    {
+      const auto timelineVar = rootObj->getProperty("timeline");
+      if (timelineVar.isArray())
+      {
+        for (const auto& eventVar : *timelineVar.getArray())
+        {
+          if (!eventVar.isObject())
+            continue;
+          auto* eventObj = eventVar.getDynamicObject();
+          if (eventObj == nullptr)
+            continue;
+
+          const auto eventTrackId = eventObj->getProperty("trackId").toString();
+          const int eventVersion = static_cast<int>(eventObj->getProperty("version"));
+          if (eventTrackId != trackId || eventVersion != version)
+            continue;
+
+          const auto assetsVar = eventObj->getProperty("assets");
+          if (assetsVar.isArray())
+          {
+            for (const auto& assetVar : *assetsVar.getArray())
+              assetsToDownload.add(assetVar);
+          }
+          break;
+        }
+      }
+    }
+
+    if (assetsToDownload.isEmpty())
+      return;
+
+    const auto pulledRoot = defaultDownloadDir()
+      .getChildFile("PulledAssets")
+      .getChildFile(roomCode)
+      .getChildFile(trackId)
+      .getChildFile("v" + juce::String(version));
+    pulledRoot.createDirectory();
+
+    int downloaded = 0;
+    int failed = 0;
+    juce::StringArray downloadedNames;
+
+    for (const auto& assetVar : assetsToDownload)
+    {
+      if (!assetVar.isObject())
+        continue;
+      auto* assetObj = assetVar.getDynamicObject();
+      if (assetObj == nullptr)
+        continue;
+
+      const auto fileType = assetObj->getProperty("fileType").toString().toLowerCase();
+      if (!(fileType.startsWith("audio/") || fileType == "audio/midi" || fileType == "audio/wav" || fileType == "audio/mpeg"))
+        continue;
+
+      auto fileName = assetObj->getProperty("fileName").toString();
+      if (fileName.isEmpty())
+        fileName = "pulled-asset-" + juce::String(downloaded + failed + 1);
+
+      juce::String downloadUrl = assetObj->getProperty("downloadUrl").toString();
+      if (downloadUrl.isEmpty())
+      {
+        const auto assetId = assetObj->getProperty("id").toString();
+        if (assetId.isNotEmpty())
+          downloadUrl = "/api/collab/assets/" + assetId;
+      }
+      if (downloadUrl.isEmpty())
+      {
+        ++failed;
+        continue;
+      }
+
+      if (downloadUrl.startsWithChar('/'))
+      {
+        juce::String base = serverUrl.trimCharactersAtEnd("/");
+        downloadUrl = base + downloadUrl;
+      }
+
+      const auto destFile = pulledRoot.getChildFile(fileName);
+      const bool ok = client.downloadFileWithAuth(downloadUrl, token, destFile);
+      if (ok)
+      {
+        ++downloaded;
+        downloadedNames.add(destFile.getFileName());
+      }
+      else
+      {
+        ++failed;
+      }
+    }
+
+    if (downloaded == 0 && failed == 0)
+      return;
+
+    juce::MessageManager::callAsync([this, downloaded, failed, downloadedNames, pulledRoot]
+    {
+      juce::String msg = "Pulled assets: " + juce::String(downloaded) + " downloaded";
+      if (failed > 0)
+        msg += ", " + juce::String(failed) + " failed";
+      msg += " to " + pulledRoot.getFullPathName();
+      addErrorLog(msg);
+
+      if (downloaded > 0)
+      {
+        juce::String receipt = lastTransferDisplay.getText();
+        receipt += "\nAssets: " + juce::String(downloaded) + " audio file(s) downloaded";
+        setLastTransferReceipt(receipt);
+      }
+    });
   });
 }
 
@@ -4613,16 +5226,16 @@ void InspireVSTAudioProcessorEditor::refreshSyncStatus()
           juce::Colour statusColor;
           
           if (status == "up-to-date") {
-            statusText = "✓ Up to date (v" + juce::String(myVersionNumber) + ")";
+            statusText = "Ready: You're synced (v" + juce::String(myVersionNumber) + ")";
             statusColor = juce::Colours::green;
           } else if (status == "behind") {
-            statusText = "↓ Behind by " + juce::String(behindBy) + " (v" + juce::String(myVersionNumber) + " of v" + juce::String(latestVersionNumber) + ")";
+            statusText = "Updates waiting: pull " + juce::String(behindBy) + " change(s)";
             statusColor = juce::Colours::orange;
           } else if (status == "ahead") {
-            statusText = "↑ Ahead (v" + juce::String(myVersionNumber) + ") - Push to share";
+            statusText = "Unshared edits: push this instance (v" + juce::String(myVersionNumber) + ")";
             statusColor = juce::Colours::cyan;
           } else {
-            statusText = "Sync: Unknown";
+            statusText = "Sync status unavailable";
             statusColor = juce::Colour(148, 163, 184);
           }
           
@@ -4887,6 +5500,7 @@ void InspireVSTAudioProcessorEditor::timerCallback()
 
   // Called every 5 seconds when in Updates mode
   if (selectedMode == "updates" && !currentSyncRoomCode.isEmpty()) {
+    refreshRecordReadyBanner();
     // Phase 3: Process WebSocket queued messages if connected
     if (wsClient)
       wsClient->processMessages();
