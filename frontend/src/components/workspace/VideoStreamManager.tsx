@@ -317,6 +317,7 @@ export function VideoStreamManager({
 
   const layoutClass = layoutMode === 'corners' ? 'corner-grid' : GRID_LAYOUTS[layout];
   const activeStreamCount = streams.size;
+  const showNoStreamHint = !error && activeStreamCount === 0;
 
   return (
     <div className={`video-stream-manager ${layoutMode === 'corners' ? 'corner-mode' : ''}`}>
@@ -330,10 +331,10 @@ export function VideoStreamManager({
               <summary style={{ cursor: 'pointer', fontWeight: 500 }}>Need help?</summary>
               <div style={{ marginTop: '8px', lineHeight: '1.4', paddingLeft: '12px' }}>
                 <p style={{ margin: '4px 0' }}>
-                  <strong>✓ Make sure you're using:</strong> http://<strong>localhost</strong>:8080
+                  <strong>✓ Use a secure origin:</strong> https://<strong>localhost</strong>:3000 or https://&lt;LAN-IP&gt;:3000
                 </p>
                 <p style={{ margin: '4px 0' }}>
-                  <strong>✗ Not:</strong> http://127.0.0.1:8080 or an IP address
+                  <strong>✗ Avoid:</strong> plain http:// on non-localhost addresses
                 </p>
                 <p style={{ margin: '4px 0' }}>
                   1. Check your address bar shows "localhost"
@@ -359,6 +360,21 @@ export function VideoStreamManager({
             }}
           >
             Retry
+          </button>
+        </div>
+      )}
+
+      {showNoStreamHint && (
+        <div className="video-empty-banner">
+          <p style={{ margin: 0 }}>No camera streams are active yet.</p>
+          <button
+            type="button"
+            className="btn secondary micro"
+            onClick={() => {
+              void initializeLocalStream();
+            }}
+          >
+            Retry camera
           </button>
         </div>
       )}

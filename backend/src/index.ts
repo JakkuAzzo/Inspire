@@ -1433,7 +1433,7 @@ function buildApiRouter() {
       }
 
       const token = extractBearerToken(req);
-      const session = token ? vstSessions.get(token) : undefined;
+      const session = token ? resolveVstSessionFromBearer(token) ?? undefined : undefined;
       const requestedRole = normalizePluginRole(body.pluginRole ?? body.state.pluginRole ?? session?.pluginRole);
       const requestedMasterInstanceId = String(
         body.masterInstanceId ?? body.state.masterInstanceId ?? session?.masterInstanceId ?? ''
@@ -1457,6 +1457,14 @@ function buildApiRouter() {
           });
         }
 
+        if (!hasMasterTrackState(body.roomCode, activeMaster.masterInstanceId)) {
+          return res.status(409).json({
+            ok: false,
+            error: 'master_track_missing',
+            message: 'Master must push track state in this room before relay/create sync operations.'
+          });
+        }
+
         body.state.masterInstanceId = activeMaster.masterInstanceId;
       }
 
@@ -1465,6 +1473,25 @@ function buildApiRouter() {
       const incomingState = normalizeIncomingTrackState(body.state, body.roomCode, body.trackId);
       incomingState.pluginRole = requestedRole;
       incomingState.masterInstanceId = body.state.masterInstanceId;
+
+      if (requestedRole === 'relay') {
+        const conflictingRelay = findConflictingRelayTrack(
+          body.roomCode,
+          body.trackId,
+          incomingState,
+          incomingState.pluginInstanceId
+        );
+
+        if (conflictingRelay) {
+          return res.status(409).json({
+            ok: false,
+            conflict: true,
+            conflictReason: 'relay_track_occupied',
+            message: 'Only one Relay instance is allowed per track in a room.',
+            existing: conflictingRelay
+          });
+        }
+      }
 
       const result = dawSyncStore.upsertTrackState({
         roomCode: body.roomCode,
@@ -1541,7 +1568,7 @@ function buildApiRouter() {
       const sinceRaw = req.query.sinceVersion;
       const sinceVersion = Number.isFinite(Number(sinceRaw)) ? Number(sinceRaw) : null;
       const token = extractBearerToken(req);
-      const session = token ? vstSessions.get(token) : undefined;
+      const session = token ? resolveVstSessionFromBearer(token) ?? undefined : undefined;
       const requestedRole = normalizePluginRole(req.query.pluginRole ?? session?.pluginRole);
       const requestedMasterInstanceId = String(req.query.masterInstanceId ?? session?.masterInstanceId ?? '').trim();
 
@@ -1564,6 +1591,14 @@ function buildApiRouter() {
             ok: false,
             error: 'master_mismatch',
             message: 'Relay/Create is attached to a different master instance.'
+          });
+        }
+
+        if (!hasMasterTrackState(roomCode, activeMaster.masterInstanceId)) {
+          return res.status(409).json({
+            ok: false,
+            error: 'master_track_missing',
+            message: 'Master must push track state in this room before relay/create sync operations.'
           });
         }
       }
@@ -1754,6 +1789,7 @@ function buildApiRouter() {
 
   // In-memory store for VST rooms (for local development, no Firebase dependency)
   type VstSessionRecord = {
+    userId?: string;
     roomId?: string;
     roomCode?: string;
     createdAt: number;
@@ -1815,6 +1851,65 @@ function buildApiRouter() {
     return presence;
   };
 
+  const hasMasterTrackState = (roomCode: string, masterInstanceId: string): boolean => {
+    const normalizedRoom = String(roomCode || '').toUpperCase();
+    const normalizedMaster = String(masterInstanceId || '').trim();
+    if (!normalizedRoom || !normalizedMaster) return false;
+
+    return dawSyncStore
+      .listTrackStates(normalizedRoom)
+      .some((row) =>
+        normalizePluginRole(row.state.pluginRole) === 'master' &&
+        String(row.state.pluginInstanceId || '').trim() === normalizedMaster
+      );
+  };
+
+  const findConflictingRelayTrack = (
+    roomCode: string,
+    incomingTrackId: string,
+    incomingState: DAWTrackState,
+    incomingPluginInstanceId?: string
+  ): { trackId: string; pluginInstanceId?: string } | null => {
+    const normalizedRoom = String(roomCode || '').toUpperCase();
+    const normalizedTrackId = String(incomingTrackId || '').trim();
+    const normalizedPluginId = String(incomingPluginInstanceId || incomingState.pluginInstanceId || '').trim();
+    const incomingDawTrackIndex = typeof incomingState.dawTrackIndex === 'number' ? incomingState.dawTrackIndex : undefined;
+    const incomingDawTrackName = String(incomingState.dawTrackName || '').trim().toLowerCase();
+
+    for (const existing of dawSyncStore.listTrackStates(normalizedRoom)) {
+      const existingState = existing.state;
+      if (normalizePluginRole(existingState.pluginRole) !== 'relay') continue;
+
+      const existingPluginId = String(existingState.pluginInstanceId || '').trim();
+      if (normalizedPluginId && existingPluginId && existingPluginId === normalizedPluginId) continue;
+
+      const existingDawTrackIndex =
+        typeof existingState.dawTrackIndex === 'number' ? existingState.dawTrackIndex : undefined;
+      const existingDawTrackName = String(existingState.dawTrackName || '').trim().toLowerCase();
+
+      const sameTrackId = normalizedTrackId && existing.trackId === normalizedTrackId;
+      const sameDawIndex =
+        typeof incomingDawTrackIndex === 'number' &&
+        incomingDawTrackIndex >= 0 &&
+        typeof existingDawTrackIndex === 'number' &&
+        existingDawTrackIndex >= 0 &&
+        incomingDawTrackIndex === existingDawTrackIndex;
+      const sameDawName =
+        incomingDawTrackName.length > 0 &&
+        existingDawTrackName.length > 0 &&
+        incomingDawTrackName === existingDawTrackName;
+
+      if (sameTrackId || sameDawIndex || sameDawName) {
+        return {
+          trackId: existing.trackId,
+          pluginInstanceId: existingPluginId || undefined
+        };
+      }
+    }
+
+    return null;
+  };
+
   const cleanupExpiredAuthBridges = () => {
     const now = Date.now();
     for (const [bridgeId, bridge] of vstAuthBridges.entries()) {
@@ -1847,6 +1942,7 @@ function buildApiRouter() {
     const now = Date.now();
     const expiresAt = Math.max(now + 5 * 60 * 1000, decoded.exp * 1000);
     const materialized: VstSessionRecord = {
+      userId: user.id,
       createdAt: now,
       expiresAt,
       isGuest: false,
@@ -1866,6 +1962,8 @@ function buildApiRouter() {
     try {
       const { password, name, isGuest, pluginRole, pluginInstanceId } = req.body || {};
       const requestedRole = normalizePluginRole(pluginRole);
+      const bearerToken = extractBearerToken(req);
+      const authSession = bearerToken ? resolveVstSessionFromBearer(bearerToken) : null;
 
       if (requestedRole === 'relay' || requestedRole === 'create') {
         return res.status(403).json({
@@ -1889,10 +1987,61 @@ function buildApiRouter() {
         isGuest: isGuest ?? false,
         isActive: true,
         password: password || null,
-        participants: 0
+        participants: 0,
+        createdByUserId: authSession?.userId,
+        createdByUsername: authSession?.username
       };
 
       vstRooms.set(roomId, room);
+
+      if (authSession?.userId) {
+        const existingSession = collaborativeSessions.get(room.roomId);
+        if (!existingSession) {
+          collaborativeSessions.set(room.roomId, {
+            id: room.roomId,
+            roomCode: room.code,
+            roomPassword: room.password || '',
+            title: room.name,
+            description: 'VST collaboration room',
+            mode: 'vst',
+            submode: requestedRole,
+            hostId: authSession.userId,
+            hostUsername: authSession.username || 'VST User',
+            createdAt: room.createdAt,
+            expiresAt: room.expiresAt,
+            isGuestSession: Boolean(room.isGuest),
+            status: room.isActive ? 'waiting' : 'ended',
+            maxParticipants: 16,
+            maxStreams: 4,
+            participants: [],
+            viewers: [],
+            daw: {
+              id: `daw-${room.roomId}`,
+              bpm: 120,
+              timeSignature: '4/4',
+              key: 'C',
+              scale: 'major',
+              notes: [],
+              tempo: 120,
+              currentBeat: 0,
+              isPlaying: false,
+              lastUpdatedBy: authSession.username || 'host',
+              lastUpdatedAt: now
+            },
+            audioSyncState: {
+              serverTimestamp: now,
+              playbackPosition: 0,
+              isPlaying: false,
+              tempo: 120,
+              clientLatency: 0
+            },
+            comments: [],
+            isPersisted: false,
+            recordingUrl: undefined,
+            source: 'vst'
+          });
+        }
+      }
 
       console.log(`[VST] Room created: ${roomId} (code: ${code}, guest: ${isGuest})`);
 
@@ -1927,19 +2076,20 @@ function buildApiRouter() {
         });
       }
 
-      if (!roomId || !code) {
-        return res.status(400).json({ error: 'roomId and code are required' });
+      const providedRoom = String(roomId ?? '').trim();
+      const providedCode = String(code ?? '').trim();
+      const providedCodeUpper = providedCode.toUpperCase();
+      const roomReference = providedRoom || providedCode;
+
+      if (!roomReference || !providedCode) {
+        return res.status(400).json({ error: 'room reference and code are required' });
       }
 
-      const providedRoom = String(roomId).trim();
-      const providedCode = String(code).trim();
-      const providedCodeUpper = providedCode.toUpperCase();
-
-      let room = vstRooms.get(providedRoom);
+      let room = vstRooms.get(roomReference);
 
       if (!room) {
         for (const candidate of vstRooms.values()) {
-          if (String(candidate.code || '').toUpperCase() === providedRoom.toUpperCase()) {
+          if (String(candidate.code || '').toUpperCase() === roomReference.toUpperCase()) {
             room = candidate;
             break;
           }
@@ -1955,7 +2105,7 @@ function buildApiRouter() {
       }
 
       if (room.expiresAt && Date.now() > room.expiresAt) {
-        vstRooms.delete(roomId);
+        vstRooms.delete(room.roomId);
         return res.status(410).json({ error: 'Room has expired' });
       }
 
@@ -1966,12 +2116,27 @@ function buildApiRouter() {
         return res.status(401).json({ error: 'Invalid room code/password' });
       }
 
+      if (requestedRole === 'master') {
+        const activeMaster = getActiveMasterPresence(String(room.code).toUpperCase());
+        const requestedInstanceId = String(pluginInstanceId ?? '').trim();
+        if (
+          activeMaster &&
+          requestedInstanceId &&
+          activeMaster.masterInstanceId !== requestedInstanceId
+        ) {
+          return res.status(409).json({
+            error: 'master_already_exists',
+            message: 'A different Master instance is already active in this room.'
+          });
+        }
+      }
+
       // Generate session token
       const token = createId('session');
       const sessionExpiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
 
       vstSessions.set(token, {
-        roomId,
+        roomId: room.roomId,
         roomCode: room.code,
         createdAt: Date.now(),
         expiresAt: sessionExpiresAt,
@@ -1992,7 +2157,7 @@ function buildApiRouter() {
 
       room.participants++;
 
-      console.log(`[VST] User joined room: ${roomId} (token: ${token.substring(0, 12)}...)`);
+      console.log(`[VST] User joined room: ${room.roomId} (code: ${room.code}, token: ${token.substring(0, 12)}...)`);
 
       res.json({
         token,
@@ -2133,6 +2298,14 @@ function buildApiRouter() {
         return res.status(400).json({ error: 'roomCode and pluginInstanceId are required' });
       }
 
+      const activeMaster = getActiveMasterPresence(roomCode);
+      if (activeMaster && activeMaster.masterInstanceId !== pluginInstanceId) {
+        return res.status(409).json({
+          error: 'master_already_exists',
+          message: 'A different Master instance is already active in this room.'
+        });
+      }
+
       session.pluginRole = 'master';
       session.roomCode = roomCode;
       session.pluginInstanceId = pluginInstanceId;
@@ -2216,6 +2389,13 @@ function buildApiRouter() {
         return res.status(409).json({
           error: 'master_required',
           message: 'Inspire Master must be online before Relay/Create can attach.'
+        });
+      }
+
+      if (!hasMasterTrackState(roomCode, master.masterInstanceId)) {
+        return res.status(409).json({
+          error: 'master_track_missing',
+          message: 'Master must push track state in this room before Relay/Create can attach.'
         });
       }
 
@@ -2506,12 +2686,131 @@ function buildApiRouter() {
       }
 
       const roomUpper = room.toUpperCase();
-      const session = Array.from(collaborativeSessions.values()).find((candidate: any) => {
+      let session = Array.from(collaborativeSessions.values()).find((candidate: any) => {
         if (!candidate) return false;
         const sessionId = String(candidate.id ?? '').toUpperCase();
         const sessionRoomCode = String(candidate.roomCode ?? '').toUpperCase();
         return sessionId === roomUpper || sessionRoomCode === roomUpper;
       }) as any;
+
+      // Allow room joins against active VST rooms by code/id and materialize a web session view.
+      if (!session) {
+        const vstRoom = Array.from(vstRooms.values()).find((candidate: any) => {
+          if (!candidate) return false;
+          const candidateRoomId = String(candidate.roomId ?? '').toUpperCase();
+          const candidateCode = String(candidate.code ?? '').toUpperCase();
+          return candidateRoomId === roomUpper || candidateCode === roomUpper;
+        }) as any;
+
+        if (vstRoom) {
+          const now = Date.now();
+          const sessionId = String(vstRoom.roomId ?? `vst-${String(vstRoom.code ?? '').toLowerCase()}`);
+          const existing = collaborativeSessions.get(sessionId);
+          if (existing) {
+            session = existing;
+          } else {
+            session = {
+              id: sessionId,
+              roomCode: String(vstRoom.code ?? ''),
+              roomPassword: String(vstRoom.password ?? ''),
+              title: String(vstRoom.name ?? 'VST Collab Room'),
+              description: 'VST collaboration room',
+              mode: 'vst',
+              submode: 'master',
+              hostId: String(vstRoom.createdByUserId ?? `vst-host-${sessionId}`),
+              hostUsername: String(vstRoom.createdByUsername ?? 'Collab Host'),
+              createdAt: Number(vstRoom.createdAt ?? now),
+              expiresAt: Number(vstRoom.expiresAt ?? 0) || undefined,
+              isGuestSession: Boolean(vstRoom.isGuest),
+              status: vstRoom.isActive === false ? 'ended' : 'active',
+              maxParticipants: 16,
+              maxStreams: 4,
+              participants: [],
+              viewers: [],
+              daw: {
+                id: `daw-${sessionId}`,
+                bpm: 120,
+                timeSignature: '4/4',
+                key: 'C',
+                scale: 'major',
+                notes: [],
+                tempo: 120,
+                currentBeat: 0,
+                isPlaying: false,
+                lastUpdatedBy: String(vstRoom.createdByUsername ?? 'host'),
+                lastUpdatedAt: now
+              },
+              audioSyncState: {
+                serverTimestamp: now,
+                playbackPosition: 0,
+                isPlaying: false,
+                tempo: 120,
+                clientLatency: 0
+              },
+              comments: [],
+              isPersisted: false,
+              recordingUrl: undefined,
+              source: 'vst'
+            };
+            collaborativeSessions.set(sessionId, session);
+          }
+        }
+      }
+
+      // Final fallback: if the room is active in DAW/VST sync state, materialize a session shell.
+      if (!session) {
+        const hasDawState = dawSyncStore.listTrackStates(roomUpper).length > 0;
+        const hasMasterPresence = !!getActiveMasterPresence(roomUpper);
+        const hasRecentPushes = vstSyncManager.getRecentPushes(roomUpper, Date.now() - 60 * 60 * 1000).length > 0;
+
+        if (hasDawState || hasMasterPresence || hasRecentPushes) {
+          const now = Date.now();
+          session = {
+            id: `vst-${roomUpper.toLowerCase()}`,
+            roomCode: roomUpper,
+            roomPassword: password,
+            title: 'VST Collab Room',
+            description: 'VST collaboration room',
+            mode: 'vst',
+            submode: 'master',
+            hostId: `vst-host-${roomUpper.toLowerCase()}`,
+            hostUsername: 'Collab Host',
+            createdAt: now,
+            expiresAt: undefined,
+            isGuestSession: false,
+            status: 'active',
+            maxParticipants: 16,
+            maxStreams: 4,
+            participants: [],
+            viewers: [],
+            daw: {
+              id: `daw-vst-${roomUpper.toLowerCase()}`,
+              bpm: 120,
+              timeSignature: '4/4',
+              key: 'C',
+              scale: 'major',
+              notes: [],
+              tempo: 120,
+              currentBeat: 0,
+              isPlaying: false,
+              lastUpdatedBy: 'host',
+              lastUpdatedAt: now
+            },
+            audioSyncState: {
+              serverTimestamp: now,
+              playbackPosition: 0,
+              isPlaying: false,
+              tempo: 120,
+              clientLatency: 0
+            },
+            comments: [],
+            isPersisted: false,
+            recordingUrl: undefined,
+            source: 'vst'
+          };
+          collaborativeSessions.set(session.id, session);
+        }
+      }
 
       if (!session) {
         return res.status(404).json({ error: 'Room not found' });
@@ -2546,9 +2845,12 @@ function buildApiRouter() {
    * GET /api/sessions/:sessionId
    * Retrieve a collaborative session
    */
-  router.get('/sessions/:sessionId', (req: Request, res: Response) => {
+  router.get('/sessions/:sessionId', (req: Request, res: Response, next: NextFunction) => {
     try {
       const { sessionId } = req.params;
+      if (sessionId === 'my-rooms') {
+        return next();
+      }
       const session = collaborativeSessions.get(sessionId);
 
       if (!session) {
@@ -2820,7 +3122,7 @@ function buildApiRouter() {
       }
 
       const now = Date.now();
-      const mine = Array.from(collaborativeSessions.values())
+      const mineFromSessions = Array.from(collaborativeSessions.values())
         .filter((session: any) => String(session.hostId || '') === String(userId))
         .map((session: any) => {
           const expired = Boolean(session.expiresAt && now > Number(session.expiresAt));
@@ -2843,6 +3145,37 @@ function buildApiRouter() {
             active: isActive
           };
         })
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+
+      const knownSessionIds = new Set(mineFromSessions.map((session) => String(session.id)));
+      const requestingUser = findUserById(String(userId));
+      const mineFromVstRooms = Array.from(vstRooms.values())
+        .filter((room: any) => String(room?.createdByUserId || '') === String(userId))
+        .filter((room: any) => !knownSessionIds.has(String(room?.roomId || '')))
+        .map((room: any) => {
+          const expired = Boolean(room.expiresAt && now > Number(room.expiresAt));
+          const ended = room.isActive === false;
+          const isActive = !expired && !ended;
+          return {
+            id: room.roomId,
+            roomCode: room.code,
+            roomPassword: room.password || '',
+            title: room.name || 'VST Collab Room',
+            mode: 'vst',
+            submode: 'master',
+            hostUsername: room.createdByUsername || requestingUser?.displayName || requestingUser?.email || 'VST User',
+            createdAt: room.createdAt,
+            expiresAt: room.expiresAt,
+            status: isActive ? 'waiting' : 'ended',
+            isGuestSession: Boolean(room.isGuest),
+            participants: Number(room.participants || 0),
+            viewers: 0,
+            active: isActive,
+            source: 'vst'
+          };
+        });
+
+      const mine = [...mineFromSessions, ...mineFromVstRooms]
         .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
 
       const active = mine.filter((session) => session.active);

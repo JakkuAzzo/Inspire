@@ -40,7 +40,8 @@ InspireCreateRoomResult InspireNetworkClient::createRoom(const juce::String& ser
                                                          const juce::String& password,
                                                          bool isGuest,
                                                          const juce::String& pluginRole,
-                                                         const juce::String& pluginInstanceId)
+                                                         const juce::String& pluginInstanceId,
+                                                         const juce::String& bearerToken)
 {
   InspireCreateRoomResult result;
   juce::DynamicObject::Ptr payload = new juce::DynamicObject();
@@ -55,7 +56,7 @@ InspireCreateRoomResult InspireNetworkClient::createRoom(const juce::String& ser
     payload->setProperty("pluginInstanceId", pluginInstanceId);
 
   const auto json = juce::JSON::toString(juce::var(payload));
-  const auto response = postJson(serverUrl + "/api/vst/create-room", json);
+  const auto response = postJson(serverUrl + "/api/vst/create-room", json, bearerToken);
   const auto parsed = juce::JSON::parse(response);
   
   if (parsed.isObject())
@@ -435,7 +436,9 @@ DAWSyncPushResponse InspireNetworkClient::pushTrackState(const juce::String& ser
         result.conflictReason = obj->getProperty("message").toString();
       if (result.conflictReason.isEmpty())
         result.conflictReason = obj->getProperty("error").toString();
-      result.masterRequired = result.conflictReason.containsIgnoreCase("master_required");
+      result.masterRequired =
+        result.conflictReason.containsIgnoreCase("master_required") ||
+        result.conflictReason.containsIgnoreCase("master_track_missing");
     }
   }
   return result;
@@ -506,7 +509,9 @@ DAWSyncPullResponse InspireNetworkClient::pullTrackState(const juce::String& ser
       result.errorMessage = obj->getProperty("message").toString();
       if (result.errorMessage.isEmpty())
         result.errorMessage = obj->getProperty("error").toString();
-      result.masterRequired = result.errorMessage.containsIgnoreCase("master_required");
+      result.masterRequired =
+        result.errorMessage.containsIgnoreCase("master_required") ||
+        result.errorMessage.containsIgnoreCase("master_track_missing");
     }
   }
   return result;

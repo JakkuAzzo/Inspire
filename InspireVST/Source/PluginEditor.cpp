@@ -70,6 +70,33 @@ static int countJsonArrayItems(const juce::String& payload)
   return 0;
 }
 
+static bool tokenLooksLikeJwt(const juce::String& token)
+{
+  const auto trimmed = token.trim();
+  if (trimmed.isEmpty())
+    return false;
+
+  int dotCount = 0;
+  for (auto c : trimmed)
+  {
+    if (c == '.')
+      ++dotCount;
+  }
+
+  return dotCount == 2;
+}
+
+static bool isAuthTokenFailureMessage(const juce::String& message)
+{
+  if (message.isEmpty())
+    return false;
+
+  return message.containsIgnoreCase("invalid session token")
+    || message.containsIgnoreCase("session expired")
+    || message.containsIgnoreCase("missing bearer token")
+    || message.containsIgnoreCase("jwt");
+}
+
 // Style text inputs - matching web app glassmorphism
   auto styleTextInput = [](juce::TextEditor& input) {
     input.setColour(juce::TextEditor::backgroundColourId, juce::Colour(10, 16, 37).withAlpha(0.62f));
@@ -96,7 +123,7 @@ static int countJsonArrayItems(const juce::String& payload)
     serverUrlInput.setText(detectLocalServerUrl());
     styleTextInput(serverUrlInput);
   
-  roomIdInput.setTextToShowWhenEmpty("Room ID", juce::Colour(241, 245, 255).withAlpha(0.5f));
+  roomIdInput.setTextToShowWhenEmpty("Room ID (optional)", juce::Colour(241, 245, 255).withAlpha(0.5f));
   styleTextInput(roomIdInput);
   
   codeInput.setTextToShowWhenEmpty("Room Code", juce::Colour(241, 245, 255).withAlpha(0.5f));
@@ -284,6 +311,7 @@ static int countJsonArrayItems(const juce::String& payload)
     {
       selectedSourceInstanceId = sourceOptionInstanceIds[idx];
       selectedSourceTrackId = sourceOptionTrackIds[idx];
+      updateUIForAuthState();
     }
   };
 
@@ -1472,8 +1500,19 @@ void InspireVSTAudioProcessorEditor::copyToClipboard(const juce::String& text)
 
 void InspireVSTAudioProcessorEditor::leaveRoom()
 {
+  stopWebSocketSync();
+
   // Clear room state
   inRoom = false;
+  currentSyncRoomCode.clear();
+  codeInput.clear();
+  roomIdInput.clear();
+  masterInstanceId.clear();
+  roleAttached = false;
+  roleLockedByMasterRequirement = false;
+  roleLockReason.clear();
+  activeInstances.clear();
+  refreshTransferSelectionOptions();
   roomInfoLabel.setText("", juce::NotificationType::dontSendNotification);
   roomPasswordLabel.setText("", juce::NotificationType::dontSendNotification);
   selectedMode = "";
@@ -1487,6 +1526,8 @@ void InspireVSTAudioProcessorEditor::leaveRoom()
 
 void InspireVSTAudioProcessorEditor::logout()
 {
+  stopWebSocketSync();
+
   // Clear all auth state
   isAuthenticated = false;
   isGuest = false;
@@ -1498,6 +1539,16 @@ void InspireVSTAudioProcessorEditor::logout()
   authBridgePollInFlight = false;
   lastServerTimeMs = 0;
   sessionStartTimeMs = juce::Time::currentTimeMillis();  // Reset session start time
+  selectedMode = "";
+  currentSyncRoomCode.clear();
+  codeInput.clear();
+  roomIdInput.clear();
+  masterInstanceId.clear();
+  roleAttached = false;
+  roleLockedByMasterRequirement = false;
+  roleLockReason.clear();
+  activeInstances.clear();
+  refreshTransferSelectionOptions();
   
   // Clear room state if in room
   if (inRoom)
@@ -1505,7 +1556,6 @@ void InspireVSTAudioProcessorEditor::logout()
     inRoom = false;
     roomInfoLabel.setText("", juce::NotificationType::dontSendNotification);
     roomPasswordLabel.setText("", juce::NotificationType::dontSendNotification);
-    selectedMode = "";
   }
   
   // Clear session data
@@ -1588,8 +1638,13 @@ void InspireVSTAudioProcessorEditor::showLogoMenu()
 
   // Runtime plugin role controls while split products are in progress
   const auto role = effectivePluginRole();
+  const bool masterLockedByRoom = isMasterRoleLockedByRoom();
+  const bool canSelectMaster = !masterLockedByRoom || role == "master";
   menu.addSectionHeader("Plugin Role");
-  menu.addItem(20, "Master", true, role == "master");
+  menu.addItem(20,
+               masterLockedByRoom ? "Master (locked: active master already in room)" : "Master",
+               canSelectMaster,
+               role == "master");
   menu.addItem(21, "Relay", true, role == "relay");
   menu.addItem(22, "Create", true, role == "create");
   menu.addSeparator();
@@ -1646,6 +1701,14 @@ void InspireVSTAudioProcessorEditor::showLogoMenu()
       case 21:
       case 22:
       {
+        if (result == 20 && isMasterRoleLockedByRoom() && !isMasterRole())
+        {
+          addErrorLog("✗ Master role locked: another Master instance is active in this room.");
+          setStatus("Master role unavailable in this room (already claimed).");
+          updateUIForAuthState();
+          break;
+        }
+
         pluginRole = (result == 20 ? "master" : (result == 21 ? "relay" : "create"));
         roleAttached = false;
         roleLockedByMasterRequirement = false;
@@ -1693,7 +1756,7 @@ void InspireVSTAudioProcessorEditor::InspirationListModel::listBoxItemClicked(in
 static void showJoinRoomDialog(juce::Component* parent, const juce::String& initialRoomId, const juce::String& initialCode,
                                std::function<void(juce::String, juce::String)> onAccept)
 {
-  auto* alert = new juce::AlertWindow("Join Room", "Enter Room ID (or shared room code) and access code.", juce::AlertWindow::NoIcon, parent);
+  auto* alert = new juce::AlertWindow("Join Room", "Enter room code. Room ID is optional for legacy rooms.", juce::AlertWindow::NoIcon, parent);
   alert->addTextEditor("roomId", initialRoomId, "Room ID or Room Code");
   alert->addTextEditor("code", initialCode, "Room Code or Password", true);
   alert->addButton("Join", 1, juce::KeyPress(juce::KeyPress::returnKey));
@@ -1704,7 +1767,9 @@ static void showJoinRoomDialog(juce::Component* parent, const juce::String& init
       if (result != 1) return;
       auto roomId = alert->getTextEditorContents("roomId").trim();
       auto code = alert->getTextEditorContents("code").trim();
-      if (roomId.isEmpty() || code.isEmpty()) return;
+      if (code.isEmpty() && roomId.isNotEmpty())
+        code = roomId;
+      if (code.isEmpty()) return;
       onAccept(roomId, code);
     }), false);
 }
@@ -1859,14 +1924,14 @@ void InspireVSTAudioProcessorEditor::updateUIForAuthState()
   loginButton.setVisible(showAuthButtons);
 
   // Room collaboration controls (optional)
-  const bool showMasterRoomControls = showPostAuthButtons && roleMaster;
-  roomIdInput.setVisible(showMasterRoomControls);
-  codeInput.setVisible(showMasterRoomControls);
-  passwordInput.setVisible(showMasterRoomControls);
-  joinButton.setVisible(showMasterRoomControls);
-  createRoomButton.setVisible(showMasterRoomControls);
-  viewActiveRoomsButton.setVisible(showMasterRoomControls);
-  joinButton.setButtonText("Join Room");
+  const bool showRoomJoinControls = showPostAuthButtons;
+  roomIdInput.setVisible(showRoomJoinControls && roleMaster);
+  codeInput.setVisible(showRoomJoinControls);
+  passwordInput.setVisible(showPostAuthButtons && roleMaster);
+  joinButton.setVisible(showRoomJoinControls);
+  createRoomButton.setVisible(showPostAuthButtons && roleMaster);
+  viewActiveRoomsButton.setVisible(showPostAuthButtons && roleMaster);
+  joinButton.setButtonText(roleMaster ? "Join Room" : "Attach to Room");
   
   // Mode cards (shown when authenticated and no specific mode selected)
   writerLabCard.setVisible(showModeCards && roleCreate);
@@ -1905,13 +1970,28 @@ void InspireVSTAudioProcessorEditor::updateUIForAuthState()
   lastTransferDisplay.setVisible(inUpdatesMode);
   recordReadyLabel.setVisible(inUpdatesMode);
   recordReadyDisplay.setVisible(inUpdatesMode);
-  if (isRelayOrCreateRole() && roleLockedByMasterRequirement)
+  const bool workerLocked = isRelayOrCreateRole() && roleLockedByMasterRequirement;
+  if (inUpdatesMode)
   {
-    pushTrackButton.setEnabled(false);
-    pullTrackButton.setEnabled(false);
-    attachArtifactButton.setEnabled(false);
-    if (roleLockReason.isNotEmpty())
-      syncStatusIndicator.setText("Locked: " + roleLockReason, juce::dontSendNotification);
+    if (workerLocked)
+    {
+      pushTrackButton.setEnabled(false);
+      pullTrackButton.setEnabled(false);
+      attachArtifactButton.setEnabled(false);
+      sourceInstanceCombo.setEnabled(false);
+      if (roleLockReason.isNotEmpty())
+        syncStatusIndicator.setText("Locked: " + roleLockReason, juce::dontSendNotification);
+    }
+    else
+    {
+      const bool canOperate = !busy;
+      const bool hasSourceOptions = sourceOptionInstanceIds.size() > 0;
+      const bool hasSelectedSource = selectedSourceTrackId.isNotEmpty();
+      pushTrackButton.setEnabled(canOperate);
+      pullTrackButton.setEnabled(canOperate && hasSelectedSource);
+      attachArtifactButton.setEnabled(canOperate);
+      sourceInstanceCombo.setEnabled(canOperate && hasSourceOptions);
+    }
   }
   pushLogDisplay.setVisible(inUpdatesMode);
   pushLogLabel.setVisible(inUpdatesMode);
@@ -2116,9 +2196,14 @@ void InspireVSTAudioProcessorEditor::joinRoomWithCredentials(const juce::String&
                                                              const juce::String& code,
                                                              bool fromSavedRoom)
 {
-  if (roomId.trim().isEmpty() || code.trim().isEmpty())
+  const auto trimmedRoomId = roomId.trim();
+  auto trimmedCode = code.trim();
+  if (trimmedCode.isEmpty() && trimmedRoomId.isNotEmpty())
+    trimmedCode = trimmedRoomId;
+
+  if (trimmedCode.isEmpty())
   {
-    setStatus("Room ID and code are required.");
+    setStatus("Room code is required.");
     return;
   }
 
@@ -2130,12 +2215,29 @@ void InspireVSTAudioProcessorEditor::joinRoomWithCredentials(const juce::String&
 
   if (isRelayOrCreateRole())
   {
-    runAsync([this, serverUrl, code, role] {
-      const auto attachResult = client.attachPluginToMaster(serverUrl, sessionToken, role, code.toUpperCase(), pluginInstanceID);
-      juce::MessageManager::callAsync([this, attachResult, code, role] {
+    runAsync([this, serverUrl, trimmedCode, role] {
+      auto attachResult = client.attachPluginToMaster(serverUrl, sessionToken, role, trimmedCode.toUpperCase(), pluginInstanceID);
+      juce::String refreshedToken;
+
+      if (!attachResult.ok && isAuthTokenFailureMessage(attachResult.errorMessage))
+      {
+        const auto refreshResult = client.continueAsGuest(serverUrl, role);
+        if (refreshResult.token.isNotEmpty())
+        {
+          refreshedToken = refreshResult.token;
+          attachResult = client.attachPluginToMaster(serverUrl, refreshedToken, role, trimmedCode.toUpperCase(), pluginInstanceID);
+        }
+      }
+
+      juce::MessageManager::callAsync([this, attachResult, refreshedToken, trimmedCode, role] {
         if (attachResult.ok)
         {
-          currentSyncRoomCode = attachResult.roomCode.isNotEmpty() ? attachResult.roomCode : code.toUpperCase();
+          if (refreshedToken.isNotEmpty())
+          {
+            sessionToken = refreshedToken;
+            addErrorLog("ℹ Refreshed VST relay session token.");
+          }
+          currentSyncRoomCode = attachResult.roomCode.isNotEmpty() ? attachResult.roomCode : trimmedCode.toUpperCase();
           masterInstanceId = attachResult.masterInstanceId;
           roleAttached = true;
           roleLockedByMasterRequirement = false;
@@ -2166,17 +2268,20 @@ void InspireVSTAudioProcessorEditor::joinRoomWithCredentials(const juce::String&
     return;
   }
 
-  runAsync([this, serverUrl, roomId, code, role, fromSavedRoom] {
-    addErrorLog("Joining room: " + roomId + " using access code: " + code);
-    const auto result = client.joinRoom(serverUrl, roomId, code, role, pluginInstanceID, masterInstanceId);
-    juce::MessageManager::callAsync([this, result, code, fromSavedRoom] {
+  const auto roomRef = trimmedRoomId.isNotEmpty() ? trimmedRoomId : trimmedCode;
+  runAsync([this, serverUrl, roomRef, trimmedCode, role, fromSavedRoom] {
+    addErrorLog("Joining room reference: " + roomRef + " using access code: " + trimmedCode);
+    const auto result = client.joinRoom(serverUrl, roomRef, trimmedCode, role, pluginInstanceID, masterInstanceId);
+    juce::MessageManager::callAsync([this, result, trimmedCode, fromSavedRoom] {
       if (result.token.isNotEmpty())
       {
-        sessionToken = result.token;
+        const bool keepExistingAuthToken = !isGuest && tokenLooksLikeJwt(sessionToken);
+        if (!keepExistingAuthToken)
+          sessionToken = result.token;
         lastServerTimeMs = result.expiresAtMs;
         if (result.roomId.isNotEmpty())
           roomIdInput.setText(result.roomId, false);
-        currentSyncRoomCode = result.roomCode.isNotEmpty() ? result.roomCode : code.toUpperCase();
+        currentSyncRoomCode = result.roomCode.isNotEmpty() ? result.roomCode : trimmedCode.toUpperCase();
         masterInstanceId = pluginInstanceID;
         roleAttached = true;
         roleLockedByMasterRequirement = false;
@@ -2185,7 +2290,7 @@ void InspireVSTAudioProcessorEditor::joinRoomWithCredentials(const juce::String&
         saveSessionData();
         inRoom = true;
         saveRoomCode();
-        roomInfoLabel.setText("Room: " + roomIdInput.getText().trim(), juce::dontSendNotification);
+        roomInfoLabel.setText("Room: " + currentSyncRoomCode, juce::dontSendNotification);
         if (roomPasswordLabel.getText().isEmpty())
           roomPasswordLabel.setText("Password: (none)", juce::dontSendNotification);
         tokenLabel.setText("Session: " + sessionToken.substring(0, 12) + "...", juce::dontSendNotification);
@@ -2327,7 +2432,12 @@ void InspireVSTAudioProcessorEditor::startCreateRoom()
       runAsync([this, serverUrl, password] {
         juce::String pwdDisplay = password.isEmpty() ? juce::String("(none)") : juce::String("***");
         addErrorLog("Creating room with password: " + pwdDisplay);
-        const auto result = client.createRoom(serverUrl, password, isGuest, effectivePluginRole(), pluginInstanceID);
+        const auto result = client.createRoom(serverUrl,
+                      password,
+                      isGuest,
+                      effectivePluginRole(),
+                      pluginInstanceID,
+                      sessionToken);
         juce::MessageManager::callAsync([this, result, password] {
           if (result.roomId.isNotEmpty() && result.code.isNotEmpty())
           {
@@ -2345,7 +2455,7 @@ void InspireVSTAudioProcessorEditor::startCreateRoom()
             addErrorLog("✓ Room created: " + result.roomId + " Code: " + result.code);
             setStatus("Room created! Select your mode." + expiryInfo);
             // Show room info at top
-            roomInfoLabel.setText("Room: " + result.roomId, juce::dontSendNotification);
+            roomInfoLabel.setText("Room: " + result.code, juce::dontSendNotification);
             roomPasswordLabel.setText("Password: " + (password.isEmpty() ? "(none)" : password), juce::dontSendNotification);
             
             // Persist session data
@@ -2398,8 +2508,7 @@ void InspireVSTAudioProcessorEditor::updateSessionInfoDisplay()
   
   juce::String info;
   info << "Session Info\n\n";
-  info << "Room: " << roomIdInput.getText() << "\n";
-  info << "Code: " << codeInput.getText() << "\n";
+  info << "Room Code: " << codeInput.getText() << "\n";
   info << "Password: " << roomPasswordLabel.getText().fromFirstOccurrenceOf(": ", false, false) << "\n";
   info << "Auth: " << (isGuest ? "Guest" : "User") << "\n";
   
@@ -3520,7 +3629,7 @@ void InspireVSTAudioProcessorEditor::loadSessionData()
       roomIdInput.setText(savedRoomId, juce::NotificationType::dontSendNotification);
     if (savedRoomCode.isNotEmpty())
     {
-      roomInfoLabel.setText("Room: " + roomIdInput.getText().trim(), juce::NotificationType::dontSendNotification);
+      roomInfoLabel.setText("Room: " + savedRoomCode, juce::NotificationType::dontSendNotification);
       roomPasswordLabel.setText(savedRoomPassword, juce::NotificationType::dontSendNotification);
     }
     authStatus = dob->getProperty("authStatus").toString();
@@ -3529,10 +3638,29 @@ void InspireVSTAudioProcessorEditor::loadSessionData()
     pluginRole = dob->getProperty("pluginRole").toString();
     if (pluginRole.isEmpty())
       pluginRole = "master";
-    masterInstanceId = dob->getProperty("masterInstanceId").toString();
-    roleAttached = static_cast<bool>(dob->getProperty("roleAttached"));
-    roleLockedByMasterRequirement = static_cast<bool>(dob->getProperty("roleLocked"));
-    roleLockReason = dob->getProperty("roleLockReason").toString();
+    masterInstanceId = (pluginRole == "master") ? dob->getProperty("masterInstanceId").toString() : juce::String();
+    roleAttached = false;
+    roleLockedByMasterRequirement = false;
+    roleLockReason.clear();
+
+    // Authenticated web sessions should persist a JWT token. If the saved token is
+    // a stale room token, force re-auth instead of presenting a false signed-in state.
+    if (authStatus == "authenticated" && !tokenLooksLikeJwt(sessionToken))
+    {
+      sessionToken.clear();
+      isAuthenticated = false;
+      isGuest = false;
+      inRoom = false;
+      currentSyncRoomCode.clear();
+      roomIdInput.clear();
+      codeInput.clear();
+      roomInfoLabel.setText("", juce::NotificationType::dontSendNotification);
+      roomPasswordLabel.setText("", juce::NotificationType::dontSendNotification);
+      setStatus("Session expired. Click Login to refresh auth.");
+      addErrorLog("⚠ Cleared stale authenticated session token; please login again.");
+      return;
+    }
+
     if (sessionToken.isNotEmpty())
       isAuthenticated = true;
   }
@@ -3567,6 +3695,30 @@ juce::String InspireVSTAudioProcessorEditor::effectivePluginRole() const
   if (role == "master" || role == "relay" || role == "create")
     return role;
   return "master";
+}
+
+bool InspireVSTAudioProcessorEditor::isMasterRoleLockedByRoom() const
+{
+  if (!inRoom || currentSyncRoomCode.trim().isEmpty())
+    return false;
+
+  for (const auto& inst : activeInstances)
+  {
+    if (!inst.isObject())
+      continue;
+
+    auto* instObj = inst.getDynamicObject();
+    if (instObj == nullptr)
+      continue;
+
+    const auto instanceRole = instObj->getProperty("pluginRole").toString().trim().toLowerCase();
+    const auto instanceId = instObj->getProperty("pluginInstanceId").toString().trim();
+
+    if (instanceRole == "master" && instanceId.isNotEmpty() && instanceId != pluginInstanceID)
+      return true;
+  }
+
+  return false;
 }
 
 juce::Colour InspireVSTAudioProcessorEditor::roleAccentColour() const
@@ -4487,10 +4639,10 @@ void InspireVSTAudioProcessorEditor::pushTrack()
     
     // Phase 1: VST Instance Broadcasting - add plugin instance info
     state.pluginInstanceId = pluginInstanceID;
-    // Note: DAW track info extraction is host-dependent and may not be available
-    // For now, use placeholder values. Full implementation requires VST3/AU extensions
-    state.dawTrackIndex = 0;    // TODO: Extract from host if available
-    state.dawTrackName = "Current Logic Track (host hidden)";    // TODO: Extract from host if available
+    // DAW track info extraction is host-dependent and may be unavailable in many hosts.
+    // Use "unknown" defaults so server-side relay-per-track checks only apply to real data.
+    state.dawTrackIndex = -1;
+    state.dawTrackName.clear();
     
     const int baseVersion = trackVersions[syncTrackId];
     const int beatForLog = state.currentBeat;
@@ -4638,13 +4790,27 @@ void InspireVSTAudioProcessorEditor::pushTrack()
         }
         else
         {
-          addErrorLog("✗ Track push failed");
+          const juce::String failureReason = response.conflictReason.isNotEmpty()
+            ? response.conflictReason
+            : juce::String("unknown_error");
+          addErrorLog("✗ Track push failed: " + failureReason);
+
+          if (isAuthTokenFailureMessage(failureReason))
+          {
+            roleAttached = false;
+            setStatus("Session expired. Click Login and retry.");
+          }
+          else
+          {
+            setStatus("Track push failed: " + failureReason);
+          }
+
           setLastTransferReceipt(
             "Status: Push failed\n"
+            "Reason: " + failureReason + "\n"
             "Source: This instance " + shortInstanceId(pluginInstanceID) + "\n"
             "Action: Check connection and room role, then retry."
           );
-          setStatus("Track push failed");
         }
       }
       setBusy(false);
@@ -4702,7 +4868,7 @@ void InspireVSTAudioProcessorEditor::pullTrack()
       effectivePluginRole(),
       masterInstanceId
     );
-    juce::MessageManager::callAsync([this, response] {
+    juce::MessageManager::callAsync([this, response, sourceInstanceId] {
       if (response.masterRequired)
       {
         roleLockedByMasterRequirement = true;
@@ -4805,6 +4971,29 @@ void InspireVSTAudioProcessorEditor::pullTrack()
       }
       else
       {
+        if (response.errorMessage.isNotEmpty())
+        {
+          addErrorLog("✗ Pull failed: " + response.errorMessage);
+          if (isAuthTokenFailureMessage(response.errorMessage))
+          {
+            roleAttached = false;
+            setStatus("Session expired. Click Login and retry.");
+          }
+          else
+          {
+            setStatus("Pull failed: " + response.errorMessage);
+          }
+
+          setLastTransferReceipt(
+            "Status: Pull failed\n"
+            "Reason: " + response.errorMessage + "\n"
+            "Destination: This instance " + shortInstanceId(pluginInstanceID) + "\n"
+            "Action: Check room/session state, then retry."
+          );
+          setBusy(false);
+          return;
+        }
+
         addErrorLog("✗ No new track state to pull");
         setLastTransferReceipt(
           "Status: Pull finished (no new changes)\n"
@@ -5060,6 +5249,7 @@ void InspireVSTAudioProcessorEditor::refreshTransferSelectionOptions()
   sourceInstanceCombo.setSelectedItemIndex(selectedIndex, juce::dontSendNotification);
   selectedSourceInstanceId = sourceOptionInstanceIds[selectedIndex];
   selectedSourceTrackId = sourceOptionTrackIds[selectedIndex];
+  updateUIForAuthState();
 }
 
 void InspireVSTAudioProcessorEditor::downloadPulledAssetsAsync(const juce::String& roomCode,

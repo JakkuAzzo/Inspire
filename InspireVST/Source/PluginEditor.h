@@ -168,6 +168,7 @@ private:
   void attemptRoleAttachIfNeeded();
   void heartbeatAndPollMasterState();
   juce::String effectivePluginRole() const;
+  bool isMasterRoleLockedByRoom() const;
   bool isMasterRole() const;
   bool isRelayOrCreateRole() const;
 

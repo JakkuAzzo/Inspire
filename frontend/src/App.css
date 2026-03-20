@@ -139,6 +139,12 @@
   padding-top: clamp(1.5rem, 3vw, 2.5rem);
 }
 
+.app.collab-active {
+  min-height: 100vh;
+  height: auto;
+  overflow-y: auto;
+}
+
 .app.focus-mode-active {
   overflow: hidden;
 }

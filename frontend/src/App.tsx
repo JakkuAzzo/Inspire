@@ -3362,7 +3362,8 @@ function App() {
 		: isSignedIn
 			? 'Open account options'
 			: 'Sign up or log in to Inspire';
-	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${mode ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}`;
+	const hasPrimaryWorkspace = Boolean(mode) || Boolean(activeCollaborativeSession);
+	const appClassName = `app theme-${theme} ${mode ? MODE_BACKGROUNDS[mode] : 'mode-landing'}${hasPrimaryWorkspace ? ' has-mode' : ''}${focusMode ? ' focus-mode-active' : ''}${showingDetail ? ' detail-mode' : ''}${activeCollaborativeSession ? ' collab-active' : ''}`;
 	// Inline custom property for mood accent so tests can detect changes via getComputedStyle
 	const appStyle = useMemo(() => ({ ['--mood-accent' as any]: moodAccent }) as React.CSSProperties, [moodAccent]);
 	const workspaceClassName = `mode-workspace${controlsCollapsed ? ' controls-collapsed' : ''}`;
@@ -3830,6 +3831,31 @@ function App() {
 
 	if (isDashboardRoute) {
 		return <DashboardPage />;
+	}
+
+	if (activeCollaborativeSession) {
+		return (
+			<div className={appClassName} style={appStyle}>
+				<div className="app-foreground">
+					{(loading || status || error) && (
+						<div className="feedback-area" aria-live="polite">
+							{loading === 'generate' && <div className="feedback loading">Assembling your spark…</div>}
+							{loading === 'load' && <div className="feedback loading">Pulling from the archive…</div>}
+							{loading === 'remix' && <div className="feedback loading">Remixing your pack…</div>}
+							{status && <div className="feedback success">{status}</div>}
+							{error && <div className="feedback error">⚠️ {error}</div>}
+						</div>
+					)}
+					<CollaborativeSessionDetail
+						session={activeCollaborativeSession}
+						localUserId={userId}
+						localUsername={authUser?.displayName || 'Anonymous'}
+						userRole={userRole}
+						onLeaveSession={handleLeaveCollaborativeSession}
+					/>
+				</div>
+			</div>
+		);
 	}
 
 	return (

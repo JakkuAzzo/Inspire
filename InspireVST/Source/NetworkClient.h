@@ -123,7 +123,8 @@ public:
                                      const juce::String& password = {},
                                      bool isGuest = false,
                                      const juce::String& pluginRole = "master",
-                                     const juce::String& pluginInstanceId = {});
+                                     const juce::String& pluginInstanceId = {},
+                                     const juce::String& bearerToken = {});
   InspireJoinResult joinRoom(const juce::String& serverUrl,
                              const juce::String& roomId,
                              const juce::String& code,
