@@ -178,7 +178,7 @@ static bool isAuthTokenFailureMessage(const juce::String& message)
   };
   downloadButton.onClick = [this] { downloadSelected(); };
 
-  updatesCard.onClick = [this] { selectedMode = "updates"; addErrorLog("Selected mode: Project"); updateUIForAuthState(); };
+  updatesCard.onClick = [this] { selectUpdates(); };
 
   // Back button and mode title
   backButton.onClick = [this] {
@@ -904,22 +904,37 @@ void InspireVSTAudioProcessorEditor::resized()
     roleStatusLabel.setBounds(padding + halfW + gap, yPos, halfW - 10, 22);
     yPos += 24;
 
-    if (!inRoom && selectedMode.isEmpty() && isMasterRole())
+    if (!inRoom && selectedMode.isEmpty())
     {
-      // Room join/create controls
-      roomIdInput.setBounds(padding, yPos, getWidth() - padding * 2, lineHeight);
-      yPos += lineHeight + gap;
+      if (isMasterRole())
+      {
+        // Master can create and browse rooms in addition to joining.
+        roomIdInput.setBounds(padding, yPos, getWidth() - padding * 2, lineHeight);
+        yPos += lineHeight + gap;
 
-      int halfW = (getWidth() - padding * 2 - gap) / 2;
-      codeInput.setBounds(padding, yPos, halfW, lineHeight);
-      passwordInput.setBounds(padding + halfW + gap, yPos, halfW, lineHeight);
-      yPos += lineHeight + gap;
+        int halfW = (getWidth() - padding * 2 - gap) / 2;
+        codeInput.setBounds(padding, yPos, halfW, lineHeight);
+        passwordInput.setBounds(padding + halfW + gap, yPos, halfW, lineHeight);
+        yPos += lineHeight + gap;
 
-      int roomBtnW = (getWidth() - padding * 2 - gap * 2) / 3;
-      joinButton.setBounds(padding, yPos, roomBtnW, lineHeight);
-      createRoomButton.setBounds(padding + roomBtnW + gap, yPos, roomBtnW, lineHeight);
-      viewActiveRoomsButton.setBounds(padding + (roomBtnW + gap) * 2, yPos, roomBtnW, lineHeight);
-      yPos += lineHeight + gap + 8;
+        int roomBtnW = (getWidth() - padding * 2 - gap * 2) / 3;
+        joinButton.setBounds(padding, yPos, roomBtnW, lineHeight);
+        createRoomButton.setBounds(padding + roomBtnW + gap, yPos, roomBtnW, lineHeight);
+        viewActiveRoomsButton.setBounds(padding + (roomBtnW + gap) * 2, yPos, roomBtnW, lineHeight);
+        yPos += lineHeight + gap + 8;
+      }
+      else
+      {
+        // Relay/Create still need room code + password + attach action.
+        roomIdInput.setBounds(0, 0, 0, 0);
+        int halfW = (getWidth() - padding * 2 - gap) / 2;
+        codeInput.setBounds(padding, yPos, halfW, lineHeight);
+        passwordInput.setBounds(padding + halfW + gap, yPos, halfW, lineHeight);
+        yPos += lineHeight + gap;
+
+        joinButton.setBounds(padding, yPos, getWidth() - padding * 2, lineHeight);
+        yPos += lineHeight + gap + 8;
+      }
     }
 
     if (selectedMode.isEmpty())
@@ -3757,7 +3772,7 @@ void InspireVSTAudioProcessorEditor::attemptRoleAttachIfNeeded()
   const auto role = effectivePluginRole();
 
   runAsync([this, serverUrl, role] {
-    const auto attach = client.attachPluginToMaster(
+    auto attach = client.attachPluginToMaster(
       serverUrl,
       sessionToken,
       role,
@@ -3765,7 +3780,30 @@ void InspireVSTAudioProcessorEditor::attemptRoleAttachIfNeeded()
       pluginInstanceID
     );
 
-    juce::MessageManager::callAsync([this, attach, role] {
+    juce::String refreshedToken;
+    if (!attach.ok && isAuthTokenFailureMessage(attach.errorMessage))
+    {
+      const auto refreshResult = client.continueAsGuest(serverUrl, role);
+      if (refreshResult.token.isNotEmpty())
+      {
+        refreshedToken = refreshResult.token;
+        attach = client.attachPluginToMaster(
+          serverUrl,
+          refreshedToken,
+          role,
+          currentSyncRoomCode,
+          pluginInstanceID
+        );
+      }
+    }
+
+    juce::MessageManager::callAsync([this, attach, role, refreshedToken] {
+      if (refreshedToken.isNotEmpty())
+      {
+        sessionToken = refreshedToken;
+        addErrorLog("ℹ Refreshed VST relay session token.");
+      }
+
       if (attach.ok)
       {
         roleAttached = true;
@@ -4465,6 +4503,28 @@ void InspireVSTAudioProcessorEditor::selectEditorSuite()
 
 void InspireVSTAudioProcessorEditor::selectUpdates()
 {
+  if (!inRoom)
+  {
+    if (isRelayOrCreateRole())
+    {
+      addErrorLog("Updates requested while out of room; opening attach dialog.");
+      setStatus("Enter room code and password to attach to Master.");
+      startJoin();
+    }
+    else
+    {
+      addErrorLog("Project requested while out of room.");
+      setStatus("Create or join a room before opening Project.");
+    }
+
+    selectedMode = "";
+    modeTitleLabel.setText("", juce::dontSendNotification);
+    modeTitleLabel.setVisible(false);
+    backButton.setVisible(false);
+    updateUIForAuthState();
+    return;
+  }
+
   const auto modeLabel = isMasterRole() ? juce::String("Project") : juce::String("Updates");
   selectedMode = "updates";
   addErrorLog("Selected mode: " + modeLabel);

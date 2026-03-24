@@ -11,6 +11,7 @@ cd "$ROOT_DIR"
 
 CERTS_DIR="$ROOT_DIR/.certs"
 FRONTEND_PORT=3000
+PLUGIN_TESTER_PORT=4179
 
 # Detect the en0 IP (primary Wi‑Fi/Ethernet on macOS) so the dev server is reachable on the LAN
 HOST_IP=$(ipconfig getifaddr en0 2>/dev/null || true)
@@ -120,6 +121,7 @@ setup_https_certs || exit 1
 
 kill_port 3001
 kill_port "$FRONTEND_PORT"
+kill_port "$PLUGIN_TESTER_PORT"
 
 # Write backend server URL to a file so VST can read it (backend is on :3001, not frontend :3000)
 # Use the detected local IP so VST can connect from other devices on the same network
@@ -141,6 +143,12 @@ PIDS+=($!)
 # Give the backend a short moment to boot before starting the frontend proxy
 sleep 2
 
+echo "Starting plugin tester on :$PLUGIN_TESTER_PORT"
+BACKEND_URL="$SERVER_URL" \
+  PLUGIN_TESTER_PORT="$PLUGIN_TESTER_PORT" \
+  npm run start --prefix plugin-tester &
+PIDS+=($!)
+
 echo "Starting Inspire frontend on https://$HOST_IP:$FRONTEND_PORT"
 echo ""
 echo "════════════════════════════════════════════════════════════"
@@ -148,10 +156,12 @@ echo "  Inspire Development Server"
 echo "════════════════════════════════════════════════════════════"
 echo "  Frontend:  https://$HOST_IP:$FRONTEND_PORT"
 echo "  Backend:   $SERVER_URL"
+echo "  Plugin Tester: http://$HOST_IP:$PLUGIN_TESTER_PORT"
 echo ""
 echo "  Share with other devices on your network:"
 echo "    VST Server URL: $SERVER_URL"
 echo "    Web Interface:  https://$HOST_IP:$FRONTEND_PORT"
+echo "    Plugin Tester:  http://$HOST_IP:$PLUGIN_TESTER_PORT"
 echo ""
 echo "  Note: You may need to accept the self-signed certificate"
 echo "════════════════════════════════════════════════════════════"
