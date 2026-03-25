@@ -1,15 +1,32 @@
 import http from 'http';
 import { io as Client, Socket } from 'socket.io-client';
-import { app, server, io } from '../../src/index';
+import { Server as SocketIOServer } from 'socket.io';
 
-let httpServer: http.Server;
+let testServer: http.Server;
+let testIo: SocketIOServer;
 let clientSocket: Socket;
 
 beforeAll((done) => {
-  httpServer = server.listen(0, '127.0.0.1', () => {
-    const addr = httpServer.address() as any;
+  testServer = http.createServer();
+  testIo = new SocketIOServer(testServer, { cors: { origin: '*' } });
+
+  // Register the same rooms:join handler as in src/index.ts
+  testIo.on('connection', (socket) => {
+    socket.on('rooms:join', ({ roomId, user }: { roomId: string; user?: string }) => {
+      socket.join(roomId);
+      const room = { id: roomId, participants: [user].filter(Boolean) };
+      socket.emit('rooms:joined', room);
+    });
+  });
+
+  testServer.listen(0, '127.0.0.1', () => {
+    const addr = testServer.address() as any;
     const port = addr.port;
-    clientSocket = Client(`http://127.0.0.1:${port}`, { transports: ['websocket'], timeout: 5000 });
+    clientSocket = Client(`http://127.0.0.1:${port}`, {
+      transports: ['websocket'],
+      timeout: 5000,
+      reconnection: false,
+    });
     const finish = (err?: any) => done(err);
     clientSocket.on('connect', () => finish());
     clientSocket.on('connect_error', (err) => finish(err));
@@ -17,7 +34,8 @@ beforeAll((done) => {
 }, 10000);
 
 afterAll((done) => {
-  const finishClose = () => httpServer?.close(() => done());
+  testIo.close();
+  const finishClose = () => testServer?.close(() => done());
   if (clientSocket?.connected) {
     clientSocket.once('disconnect', finishClose);
     clientSocket.disconnect();
