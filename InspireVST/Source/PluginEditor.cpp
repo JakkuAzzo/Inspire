@@ -5464,7 +5464,7 @@ void InspireVSTAudioProcessorEditor::refreshSyncStatus()
       juce::String response = stream->readEntireStreamAsString();
       auto parsed = juce::JSON::parse(response);
       
-      juce::MessageManager::callAsync([this, parsed] {
+      juce::MessageManager::callAsync([this, parsed, serverUrl] {
         if (parsed.isObject()) {
           auto* obj = parsed.getDynamicObject();
           juce::String status = obj->getProperty("status").toString();
@@ -5477,6 +5477,25 @@ void InspireVSTAudioProcessorEditor::refreshSyncStatus()
           
           if (status == "up-to-date") {
             statusText = "Ready: You're synced (v" + juce::String(myVersionNumber) + ")";
+            
+            // If Master role, append relay/create counts
+            if (isMasterRole()) {
+              // Fetch relay/create count from master state
+              const auto stateEndpoint = serverUrl + "/api/master/room/" + 
+                                        juce::URL::addEscapeChars(currentSyncRoomCode, true) + "/state";
+              juce::URL stateUrl(stateEndpoint);
+              if (auto stateStream = stateUrl.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress))) {
+                auto stateResponse = stateStream->readEntireStreamAsString();
+                auto stateParsed = juce::JSON::parse(stateResponse);
+                if (stateParsed.isObject()) {
+                  auto* stateObj = stateParsed.getDynamicObject();
+                  int relayCount = stateObj->getProperty("relayCount");
+                  int createCount = stateObj->getProperty("createCount");
+                  statusText += " | Relay: " + juce::String(relayCount) + " | Create: " + juce::String(createCount);
+                }
+              }
+            }
+            
             statusColor = juce::Colours::green;
           } else if (status == "behind") {
             statusText = "Updates waiting: pull " + juce::String(behindBy) + " change(s)";

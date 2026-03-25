@@ -1922,13 +1922,19 @@ function buildApiRouter() {
   const resolveVstSessionFromBearer = (token: string): VstSessionRecord | null => {
     const existing = vstSessions.get(token);
     if (existing) {
+      // For guest VST sessions, check expiry and remove if expired
       if (typeof existing.expiresAt === 'number' && Date.now() > existing.expiresAt) {
         vstSessions.delete(token);
+        // Add marker to token to trigger refresh on client
+        // Note: We return null, but the client should interpret "Invalid session token" as "Session expired"
+        // and attempt to refresh via guest-continue endpoint
+        return null;
       } else {
         return existing;
       }
     }
 
+    // Token not in sessions map; try to verify as JWT (for legacy user-authenticated tokens)
     const decoded = verifyToken(token);
     if (!decoded) {
       return null;
