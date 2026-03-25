@@ -41,4 +41,7 @@ temp/
 
 # Data files
 backend/data/savedPacks.json
+backend/data/communityFeed.json
+backend/data/local-sync.sqlite
+backend/src/data/users.json
 firebase-service-account.json

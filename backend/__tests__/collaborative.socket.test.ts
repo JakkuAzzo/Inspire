@@ -81,8 +81,8 @@ describe('Collaborative Socket.io Events', () => {
   });
 
   beforeEach((done: jest.DoneCallback) => {
-    clientSocket1 = ioc(serverUrl, { transports: ['websocket'] });
-    clientSocket2 = ioc(serverUrl, { transports: ['websocket'] });
+    clientSocket1 = ioc(serverUrl, { transports: ['websocket'], reconnection: false });
+    clientSocket2 = ioc(serverUrl, { transports: ['websocket'], reconnection: false });
     
     let connectedCount = 0;
     const checkBothConnected = () => {
